@@ -4,17 +4,18 @@ import { useEffect, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Wifi, WifiOff } from "lucide-react"
 
+const API_BASE = "https://ai-novel-backend-production.up.railway.app"
+
 export function BackendStatus() {
   const [online, setOnline] = useState(false)
   const failCount = useRef(0)
-  const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 
   useEffect(() => {
     let cancelled = false
 
     const doFetch = async (): Promise<boolean> => {
       try {
-        const res = await fetch(`${base}/api/v1/health`, { signal: AbortSignal.timeout(8000) })
+        const res = await fetch(`${API_BASE}/api/v1/health`, { signal: AbortSignal.timeout(8000) })
         return res.ok
       } catch {
         return false
@@ -41,7 +42,7 @@ export function BackendStatus() {
     check()
     const interval = setInterval(check, 15000)
     return () => { cancelled = true; clearInterval(interval) }
-  }, [base])
+  }, [API_BASE])
 
   return (
     <Badge variant={online ? "default" : "secondary"} className="gap-1 text-xs cursor-default">
