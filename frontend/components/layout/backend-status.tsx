@@ -1,16 +1,18 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Wifi, WifiOff } from "lucide-react"
 
 export function BackendStatus() {
   const [online, setOnline] = useState(false)
+  const failCount = useRef(0)
   const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 
   useEffect(() => {
     let cancelled = false
-    const checkOnce = async (): Promise<boolean> => {
+
+    const doFetch = async (): Promise<boolean> => {
       try {
         const res = await fetch(`${base}/api/v1/health`, { signal: AbortSignal.timeout(8000) })
         return res.ok
@@ -18,19 +20,24 @@ export function BackendStatus() {
         return false
       }
     }
+
     const check = async () => {
-      const ok = await checkOnce()
+      let ok = await doFetch()
+      if (!ok && !cancelled) {
+        await new Promise(r => setTimeout(r, 2000))
+        if (!cancelled) ok = await doFetch()
+      }
       if (cancelled) return
       if (ok) {
+        failCount.current = 0
         setOnline(true)
-        return
+      } else {
+        failCount.current++
+        // 连续失败 3 次才显示离线（避免偶发网络波动导致闪烁）
+        if (failCount.current >= 3) setOnline(false)
       }
-      // 冷启动重试：等 2s 再试一次
-      await new Promise(r => setTimeout(r, 2000))
-      if (cancelled) return
-      const retry = await checkOnce()
-      if (!cancelled) setOnline(retry)
     }
+
     check()
     const interval = setInterval(check, 15000)
     return () => { cancelled = true; clearInterval(interval) }
