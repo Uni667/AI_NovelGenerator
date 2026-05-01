@@ -12,7 +12,7 @@ export function BackendStatus() {
     let cancelled = false
     const check = async () => {
       try {
-        const res = await fetch(`${base}/api/v1/health`, { signal: AbortSignal.timeout(3000) })
+        const res = await fetch(`${base}/api/v1/health`, { signal: AbortSignal.timeout(8000) })
         if (!cancelled) setOnline(res.ok)
       } catch {
         if (!cancelled) setOnline(false)
