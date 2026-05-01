@@ -51,6 +51,13 @@ export default function ProjectDashboard() {
   const [chapterTitles, setChapterTitles] = useState<string[]>([])
   const [platformLoading, setPlatformLoading] = useState("")
   const [hookChapterNum, setHookChapterNum] = useState(1)
+  const [llmConfigs, setLLMConfigs] = useState<Record<string, any>>({})
+  const [embConfigs, setEmbConfigs] = useState<Record<string, any>>({})
+
+  useEffect(() => {
+    api.config.llmList().then(setLLMConfigs).catch(() => {})
+    api.config.embList().then(setEmbConfigs).catch(() => {})
+  }, [])
 
   const lastProgress = events.filter(e => e.type === "progress").pop()
   const lastPartial = events.filter(e => e.type === "partial").pop()
@@ -625,6 +632,74 @@ export default function ProjectDashboard() {
                   onBlur={e => debouncedUpdate({ user_guidance: e.target.value })}
                   placeholder="在这里描述你的大纲、世界观、角色构想..."
                 />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>模型分配</CardTitle><CardDescription>为每个生成阶段选择使用的 LLM 模型和 Embedding 服务。留空则使用默认配置。</CardDescription></CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>架构生成</Label>
+                  <Select value={config?.architecture_llm || ""} onValueChange={(v) => updateConfig.mutate({ architecture_llm: v || undefined } as any)}>
+                    <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">默认（第一个可用）</SelectItem>
+                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{llmConfigs[name]?.model_name || name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>章节目录</Label>
+                  <Select value={config?.chapter_outline_llm || ""} onValueChange={(v) => updateConfig.mutate({ chapter_outline_llm: v || undefined } as any)}>
+                    <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">默认（第一个可用）</SelectItem>
+                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{llmConfigs[name]?.model_name || name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>章节草稿</Label>
+                  <Select value={config?.prompt_draft_llm || ""} onValueChange={(v) => updateConfig.mutate({ prompt_draft_llm: v || undefined } as any)}>
+                    <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">默认（第一个可用）</SelectItem>
+                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{llmConfigs[name]?.model_name || name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>章节定稿</Label>
+                  <Select value={config?.final_chapter_llm || ""} onValueChange={(v) => updateConfig.mutate({ final_chapter_llm: v || undefined } as any)}>
+                    <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">默认（第一个可用）</SelectItem>
+                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{llmConfigs[name]?.model_name || name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>一致性审校</Label>
+                  <Select value={config?.consistency_review_llm || ""} onValueChange={(v) => updateConfig.mutate({ consistency_review_llm: v || undefined } as any)}>
+                    <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">默认（第一个可用）</SelectItem>
+                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{llmConfigs[name]?.model_name || name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Embedding 向量化</Label>
+                  <Select value={config?.embedding_config || ""} onValueChange={(v) => updateConfig.mutate({ embedding_config: v || undefined } as any)}>
+                    <SelectTrigger><SelectValue placeholder="不使用" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">不使用</SelectItem>
+                      {Object.keys(embConfigs).sort().map(name => <SelectItem key={name} value={name}>{embConfigs[name]?.model_name || name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardContent>
           </Card>
