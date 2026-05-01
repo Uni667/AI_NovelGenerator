@@ -4,7 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import init_db
 from backend.app.routes import config, projects, chapters, files, knowledge, generation, characters, platform_tools
 
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000,https://ai-novel-generator-topaz.vercel.app,https://ai-novel-generator.vercel.app"
+).split(",")
 
 app = FastAPI(title="AI 小说生成器 API", version="1.0", docs_url="/docs")
 

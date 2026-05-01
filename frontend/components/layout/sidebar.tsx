@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { useProjects } from "@/lib/hooks/use-projects"
+import { BackendStatus } from "@/components/layout/backend-status"
 import { useState } from "react"
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
@@ -59,6 +60,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             全局设置
           </Button>
         </Link>
+        <div className="flex justify-center mt-1">
+          <BackendStatus />
+        </div>
       </div>
     </>
   )
