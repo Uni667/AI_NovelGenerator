@@ -4,14 +4,15 @@ import { useParams, useRouter } from "next/navigation"
 import { useProject, useProjectConfig, useChapters, useUpdateProjectConfig } from "@/lib/hooks/use-projects"
 import { useSSE } from "@/lib/hooks/use-sse"
 import { api } from "@/lib/api-client"
+import { PLATFORM_CONFIG, PLATFORMS } from "@/lib/types"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -215,12 +216,12 @@ export default function ProjectDashboard() {
           <TabsTrigger value="generation">AI 生成</TabsTrigger>
           <TabsTrigger value="knowledge">知识库</TabsTrigger>
           <TabsTrigger value="characters">角色管理</TabsTrigger>
-          <TabsTrigger value="platform">🍅 番茄工具</TabsTrigger>
+          <TabsTrigger value="platform">{PLATFORM_CONFIG[config?.platform]?.icon || "📖"} {PLATFORM_CONFIG[config?.platform]?.label || "平台"}工具</TabsTrigger>
           <TabsTrigger value="settings">参数设置</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">总章节</CardTitle></CardHeader>
               <CardContent><span className="text-3xl font-bold">{config?.num_chapters || 0}</span></CardContent>
@@ -228,6 +229,18 @@ export default function ProjectDashboard() {
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">已完成</CardTitle></CardHeader>
               <CardContent><span className="text-3xl font-bold">{chapters?.filter((c: any) => c.status === "final").length || 0}</span></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">目标平台</CardTitle></CardHeader>
+              <CardContent>
+                <span className="text-xl font-semibold">
+                  {config?.platform ? <>{PLATFORM_CONFIG[config.platform]?.icon} {PLATFORM_CONFIG[config.platform]?.label}</> : "-"}
+                </span>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">分类</CardTitle></CardHeader>
+              <CardContent><span className="text-xl font-semibold">{config?.category || config?.genre || "-"}</span></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">类型</CardTitle></CardHeader>
@@ -418,7 +431,7 @@ export default function ProjectDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><BookMarked className="h-5 w-5" />AI 书名生成</CardTitle>
-                <CardDescription>根据小说设定，用番茄平台爆款公式（身份反转+冲突 / 悬念+关键词 / 情绪+结果前置）生成书名候选</CardDescription>
+                <CardDescription>根据小说设定，用平台爆款公式（身份反转+冲突 / 悬念+关键词 / 情绪+结果前置）生成书名候选</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Button onClick={handleGenTitles} disabled={platformLoading === "titles"}>
@@ -442,7 +455,7 @@ export default function ProjectDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><FileEdit className="h-5 w-5" />AI 简介生成</CardTitle>
-                <CardDescription>用「核心冲突 + 金手指 + 爽点预告 + 悬念钩子」公式生成番茄式简介</CardDescription>
+                <CardDescription>用「核心冲突 + 金手指 + 爽点预告 + 悬念钩子」公式生成平台式简介</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Button onClick={handleGenBlurb} disabled={platformLoading === "blurb"}>
@@ -462,7 +475,7 @@ export default function ProjectDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Target className="h-5 w-5" />开篇 & 章节钩子检测</CardTitle>
-                <CardDescription>检查前200字是否有强冲突/悬念，以及每章结尾是否留了钩子。番茄算法核心指标。</CardDescription>
+                <CardDescription>检查前200字是否有强冲突/悬念，以及每章结尾是否留了钩子。平台算法核心指标。</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-3 flex-wrap">
@@ -510,7 +523,7 @@ export default function ProjectDashboard() {
 
                 {chapterTitles.length > 0 && (
                   <div className="space-y-1 p-3 rounded-lg border bg-muted/30">
-                    <p className="text-xs text-muted-foreground mb-2">番茄式章节标题候选：</p>
+                    <p className="text-xs text-muted-foreground mb-2">章节标题候选：</p>
                     {chapterTitles.map((t, i) => <p key={i} className="text-sm">「{t}」</p>)}
                   </div>
                 )}
@@ -535,7 +548,7 @@ export default function ProjectDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Tag className="h-5 w-5" />平台标签 & 关键词</CardTitle>
-                <CardDescription>生成适配番茄搜索算法的标签和关键词，提升搜索曝光</CardDescription>
+                <CardDescription>生成适配平台搜索算法的标签和关键词，提升搜索曝光</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Button onClick={handleGenTags} disabled={platformLoading === "tags"}>
@@ -570,6 +583,23 @@ export default function ProjectDashboard() {
             <CardHeader><CardTitle>项目参数</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>目标平台</Label>
+                  <Select value={config?.platform || "tomato"} onValueChange={(v) => updateConfig.mutate({ platform: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {PLATFORMS.map((key) => (
+                        <SelectItem key={key} value={key}>
+                          {PLATFORM_CONFIG[key].icon} {PLATFORM_CONFIG[key].label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>分类</Label>
+                  <Input defaultValue={config?.category} onBlur={e => debouncedUpdate({ category: e.target.value })} />
+                </div>
                 <div>
                   <Label>类型</Label>
                   <Input defaultValue={config?.genre} onBlur={e => debouncedUpdate({ genre: e.target.value })} />

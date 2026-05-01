@@ -22,14 +22,16 @@ def create_project(data: dict) -> dict:
             (project_id, data.get("name", ""), data.get("description", ""), filepath, "draft", now, now)
         )
         conn.execute(
-            "INSERT INTO project_config (project_id, topic, genre, num_chapters, word_number, user_guidance, language) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO project_config (project_id, topic, genre, num_chapters, word_number, user_guidance, language, platform, category) VALUES (?,?,?,?,?,?,?,?,?)",
             (project_id,
              data.get("topic", ""),
              data.get("genre", ""),
              data.get("num_chapters", 0),
              data.get("word_number", 3000),
              data.get("user_guidance", ""),
-             data.get("language", "zh"))
+             data.get("language", "zh"),
+             data.get("platform", "tomato"),
+             data.get("category", ""))
         )
 
     return get_project(project_id)
@@ -99,7 +101,8 @@ def update_project_config(project_id: str, data: dict) -> dict:
     if not config:
         raise ValueError(f"项目配置不存在: {project_id}")
     allowed_fields = ["topic", "genre", "num_chapters", "word_number", "user_guidance",
-                      "language", "architecture_llm", "chapter_outline_llm", "prompt_draft_llm",
+                      "language", "platform", "category",
+                      "architecture_llm", "chapter_outline_llm", "prompt_draft_llm",
                       "final_chapter_llm", "consistency_review_llm", "embedding_config"]
     sets = []
     params = []

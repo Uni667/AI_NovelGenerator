@@ -2,18 +2,22 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BookOpen, Settings, Plus, Home, Menu } from "lucide-react"
+import { BookOpen, Settings, Plus, Home, Menu, Sun, Moon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { useProjects } from "@/lib/hooks/use-projects"
 import { BackendStatus } from "@/components/layout/backend-status"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useTheme } from "next-themes"
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const { data: projects } = useProjects()
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   return (
     <>
@@ -60,6 +64,20 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             全局设置
           </Button>
         </Link>
+        {mounted && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start gap-2"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          >
+            {theme === "dark" ? (
+              <><Sun className="h-4 w-4" />浅色模式</>
+            ) : (
+              <><Moon className="h-4 w-4" />深色模式</>
+            )}
+          </Button>
+        )}
         <div className="flex justify-center mt-1">
           <BackendStatus />
         </div>

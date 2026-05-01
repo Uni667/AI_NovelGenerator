@@ -36,12 +36,14 @@ export default function ChapterPage() {
     setIsEditing(false)
   }
 
+  const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+
   const handleGenerate = () => {
-    connect(`http://localhost:8001/api/v1/projects/${projectId}/generate/chapter/${chapterNum}?t=${Date.now()}`)
+    connect(`${base}/api/v1/projects/${projectId}/generate/chapter/${chapterNum}?t=${Date.now()}`)
   }
 
   const handleFinalize = () => {
-    connect(`http://localhost:8001/api/v1/projects/${projectId}/generate/finalize/${chapterNum}?t=${Date.now()}`)
+    connect(`${base}/api/v1/projects/${projectId}/generate/finalize/${chapterNum}?t=${Date.now()}`)
   }
 
   const lastPartial = events.filter(e => e.type === "partial").pop()

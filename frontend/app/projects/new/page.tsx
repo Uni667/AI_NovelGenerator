@@ -3,6 +3,8 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useCreateProject } from "@/lib/hooks/use-projects"
+import { PLATFORM_CONFIG, PLATFORMS } from "@/lib/types"
+import { cn } from "@/lib/utils"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,14 +12,17 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { ArrowRight, Upload } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 
 export default function NewProjectPage() {
   const router = useRouter()
   const createProject = useCreateProject()
   const [step, setStep] = useState(1)
+  const [errors, setErrors] = useState<Record<string, string>>({})
   const [form, setForm] = useState({
     name: "",
+    platform: "tomato" as string,
+    category: "",
     description: "",
     topic: "",
     genre: "玄幻",
@@ -25,6 +30,21 @@ export default function NewProjectPage() {
     word_number: 3000,
     user_guidance: "",
   })
+
+  const validateStep1 = (): boolean => {
+    const newErrors: Record<string, string> = {}
+    if (form.num_chapters < 1) {
+      newErrors.num_chapters = "章节数至少为 1"
+    }
+    if (form.word_number < 500) {
+      newErrors.word_number = "每章字数至少 500"
+    }
+    if (form.word_number > 50000) {
+      newErrors.word_number = "每章字数不能超过 50000"
+    }
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
 
   const handleCreate = async () => {
     const result = await createProject.mutateAsync(form)
@@ -53,18 +73,73 @@ export default function NewProjectPage() {
         <Card>
           <CardHeader>
             <CardTitle>第一步：基本信息</CardTitle>
-            <CardDescription>设定小说的基本参数</CardDescription>
+            <CardDescription>选择目标平台，设定小说的基本参数</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-5">
+            {/* 平台选择 */}
             <div>
-              <Label>项目名称 *</Label>
-              <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="例如：星辰之海" />
+              <Label>目标平台</Label>
+              <p className="text-xs text-muted-foreground mb-2">选择小说将要发布的平台，分类和工具将据此适配</p>
+              <div className="grid grid-cols-2 gap-3">
+                {PLATFORMS.map((key) => {
+                  const p = PLATFORM_CONFIG[key]
+                  const selected = form.platform === key
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setForm({ ...form, platform: key, category: "" })}
+                      className={cn(
+                        "flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left",
+                        selected
+                          ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                          : "border-border hover:border-primary/50 hover:bg-accent"
+                      )}
+                    >
+                      <span className="text-2xl">{p.icon}</span>
+                      <div>
+                        <span className="font-medium text-sm block">{p.label}</span>
+                        <span className="text-xs text-muted-foreground">{p.categories.length} 个分类</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
+
+            <Separator />
+
+            {/* 书名（可选） */}
+            <div>
+              <Label>项目名称</Label>
+              <p className="text-xs text-muted-foreground mb-1">可选，没想好可以先不填</p>
+              <Input
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+                placeholder="暂未命名，可后续修改"
+              />
+            </div>
+
             <div>
               <Label>项目简介</Label>
               <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="一句话描述你的小说" />
             </div>
+
             <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>分类</Label>
+                <Select value={form.category} onValueChange={(v) => v && setForm({ ...form, category: v })}>
+                  <SelectTrigger><SelectValue placeholder="选择分类" /></SelectTrigger>
+                  <SelectContent>
+                    {PLATFORM_CONFIG[form.platform]?.categories.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  根据 {PLATFORM_CONFIG[form.platform]?.label} 的分类体系
+                </p>
+              </div>
               <div>
                 <Label>类型</Label>
                 <Select value={form.genre} onValueChange={(v) => v && setForm({ ...form, genre: v })}>
@@ -76,22 +151,40 @@ export default function NewProjectPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>主题</Label>
                 <Input value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} placeholder="故事的核心主题" />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>章节数</Label>
-                <Input type="number" value={form.num_chapters} onChange={e => setForm({ ...form, num_chapters: +e.target.value })} />
-              </div>
-              <div>
-                <Label>每章目标字数</Label>
-                <Input type="number" value={form.word_number} onChange={e => setForm({ ...form, word_number: +e.target.value })} />
+                <Input
+                  type="number"
+                  value={form.num_chapters}
+                  onChange={e => setForm({ ...form, num_chapters: +e.target.value })}
+                  min={1}
+                  className={errors.num_chapters ? "border-destructive" : ""}
+                />
+                {errors.num_chapters && <p className="text-xs text-destructive mt-1">{errors.num_chapters}</p>}
               </div>
             </div>
-            <Button onClick={() => setStep(2)} disabled={!form.name} className="w-full">
+
+            <div>
+              <Label>每章目标字数</Label>
+              <Input
+                type="number"
+                value={form.word_number}
+                onChange={e => setForm({ ...form, word_number: +e.target.value })}
+                min={500}
+                max={50000}
+                className={errors.word_number ? "border-destructive" : ""}
+              />
+              {errors.word_number && <p className="text-xs text-destructive mt-1">{errors.word_number}</p>}
+            </div>
+
+            <Button onClick={() => { if (validateStep1()) setStep(2) }} className="w-full">
               下一步 <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
           </CardContent>

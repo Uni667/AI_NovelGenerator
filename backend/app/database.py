@@ -98,3 +98,13 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge_file(project_id);
             CREATE INDEX IF NOT EXISTS idx_character_project ON character_profile(project_id);
         """)
+
+        # 迁移：新增 platform 和 category 列（如果不存在则忽略）
+        try:
+            conn.execute("ALTER TABLE project_config ADD COLUMN platform TEXT DEFAULT 'tomato'")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE project_config ADD COLUMN category TEXT DEFAULT ''")
+        except Exception:
+            pass
