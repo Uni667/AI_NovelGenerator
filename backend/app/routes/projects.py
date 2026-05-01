@@ -61,7 +61,7 @@ def update_project_config(project_id: str, data: ConfigUpdate):
 
 
 @router.get("/api/v1/projects/{project_id}/export")
-def export_project(project_id: str, format: str = Query("txt", regex="^(txt|html)$")):
+def export_project(project_id: str, format: str = Query("txt", pattern="^(txt|html)$")):
     project = project_service.get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
