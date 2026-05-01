@@ -47,5 +47,6 @@ Thumbs.db
 # Data
 data/
 
-# Claude Code.claude/
-.vercel
+# Claude Code
+.claude/
+.vercel/
