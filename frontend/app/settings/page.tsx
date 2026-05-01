@@ -7,12 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { toast } from "sonner"
-import { Plus, Trash2, TestTube, Key, Cpu } from "lucide-react"
+import { Plus, Trash2, TestTube, Cpu, Key } from "lucide-react"
 
 const INTERFACE_FORMATS = ["OpenAI", "Azure OpenAI", "Ollama", "DeepSeek", "Gemini", "ML Studio", "硅基流动", "火山引擎", "阿里云百炼"]
 
@@ -23,6 +22,7 @@ export default function SettingsPage() {
   const [newEmb, setNewEmb] = useState({ name: "", api_key: "", base_url: "https://api.openai.com/v1", model_name: "text-embedding-ada-002", retrieval_k: 4, interface_format: "OpenAI" })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [embDialogOpen, setEmbDialogOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ type: "llm" | "emb"; name: string } | null>(null)
 
   const loadConfigs = async () => {
     const llm = await api.config.llmList()
@@ -49,9 +49,11 @@ export default function SettingsPage() {
     }
   }
 
-  const handleDeleteLLM = async (name: string) => {
-    await api.config.llmDelete(name)
+  const handleDeleteLLM = async () => {
+    if (!deleteTarget) return
+    await api.config.llmDelete(deleteTarget.name)
     toast.success("已删除")
+    setDeleteTarget(null)
     loadConfigs()
   }
 
@@ -69,6 +71,14 @@ export default function SettingsPage() {
     } catch (e: any) {
       toast.error(e.message)
     }
+  }
+
+  const handleDeleteEmb = async () => {
+    if (!deleteTarget) return
+    await api.config.embDelete(deleteTarget.name)
+    toast.success("已删除")
+    setDeleteTarget(null)
+    loadConfigs()
   }
 
   return (
@@ -106,36 +116,40 @@ export default function SettingsPage() {
             </Dialog>
           </div>
 
-          <div className="space-y-3">
-            {Object.entries(llmConfigs).map(([name, conf]: [string, any]) => (
-              <Card key={name}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{name}</CardTitle>
-                    <Badge>{conf.interface_format}</Badge>
-                  </div>
-                  <CardDescription>{conf.model_name} · {conf.base_url}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                    <span>密钥: {conf.api_key_masked}</span>
-                    <span>·</span>
-                    <span>温度: {conf.temperature}</span>
-                    <span>·</span>
-                    <span>Max Tokens: {conf.max_tokens}</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => handleTestLLM(name)}>
-                      <TestTube className="h-3 w-3 mr-1" />测试
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleDeleteLLM(name)}>
-                      <Trash2 className="h-3 w-3 mr-1" />删除
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          {Object.keys(llmConfigs).length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">暂无 LLM 配置，点击上方按钮添加</p>
+          ) : (
+            <div className="space-y-3">
+              {Object.entries(llmConfigs).map(([name, conf]: [string, any]) => (
+                <Card key={name}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base">{name}</CardTitle>
+                      <Badge>{conf.interface_format}</Badge>
+                    </div>
+                    <CardDescription className="truncate">{conf.model_name} · {conf.base_url}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2 flex-wrap">
+                      <span>密钥: {conf.api_key_masked}</span>
+                      <span>·</span>
+                      <span>温度: {conf.temperature}</span>
+                      <span>·</span>
+                      <span>Max Tokens: {conf.max_tokens}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => handleTestLLM(name)}>
+                        <TestTube className="h-3 w-3 mr-1" />测试
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setDeleteTarget({ type: "llm", name })}>
+                        <Trash2 className="h-3 w-3 mr-1" />删除
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="embedding">
@@ -157,34 +171,55 @@ export default function SettingsPage() {
             </Dialog>
           </div>
 
-          <div className="space-y-3">
-            {Object.entries(embConfigs).map(([name, conf]: [string, any]) => (
-              <Card key={name}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{name}</CardTitle>
-                    <Badge>{conf.interface_format}</Badge>
-                  </div>
-                  <CardDescription>{conf.model_name} · {conf.base_url}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-sm text-muted-foreground mb-2">
-                    密钥: {conf.api_key_masked} · Top-K: {conf.retrieval_k}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => handleTestEmb(name)}>
-                      <TestTube className="h-3 w-3 mr-1" />测试
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => api.config.embDelete(name).then(loadConfigs)}>
-                      <Trash2 className="h-3 w-3 mr-1" />删除
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          {Object.keys(embConfigs).length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">暂无 Embedding 配置，点击上方按钮添加</p>
+          ) : (
+            <div className="space-y-3">
+              {Object.entries(embConfigs).map(([name, conf]: [string, any]) => (
+                <Card key={name}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base">{name}</CardTitle>
+                      <Badge>{conf.interface_format}</Badge>
+                    </div>
+                    <CardDescription className="truncate">{conf.model_name} · {conf.base_url}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-sm text-muted-foreground mb-2">
+                      密钥: {conf.api_key_masked} · Top-K: {conf.retrieval_k}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => handleTestEmb(name)}>
+                        <TestTube className="h-3 w-3 mr-1" />测试
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setDeleteTarget({ type: "emb", name })}>
+                        <Trash2 className="h-3 w-3 mr-1" />删除
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => { if (!v) setDeleteTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              将删除配置 "{deleteTarget?.name}"。如果这是唯一的配置，可能无法删除。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>取消</Button>
+            <Button variant="destructive" onClick={() => deleteTarget?.type === "llm" ? handleDeleteLLM() : handleDeleteEmb()}>
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

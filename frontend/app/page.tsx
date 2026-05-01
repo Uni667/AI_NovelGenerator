@@ -1,10 +1,13 @@
 "use client"
 
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useProjects, useDeleteProject } from "@/lib/hooks/use-projects"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Plus, Trash2, BookOpen, Clock } from "lucide-react"
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
@@ -18,6 +21,7 @@ export default function HomePage() {
   const router = useRouter()
   const { data: projects, isLoading } = useProjects()
   const deleteProject = useDeleteProject()
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -32,7 +36,11 @@ export default function HomePage() {
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12 text-muted-foreground">加载中...</div>
+        <div className="space-y-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-xl" />
+          ))}
+        </div>
       ) : !projects?.length ? (
         <Card className="text-center py-16">
           <CardContent>
@@ -58,7 +66,11 @@ export default function HomePage() {
                     <Badge variant={statusMap[p.status]?.variant || "secondary"}>
                       {statusMap[p.status]?.label || p.status}
                     </Badge>
-                    <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); deleteProject.mutate(p.id) }}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => { e.stopPropagation(); setDeleteTarget(p.id) }}
+                    >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
@@ -73,6 +85,23 @@ export default function HomePage() {
           ))}
         </div>
       )}
+
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => { if (!v) setDeleteTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              此操作不可撤销，将永久删除该项目及其所有章节内容和生成数据。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>取消</Button>
+            <Button variant="destructive" onClick={() => { if (deleteTarget) { deleteProject.mutate(deleteTarget); setDeleteTarget(null) } }}>
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

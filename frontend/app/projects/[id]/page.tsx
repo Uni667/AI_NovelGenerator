@@ -14,35 +14,50 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { useState, useEffect } from "react"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Skeleton } from "@/components/ui/skeleton"
+import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
-import { Play, FileText, BookOpen, Upload, Trash2, CheckCircle, AlertCircle, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
+import { Play, FileText, BookOpen, Upload, Trash2, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
 
 export default function ProjectDashboard() {
   const params = useParams()
   const router = useRouter()
   const id = params.id as string
-  const { data: project } = useProject(id)
+  const { data: project, isLoading } = useProject(id)
   const { data: config } = useProjectConfig(id)
   const { data: chapters } = useChapters(id)
   const updateConfig = useUpdateProjectConfig(id)
   const { events, isConnected, connect } = useSSE()
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const [activeTab, setActiveTab] = useState("overview")
   const [knowledgeFile, setKnowledgeFile] = useState<File | null>(null)
+  const [clearDialogOpen, setClearDialogOpen] = useState(false)
 
   const lastProgress = events.filter(e => e.type === "progress").pop()
   const lastPartial = events.filter(e => e.type === "partial").pop()
   const hasError = events.some(e => e.type === "error")
 
+  const debouncedUpdate = (data: Record<string, any>) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => updateConfig.mutate(data), 500)
+  }
+
+  useEffect(() => {
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [])
+
   const handleGenerateArchitecture = () => {
     setActiveTab("generation")
-    connect(`http://localhost:8001/api/v1/projects/${id}/generate/architecture?t=${Date.now()}`)
+    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+    connect(`${base}/api/v1/projects/${id}/generate/architecture?t=${Date.now()}`)
   }
 
   const handleGenerateBlueprint = () => {
     setActiveTab("generation")
-    connect(`http://localhost:8001/api/v1/projects/${id}/generate/blueprint?t=${Date.now()}`)
+    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+    connect(`${base}/api/v1/projects/${id}/generate/blueprint?t=${Date.now()}`)
   }
 
   const handleUploadKnowledge = async () => {
@@ -52,11 +67,31 @@ export default function ProjectDashboard() {
     setKnowledgeFile(null)
   }
 
-  if (!project) return <div className="text-center py-12 text-muted-foreground">加载中...</div>
+  const handleClearVector = async () => {
+    await api.knowledge.clearVector(id)
+    toast.success("向量库已清空")
+    setClearDialogOpen(false)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Skeleton className="h-8 w-64" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        </div>
+        <Skeleton className="h-10 w-full max-w-md" />
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+        </div>
+      </div>
+    )
+  }
+
+  if (!project) return null
 
   return (
     <div>
-      {/* 顶部标题栏 */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">{project.name}</h1>
@@ -68,16 +103,15 @@ export default function ProjectDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="mb-6">
+        <TabsList className="mb-6 flex-wrap">
           <TabsTrigger value="overview">概览</TabsTrigger>
           <TabsTrigger value="generation">AI 生成</TabsTrigger>
           <TabsTrigger value="knowledge">知识库</TabsTrigger>
           <TabsTrigger value="settings">参数设置</TabsTrigger>
         </TabsList>
 
-        {/* 概览 Tab */}
         <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">总章节</CardTitle></CardHeader>
               <CardContent><span className="text-3xl font-bold">{config?.num_chapters || 0}</span></CardContent>
@@ -96,7 +130,6 @@ export default function ProjectDashboard() {
             </Card>
           </div>
 
-          {/* 快速操作 */}
           <Card>
             <CardHeader><CardTitle>快速操作</CardTitle></CardHeader>
             <CardContent className="flex flex-wrap gap-3">
@@ -109,7 +142,6 @@ export default function ProjectDashboard() {
             </CardContent>
           </Card>
 
-          {/* 章节列表 */}
           <Card>
             <CardHeader><CardTitle>章节列表</CardTitle></CardHeader>
             <CardContent>
@@ -124,15 +156,15 @@ export default function ProjectDashboard() {
                         className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent cursor-pointer"
                         onClick={() => router.push(`/projects/${id}/chapter/${ch.chapter_number}`)}
                       >
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-sm text-muted-foreground">第{ch.chapter_number}章</span>
-                          <span className="font-medium">{ch.chapter_title || "未命名"}</span>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="font-mono text-sm text-muted-foreground shrink-0">第{ch.chapter_number}章</span>
+                          <span className="font-medium truncate">{ch.chapter_title || "未命名"}</span>
                           {ch.chapter_summary && (
-                            <span className="text-sm text-muted-foreground truncate max-w-xs">{ch.chapter_summary}</span>
+                            <span className="text-sm text-muted-foreground truncate hidden md:block max-w-xs">{ch.chapter_summary}</span>
                           )}
                         </div>
-                        <div className="flex items-center gap-3">
-                          {ch.word_count > 0 && <span className="text-xs text-muted-foreground">{ch.word_count}字</span>}
+                        <div className="flex items-center gap-3 shrink-0 ml-2">
+                          {ch.word_count > 0 && <span className="text-xs text-muted-foreground hidden sm:inline">{ch.word_count}字</span>}
                           <Badge variant={ch.status === "final" ? "default" : "secondary"}>
                             {ch.status === "final" ? "已定稿" : ch.status === "draft" ? "草稿" : "待生成"}
                           </Badge>
@@ -146,7 +178,6 @@ export default function ProjectDashboard() {
           </Card>
         </TabsContent>
 
-        {/* AI 生成 Tab */}
         <TabsContent value="generation">
           <Card>
             <CardHeader>
@@ -171,11 +202,11 @@ export default function ProjectDashboard() {
               {events.filter(e => e.type === "progress").map((e, i) => (
                 <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
                   {e.data.status === "done" ? (
-                    <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+                    <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
                   ) : (
-                    <Loader2 className="h-5 w-5 animate-spin text-primary mt-0.5" />
+                    <Loader2 className="h-5 w-5 animate-spin text-primary mt-0.5 shrink-0" />
                   )}
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-medium">{e.data.message}</p>
                     <p className="text-xs text-muted-foreground">步骤: {e.data.step}</p>
                   </div>
@@ -184,7 +215,7 @@ export default function ProjectDashboard() {
 
               {hasError && (
                 <div className="flex items-start gap-3 p-3 rounded-lg bg-destructive/10 text-destructive">
-                  <AlertCircle className="h-5 w-5 mt-0.5" />
+                  <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
                   <p>生成过程中出现错误，请查看日志</p>
                 </div>
               )}
@@ -199,49 +230,47 @@ export default function ProjectDashboard() {
           </Card>
         </TabsContent>
 
-        {/* 知识库 Tab */}
         <TabsContent value="knowledge">
           <Card>
             <CardHeader>
               <CardTitle>知识库管理</CardTitle>
-              <CardDescription>上传 TXT 设定文档，AI 会在生成章节时自动检索相关内容。创建项目后，先上传大纲再生成架构效果更好。</CardDescription>
+              <CardDescription>上传 TXT 设定文档，AI 会在生成章节时自动检索相关内容。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center gap-3">
-                <Input type="file" accept=".txt,.md" onChange={e => setKnowledgeFile(e.target.files?.[0] || null)} />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <Input type="file" accept=".txt,.md" onChange={e => setKnowledgeFile(e.target.files?.[0] || null)} className="flex-1" />
                 <Button onClick={handleUploadKnowledge} disabled={!knowledgeFile}>
                   <Upload className="h-4 w-4 mr-2" />上传并导入
                 </Button>
               </div>
               <Separator />
-              <Button variant="destructive" onClick={async () => { await api.knowledge.clearVector(id); toast.success("向量库已清空") }}>
+              <Button variant="destructive" onClick={() => setClearDialogOpen(true)}>
                 <Trash2 className="h-4 w-4 mr-2" />清空向量库
               </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* 参数设置 Tab */}
         <TabsContent value="settings">
           <Card>
             <CardHeader><CardTitle>项目参数</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>类型</Label>
-                  <Input defaultValue={config?.genre} onBlur={e => updateConfig.mutate({ genre: e.target.value })} />
+                  <Input defaultValue={config?.genre} onBlur={e => debouncedUpdate({ genre: e.target.value })} />
                 </div>
                 <div>
                   <Label>主题</Label>
-                  <Input defaultValue={config?.topic} onBlur={e => updateConfig.mutate({ topic: e.target.value })} />
+                  <Input defaultValue={config?.topic} onBlur={e => debouncedUpdate({ topic: e.target.value })} />
                 </div>
                 <div>
                   <Label>章节数</Label>
-                  <Input type="number" defaultValue={config?.num_chapters} onBlur={e => updateConfig.mutate({ num_chapters: +e.target.value })} />
+                  <Input type="number" defaultValue={config?.num_chapters} onBlur={e => debouncedUpdate({ num_chapters: +e.target.value })} />
                 </div>
                 <div>
                   <Label>每章字数</Label>
-                  <Input type="number" defaultValue={config?.word_number} onBlur={e => updateConfig.mutate({ word_number: +e.target.value })} />
+                  <Input type="number" defaultValue={config?.word_number} onBlur={e => debouncedUpdate({ word_number: +e.target.value })} />
                 </div>
               </div>
               <div>
@@ -249,7 +278,7 @@ export default function ProjectDashboard() {
                 <Textarea
                   defaultValue={config?.user_guidance}
                   rows={8}
-                  onBlur={e => updateConfig.mutate({ user_guidance: e.target.value })}
+                  onBlur={e => debouncedUpdate({ user_guidance: e.target.value })}
                   placeholder="在这里描述你的大纲、世界观、角色构想..."
                 />
               </div>
@@ -257,6 +286,21 @@ export default function ProjectDashboard() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认清空向量库</DialogTitle>
+            <DialogDescription>
+              此操作将删除所有已导入的知识库向量数据，不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearDialogOpen(false)}>取消</Button>
+            <Button variant="destructive" onClick={handleClearVector}>确认清空</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
