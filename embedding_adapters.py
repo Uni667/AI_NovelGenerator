@@ -4,8 +4,23 @@ import logging
 import traceback
 from typing import List
 import requests
-from google import genai
-from langchain_openai import AzureOpenAIEmbeddings, OpenAIEmbeddings
+
+# Lazy imports
+_OpenAIEmbeddings = _AzureOpenAIEmbeddings = None
+_genai = None
+
+def _ensure_openai_emb():
+    global _OpenAIEmbeddings, _AzureOpenAIEmbeddings
+    if _OpenAIEmbeddings is None:
+        from langchain_openai import AzureOpenAIEmbeddings, OpenAIEmbeddings
+        _OpenAIEmbeddings = OpenAIEmbeddings
+        _AzureOpenAIEmbeddings = AzureOpenAIEmbeddings
+
+def _ensure_google():
+    global _genai
+    if _genai is None:
+        from google import genai as _g
+        _genai = _g
 
 def ensure_openai_base_url_has_v1(url: str) -> str:
     """
@@ -35,7 +50,8 @@ class OpenAIEmbeddingAdapter(BaseEmbeddingAdapter):
     基于 OpenAIEmbeddings（或兼容接口）的适配器
     """
     def __init__(self, api_key: str, base_url: str, model_name: str):
-        self._embedding = OpenAIEmbeddings(
+        _ensure_openai_emb()
+        self._embedding = _OpenAIEmbeddings(
             openai_api_key=api_key,
             openai_api_base=ensure_openai_base_url_has_v1(base_url),
             model=model_name
@@ -61,7 +77,8 @@ class AzureOpenAIEmbeddingAdapter(BaseEmbeddingAdapter):
         else:
             raise ValueError("Invalid Azure OpenAI base_url format")
         
-        self._embedding = AzureOpenAIEmbeddings(
+        _ensure_openai_emb()
+        self._embedding = _AzureOpenAIEmbeddings(
             azure_endpoint=self.azure_endpoint,
             azure_deployment=self.azure_deployment,
             openai_api_key=api_key,
@@ -188,7 +205,8 @@ class GeminiEmbeddingAdapter(BaseEmbeddingAdapter):
         """
         self.api_key = api_key
         self.model_name = model_name
-        self._client = genai.Client(api_key=self.api_key)
+        _ensure_google()
+        self._client = _genai.Client(api_key=self.api_key)
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         try:

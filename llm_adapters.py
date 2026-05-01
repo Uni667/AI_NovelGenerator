@@ -3,13 +3,44 @@
 import logging
 import re
 from typing import Optional
-from langchain_openai import ChatOpenAI, AzureChatOpenAI
-from google import genai
-from google.genai import types
-from azure.ai.inference import ChatCompletionsClient
-from azure.core.credentials import AzureKeyCredential
-from azure.ai.inference.models import SystemMessage, UserMessage
-from openai import OpenAI
+
+# Lazy imports — only fail when a specific adapter is actually used
+_ChatOpenAI = _AzureChatOpenAI = None
+_genai = _types = None
+__ChatCompletionsClient = _AzureKeyCredential = _SystemMessage = _UserMessage = None
+_OpenAI = None
+
+def _ensure_openai():
+    global _ChatOpenAI, _AzureChatOpenAI
+    if _ChatOpenAI is None:
+        from langchain_openai import ChatOpenAI, AzureChatOpenAI
+        _ChatOpenAI = ChatOpenAI
+        _AzureChatOpenAI = AzureChatOpenAI
+
+def _ensure_google():
+    global _genai, _types
+    if _genai is None:
+        from google import genai as _g
+        from google.genai import types as _t
+        _genai = _g
+        _types = _t
+
+def _ensure_azure():
+    global __ChatCompletionsClient, _AzureKeyCredential, _SystemMessage, _UserMessage
+    if __ChatCompletionsClient is None:
+        from azure.ai.inference import _ChatCompletionsClient as _c
+        from azure.core.credentials import AzureKeyCredential as _k
+        from azure.ai.inference.models import SystemMessage as _s, UserMessage as _u
+        __ChatCompletionsClient = _c
+        _AzureKeyCredential = _k
+        _SystemMessage = _s
+        _UserMessage = _u
+
+def _ensure_direct_openai():
+    global _OpenAI
+    if _OpenAI is None:
+        from openai import OpenAI as _o
+        _OpenAI = _o
 
 
 def check_base_url(url: str) -> str:
@@ -35,7 +66,8 @@ class OpenAICompatibleAdapter(BaseLLMAdapter):
     def __init__(self, api_key: str, base_url: str, model_name: str,
                  max_tokens: int, temperature: float = 0.7,
                  timeout: Optional[int] = 600):
-        self._client = ChatOpenAI(
+        _ensure_openai()
+        self._client = _ChatOpenAI(
             model=model_name,
             api_key=api_key or 'ollama',
             base_url=check_base_url(base_url),
@@ -67,7 +99,8 @@ class OpenAIDirectAdapter(BaseLLMAdapter):
         self.temperature = temperature
         self.timeout = timeout
         self.system_prompt = system_prompt
-        self._client = OpenAI(
+        _ensure_direct_openai()
+        self._client = _OpenAI(
             base_url=base_url,
             api_key=api_key,
             timeout=timeout
@@ -102,11 +135,12 @@ class GeminiAdapter(BaseLLMAdapter):
         self.model_name = model_name
         self.max_tokens = max_tokens
         self.temperature = temperature
-        self._client = genai.Client(api_key=api_key)
+        _ensure_google()
+        self._client = _genai.Client(api_key=api_key)
 
     def invoke(self, prompt: str) -> str:
         try:
-            config = types.GenerateContentConfig(
+            config = _types.GenerateContentConfig(
                 max_output_tokens=self.max_tokens,
                 temperature=self.temperature,
             )
@@ -135,7 +169,8 @@ class AzureOpenAIAdapter(BaseLLMAdapter):
         )
         if not match:
             raise ValueError("Invalid Azure OpenAI base_url format")
-        self._client = AzureChatOpenAI(
+        _ensure_openai()
+        self._client = _AzureChatOpenAI(
             azure_endpoint=f"https://{match.group(1)}",
             azure_deployment=match.group(2),
             api_version=match.group(3),
@@ -171,9 +206,9 @@ class AzureAIAdapter(BaseLLMAdapter):
                 "Invalid Azure AI base_url format. "
                 "Expected: https://<endpoint>.services.ai.azure.com/models/chat/completions?api-version=xxx"
             )
-        self._client = ChatCompletionsClient(
+        self._client = _ChatCompletionsClient(
             endpoint=f"https://{match.group(1)}.services.ai.azure.com/models",
-            credential=AzureKeyCredential(api_key),
+            credential=_AzureKeyCredential(api_key),
             model=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -184,8 +219,8 @@ class AzureAIAdapter(BaseLLMAdapter):
         try:
             response = self._client.complete(
                 messages=[
-                    SystemMessage("You are a helpful assistant."),
-                    UserMessage(prompt)
+                    _SystemMessage("You are a helpful assistant."),
+                    _UserMessage(prompt)
                 ]
             )
             if response and response.choices:
