@@ -24,7 +24,7 @@ tooltips = {
     "embedding_model_name": "Embedding模型名称，如text-embedding-ada-002。",
     "embedding_retrieval_k": "向量检索时返回的Top-K结果数量。",
     "topic": "小说的大致主题或主要故事背景描述。",
-    "genre": "小说的题材类型，如玄幻、都市、科幻等。",
+    "genre": "小说的风格/流派，如系统流、重生流、凡人流等。",
     "num_chapters": "小说期望的章节总数。",
     "word_number": "每章的目标字数。",
     "filepath": "生成文件存储的根目录路径。所有txt文件、向量库等放在该目录下。",

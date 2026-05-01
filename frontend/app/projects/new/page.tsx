@@ -25,7 +25,7 @@ export default function NewProjectPage() {
     category: "",
     description: "",
     topic: "",
-    genre: "玄幻",
+    genre: "",
     num_chapters: 10,
     word_number: 3000,
     user_guidance: "",
@@ -141,11 +141,11 @@ export default function NewProjectPage() {
                 </p>
               </div>
               <div>
-                <Label>类型</Label>
+                <Label>风格/流派</Label>
                 <Select value={form.genre} onValueChange={(v) => v && setForm({ ...form, genre: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="选择风格流派" /></SelectTrigger>
                   <SelectContent>
-                    {["玄幻", "都市", "科幻", "仙侠", "悬疑", "历史", "言情", "武侠", "轻小说"].map(g => (
+                    {["系统流", "重生流", "穿越流", "凡人流", "无敌流", "废柴流", "种田流", "无限流", "洪荒流", "末世流", "异能流", "灵气复苏", "诸天流", "反派流", "退婚流", "传统升级流", "其他"].map(g => (
                       <SelectItem key={g} value={g}>{g}</SelectItem>
                     ))}
                   </SelectContent>

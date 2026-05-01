@@ -61,6 +61,7 @@ def generate_novel_architecture_ui(self):
                 llm_model=model_name,
                 topic=topic,
                 genre=genre,
+                category="",
                 number_of_chapters=num_chapters,
                 word_number=word_number,
                 filepath=filepath,

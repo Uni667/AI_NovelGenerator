@@ -240,10 +240,10 @@ export default function ProjectDashboard() {
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">分类</CardTitle></CardHeader>
-              <CardContent><span className="text-xl font-semibold">{config?.category || config?.genre || "-"}</span></CardContent>
+              <CardContent><span className="text-xl font-semibold">{config?.category || "-"}</span></CardContent>
             </Card>
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">类型</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">风格/流派</CardTitle></CardHeader>
               <CardContent><span className="text-xl font-semibold">{config?.genre || "-"}</span></CardContent>
             </Card>
             <Card>
@@ -601,7 +601,7 @@ export default function ProjectDashboard() {
                   <Input defaultValue={config?.category} onBlur={e => debouncedUpdate({ category: e.target.value })} />
                 </div>
                 <div>
-                  <Label>类型</Label>
+                  <Label>风格/流派</Label>
                   <Input defaultValue={config?.genre} onBlur={e => debouncedUpdate({ genre: e.target.value })} />
                 </div>
                 <div>

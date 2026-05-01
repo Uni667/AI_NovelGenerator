@@ -46,6 +46,7 @@ def Novel_architecture_generate(
     llm_model: str,
     topic: str,
     genre: str,
+    category: str = "",
     number_of_chapters: int,
     word_number: int,
     filepath: str,
@@ -85,6 +86,7 @@ def Novel_architecture_generate(
         prompt_core = prompt_definitions.core_seed_prompt.format(
             topic=topic,
             genre=genre,
+            category=category,
             number_of_chapters=number_of_chapters,
             word_number=word_number,
             user_guidance=user_guidance  # 修复：添加内容指导
@@ -173,7 +175,7 @@ def Novel_architecture_generate(
 
     final_content = (
         "#=== 0) 小说设定 ===\n"
-        f"主题：{topic},类型：{genre},篇幅：约{number_of_chapters}章（每章{word_number}字）\n\n"
+        f"主题：{topic},类型：{category},风格流派：{genre},篇幅：约{number_of_chapters}章（每章{word_number}字）\n\n"
         "#=== 1) 核心种子 ===\n"
         f"{core_seed_result}\n\n"
         "#=== 2) 角色动力学 ===\n"

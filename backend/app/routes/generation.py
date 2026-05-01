@@ -90,6 +90,7 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict):
     filepath = project["filepath"]
     topic = pconfig.get("topic", "")
     genre = pconfig.get("genre", "")
+    category = pconfig.get("category", "")
     num_chapters = pconfig.get("num_chapters", 0)
     word_number = pconfig.get("word_number", 3000)
     user_guidance = pconfig.get("user_guidance", "")
@@ -105,7 +106,7 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict):
             )
             store = load_vector_store(emb_adapter, filepath)
             if store:
-                query = f"{topic} {genre} {user_guidance}"
+                query = f"{topic} {category} {genre} {user_guidance}"
                 docs = store.similarity_search(query, k=5)
                 if docs:
                     knowledge_context = "\n".join([d.page_content for d in docs])[:3000]
@@ -118,7 +119,7 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict):
     emitter.emit("progress", {"step": "core_seed", "status": "running", "message": "正在生成核心种子..."})
     try:
         prompt_core = prompt_definitions.core_seed_prompt.format(
-            topic=topic, genre=genre,
+            topic=topic, genre=genre, category=category,
             number_of_chapters=num_chapters, word_number=word_number,
             user_guidance=user_guidance,
             knowledge_context=knowledge_context or "（无相关知识库内容）"
@@ -183,7 +184,7 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict):
 
     final_content = (
         f"#=== 0) 小说设定 ===\n"
-        f"主题：{topic}, 类型：{genre}, 篇幅：约{num_chapters}章（每章{word_number}字）\n\n"
+        f"主题：{topic}, 类型：{category}, 风格流派：{genre}, 篇幅：约{num_chapters}章（每章{word_number}字）\n\n"
         f"#=== 1) 核心种子 ===\n{core_seed}\n\n"
         f"#=== 2) 角色动力学 ===\n{char_dynamics}\n\n"
         f"#=== 3) 世界观 ===\n{world_building}\n\n"

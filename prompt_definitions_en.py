@@ -166,11 +166,12 @@ As a professional writer, use Step 1 of the "Snowflake Writing Method" to build 
 {knowledge_context}
 
 Theme: {topic}
-Genre: {genre}
+Genre: {category}
+Style/Sub-genre: {genre}
 Length: approximately {number_of_chapters} chapters (each chapter {word_number} words)
 User guidance: {user_guidance}
 
-If the [Reference Knowledge Base] above contains specific worldbuilding, character, or plot settings, follow them strictly. If the knowledge base is empty or has no relevant content, freely develop based on the theme and genre.
+If the [Reference Knowledge Base] above contains specific worldbuilding, character, or plot settings, follow them strictly. If the knowledge base is empty or has no relevant content, freely develop based on the theme, genre, and style.
 
 Summarize the essence of the story in a single-sentence formula, for example:
 "When [protagonist] encounters [core event], they must [key action], otherwise [catastrophic consequence]; meanwhile, [a hidden, greater crisis] is brewing."
