@@ -6,7 +6,7 @@ from backend.app.routes import config, projects, chapters, files, knowledge, gen
 
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000,https://ai-novel-generator-topaz.vercel.app,https://ai-novel-generator.vercel.app"
+    "http://localhost:3000,http://127.0.0.1:3000,https://ai-novel-generator-topaz.vercel.app,https://ai-novel-generator.vercel.app,https://frontend-chi-one-84.vercel.app"
 ).split(",")
 
 app = FastAPI(title="AI 小说生成器 API", version="1.0", docs_url="/docs")
