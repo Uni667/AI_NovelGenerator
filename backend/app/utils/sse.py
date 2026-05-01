@@ -4,7 +4,7 @@ from typing import Optional
 
 
 class SSEEmitter:
-    """全局单例，允许同步代码向异步队列推送 SSE 事件"""
+    """每个连接独立实例，消除全局单例竞态条件"""
 
     def __init__(self):
         self._queue: Optional[asyncio.Queue] = None
@@ -26,16 +26,13 @@ class SSEEmitter:
         self._loop = None
 
 
-sse_emitter = SSEEmitter()
-
-
 async def sse_event_generator(queue: asyncio.Queue, disconnect_check=None):
     """从队列中读取事件并生成 SSE 格式字符串"""
     while True:
         if disconnect_check and await disconnect_check():
             break
         msg = await queue.get()
-        if msg is None:  # sentinel
+        if msg is None:
             break
         event = msg["event"]
         data = json.dumps(msg["data"], ensure_ascii=False)
