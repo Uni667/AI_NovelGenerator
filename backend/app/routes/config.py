@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from backend.app.services import config_service
 from backend.app.utils.crypto import mask_key
+from backend.app.models.config import LLMConfigCreate, LLMConfigUpdate, EmbeddingConfigCreate
 
 router = APIRouter(tags=["全局配置"])
 
@@ -24,18 +25,18 @@ def list_llm_configs():
 
 
 @router.post("/api/v1/config/llm")
-def create_llm_config(data: dict):
+def create_llm_config(data: LLMConfigCreate):
     try:
-        result = config_service.add_llm_config(data["name"], data)
-        return {"name": data["name"], "api_key_masked": mask_key(result.get("api_key", ""))}
+        result = config_service.add_llm_config(data.name, data.model_dump())
+        return {"name": data.name, "api_key_masked": mask_key(result.get("api_key", ""))}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.put("/api/v1/config/llm/{name}")
-def update_llm_config(name: str, data: dict):
+def update_llm_config(name: str, data: LLMConfigUpdate):
     try:
-        result = config_service.update_llm_config(name, data)
+        result = config_service.update_llm_config(name, data.model_dump(exclude_none=True))
         return {"name": name, "api_key_masked": mask_key(result.get("api_key", ""))}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -77,10 +78,10 @@ def list_embedding_configs():
 
 
 @router.post("/api/v1/config/embedding")
-def create_embedding_config(data: dict):
+def create_embedding_config(data: EmbeddingConfigCreate):
     try:
-        result = config_service.add_embedding_config(data["name"], data)
-        return {"name": data["name"], "api_key_masked": mask_key(result.get("api_key", ""))}
+        result = config_service.add_embedding_config(data.name, data.model_dump())
+        return {"name": data.name, "api_key_masked": mask_key(result.get("api_key", ""))}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

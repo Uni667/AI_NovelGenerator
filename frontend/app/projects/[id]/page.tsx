@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Skeleton } from "@/components/ui/skeleton"
 import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
-import { Play, FileText, BookOpen, Upload, Trash2, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+import { Play, FileText, BookOpen, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, Download, FileDown } from "lucide-react"
 
 export default function ProjectDashboard() {
   const params = useParams()
@@ -34,6 +34,12 @@ export default function ProjectDashboard() {
   const [activeTab, setActiveTab] = useState("overview")
   const [knowledgeFile, setKnowledgeFile] = useState<File | null>(null)
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
+  const [characters, setCharacters] = useState<any[]>([])
+  const [charDialogOpen, setCharDialogOpen] = useState(false)
+  const [editChar, setEditChar] = useState<any>(null)
+  const [charName, setCharName] = useState("")
+  const [charDesc, setCharDesc] = useState("")
+  const [deleteCharTarget, setDeleteCharTarget] = useState<number | null>(null)
 
   const lastProgress = events.filter(e => e.type === "progress").pop()
   const lastPartial = events.filter(e => e.type === "partial").pop()
@@ -47,6 +53,61 @@ export default function ProjectDashboard() {
   useEffect(() => {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [])
+
+  const loadCharacters = async () => {
+    try { setCharacters(await api.characters.list(id)) } catch { /* ignore */ }
+  }
+
+  useEffect(() => {
+    if (activeTab === "characters") loadCharacters()
+  }, [activeTab, id])
+
+  const handleCreateCharacter = async () => {
+    if (!charName.trim()) return
+    await api.characters.create(id, { name: charName, description: charDesc })
+    toast.success("角色已创建")
+    setCharDialogOpen(false)
+    setCharName("")
+    setCharDesc("")
+    loadCharacters()
+  }
+
+  const handleUpdateCharacter = async () => {
+    if (!editChar || !charName.trim()) return
+    await api.characters.update(id, editChar.id, { name: charName, description: charDesc })
+    toast.success("角色已更新")
+    setEditChar(null)
+    setCharDialogOpen(false)
+    loadCharacters()
+  }
+
+  const handleDeleteCharacter = async () => {
+    if (deleteCharTarget === null) return
+    await api.characters.delete(id, deleteCharTarget)
+    toast.success("角色已删除")
+    setDeleteCharTarget(null)
+    loadCharacters()
+  }
+
+  const handleImportCharacters = async () => {
+    const result = await api.characters.importFromState(id)
+    toast.success(result.message || "导入完成")
+    loadCharacters()
+  }
+
+  const openEditDialog = (char: any) => {
+    setEditChar(char)
+    setCharName(char.name)
+    setCharDesc(char.description || "")
+    setCharDialogOpen(true)
+  }
+
+  const openCreateDialog = () => {
+    setEditChar(null)
+    setCharName("")
+    setCharDesc("")
+    setCharDialogOpen(true)
+  }
 
   const handleGenerateArchitecture = () => {
     setActiveTab("generation")
@@ -107,6 +168,7 @@ export default function ProjectDashboard() {
           <TabsTrigger value="overview">概览</TabsTrigger>
           <TabsTrigger value="generation">AI 生成</TabsTrigger>
           <TabsTrigger value="knowledge">知识库</TabsTrigger>
+          <TabsTrigger value="characters">角色管理</TabsTrigger>
           <TabsTrigger value="settings">参数设置</TabsTrigger>
         </TabsList>
 
@@ -138,6 +200,13 @@ export default function ProjectDashboard() {
               </Button>
               <Button onClick={handleGenerateBlueprint} disabled={isConnected} variant="outline">
                 <FileText className="h-4 w-4 mr-2" />生成章节目录
+              </Button>
+              <Separator orientation="vertical" className="h-8" />
+              <Button variant="outline" onClick={() => api.export.download(id, "txt")}>
+                <FileDown className="h-4 w-4 mr-2" />导出 TXT
+              </Button>
+              <Button variant="outline" onClick={() => api.export.download(id, "html")}>
+                <FileDown className="h-4 w-4 mr-2" />导出 HTML
               </Button>
             </CardContent>
           </Card>
@@ -251,6 +320,50 @@ export default function ProjectDashboard() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="characters">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <CardTitle>角色管理</CardTitle>
+                  <CardDescription>管理小说中的角色信息</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleImportCharacters}>
+                    <Upload className="h-4 w-4 mr-2" />从角色状态导入
+                  </Button>
+                  <Button size="sm" onClick={openCreateDialog}>
+                    <UserPlus className="h-4 w-4 mr-2" />新增角色
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {characters.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>暂无角色，先生成架构后可从角色状态导入，或手动创建</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {characters.map((char: any) => (
+                    <div key={char.id} className="flex items-start justify-between p-3 rounded-lg border hover:bg-accent">
+                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openEditDialog(char)}>
+                        <p className="font-medium">{char.name}</p>
+                        {char.description && <p className="text-sm text-muted-foreground truncate mt-1">{char.description}</p>}
+                        <p className="text-xs text-muted-foreground mt-1">{new Date(char.updated_at).toLocaleDateString("zh-CN")}</p>
+                      </div>
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteCharTarget(char.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="settings">
           <Card>
             <CardHeader><CardTitle>项目参数</CardTitle></CardHeader>
@@ -298,6 +411,40 @@ export default function ProjectDashboard() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setClearDialogOpen(false)}>取消</Button>
             <Button variant="destructive" onClick={handleClearVector}>确认清空</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={charDialogOpen} onOpenChange={(v) => { if (!v) { setCharDialogOpen(false); setEditChar(null) } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editChar ? "编辑角色" : "新增角色"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>角色名称</Label>
+              <Input value={charName} onChange={e => setCharName(e.target.value)} placeholder="例如：主角名字" />
+            </div>
+            <div>
+              <Label>描述</Label>
+              <Textarea value={charDesc} onChange={e => setCharDesc(e.target.value)} rows={4} placeholder="角色的外貌、性格、背景故事等" />
+            </div>
+            <Button className="w-full" onClick={editChar ? handleUpdateCharacter : handleCreateCharacter} disabled={!charName.trim()}>
+              {editChar ? "保存修改" : "创建"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteCharTarget !== null} onOpenChange={(v) => { if (!v) setDeleteCharTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除角色</DialogTitle>
+            <DialogDescription>此操作不可撤销。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteCharTarget(null)}>取消</Button>
+            <Button variant="destructive" onClick={handleDeleteCharacter}>确认删除</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

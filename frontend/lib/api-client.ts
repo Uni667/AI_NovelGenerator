@@ -66,4 +66,16 @@ export const api = {
     chapter: (projectId: string, num: number) => new EventSource(`${BASE_URL}/api/v1/projects/${projectId}/generate/chapter/${num}`),
     finalize: (projectId: string, num: number) => new EventSource(`${BASE_URL}/api/v1/projects/${projectId}/generate/finalize/${num}`),
   },
+  characters: {
+    list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/characters`),
+    create: (projectId: string, data: { name: string; description?: string }) => request<any>(`/api/v1/projects/${projectId}/characters`, { method: "POST", body: JSON.stringify(data) }),
+    update: (projectId: string, charId: number, data: any) => request<any>(`/api/v1/projects/${projectId}/characters/${charId}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (projectId: string, charId: number) => request<void>(`/api/v1/projects/${projectId}/characters/${charId}`, { method: "DELETE" }),
+    importFromState: (projectId: string) => request<any>(`/api/v1/projects/${projectId}/characters/import-from-state`, { method: "POST" }),
+  },
+  export: {
+    download: (projectId: string, format: "txt" | "html" = "txt") => {
+      window.open(`${BASE_URL}/api/v1/projects/${projectId}/export?format=${format}`, "_blank")
+    },
+  },
 }
