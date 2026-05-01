@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Skeleton } from "@/components/ui/skeleton"
 import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
-import { Play, FileText, BookOpen, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, Download, FileDown } from "lucide-react"
+import { Play, FileText, BookOpen, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, FileDown, Wand2, BookMarked, Target, Tag, FileEdit, RefreshCw } from "lucide-react"
 
 export default function ProjectDashboard() {
   const params = useParams()
@@ -40,6 +40,16 @@ export default function ProjectDashboard() {
   const [charName, setCharName] = useState("")
   const [charDesc, setCharDesc] = useState("")
   const [deleteCharTarget, setDeleteCharTarget] = useState<number | null>(null)
+
+  // 平台工具状态
+  const [titles, setTitles] = useState<string[]>([])
+  const [blurbs, setBlurbs] = useState<string[]>([])
+  const [hookResult, setHookResult] = useState<any>(null)
+  const [batchHookResult, setBatchHookResult] = useState<any[]>([])
+  const [tagsResult, setTagsResult] = useState<any>(null)
+  const [chapterTitles, setChapterTitles] = useState<string[]>([])
+  const [platformLoading, setPlatformLoading] = useState("")
+  const [hookChapterNum, setHookChapterNum] = useState(1)
 
   const lastProgress = events.filter(e => e.type === "progress").pop()
   const lastPartial = events.filter(e => e.type === "partial").pop()
@@ -109,6 +119,42 @@ export default function ProjectDashboard() {
     setCharDialogOpen(true)
   }
 
+  const withLoading = async (key: string, fn: () => Promise<void>) => {
+    setPlatformLoading(key)
+    try { await fn() } catch (e: any) { toast.error(e.message || "操作失败") }
+    finally { setPlatformLoading("") }
+  }
+
+  const handleGenTitles = () => withLoading("titles", async () => {
+    const res = await api.platform.titles(id)
+    setTitles(res.titles)
+  })
+
+  const handleGenBlurb = () => withLoading("blurb", async () => {
+    const res = await api.platform.blurb(id)
+    setBlurbs(res.blurbs)
+  })
+
+  const handleHookCheck = () => withLoading("hook", async () => {
+    const res = await api.platform.hookCheck(id, hookChapterNum)
+    setHookResult(res.analysis)
+  })
+
+  const handleBatchHookCheck = () => withLoading("batch", async () => {
+    const res = await api.platform.batchHookCheck(id)
+    setBatchHookResult(res.chapters || [])
+  })
+
+  const handleGenTags = () => withLoading("tags", async () => {
+    const res = await api.platform.tags(id)
+    setTagsResult(res.tags)
+  })
+
+  const handleGenChapterTitle = () => withLoading("chapterTitle", async () => {
+    const res = await api.platform.chapterTitle(id, hookChapterNum)
+    setChapterTitles(res.titles)
+  })
+
   const handleGenerateArchitecture = () => {
     setActiveTab("generation")
     const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
@@ -169,6 +215,7 @@ export default function ProjectDashboard() {
           <TabsTrigger value="generation">AI 生成</TabsTrigger>
           <TabsTrigger value="knowledge">知识库</TabsTrigger>
           <TabsTrigger value="characters">角色管理</TabsTrigger>
+          <TabsTrigger value="platform">🍅 番茄工具</TabsTrigger>
           <TabsTrigger value="settings">参数设置</TabsTrigger>
         </TabsList>
 
@@ -362,6 +409,160 @@ export default function ProjectDashboard() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* 番茄平台工具 Tab */}
+        <TabsContent value="platform">
+          <div className="grid gap-6">
+            {/* 1. 书名生成 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><BookMarked className="h-5 w-5" />AI 书名生成</CardTitle>
+                <CardDescription>根据小说设定，用番茄平台爆款公式（身份反转+冲突 / 悬念+关键词 / 情绪+结果前置）生成书名候选</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button onClick={handleGenTitles} disabled={platformLoading === "titles"}>
+                  {platformLoading === "titles" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
+                  生成书名
+                </Button>
+                {titles.length > 0 && (
+                  <div className="space-y-2">
+                    {titles.map((t, i) => (
+                      <div key={i} className="p-3 rounded-lg border bg-muted/30 text-sm flex items-start gap-2">
+                        <Badge variant="outline" className="shrink-0 mt-0.5">{i + 1}</Badge>
+                        <span>{t}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 2. 简介生成 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><FileEdit className="h-5 w-5" />AI 简介生成</CardTitle>
+                <CardDescription>用「核心冲突 + 金手指 + 爽点预告 + 悬念钩子」公式生成番茄式简介</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button onClick={handleGenBlurb} disabled={platformLoading === "blurb"}>
+                  {platformLoading === "blurb" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
+                  生成简介
+                </Button>
+                {blurbs.map((b, i) => (
+                  <div key={i} className="p-4 rounded-lg border bg-muted/30">
+                    <p className="text-xs text-muted-foreground mb-1">版本 {i + 1}</p>
+                    <p className="text-sm leading-relaxed">{b}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            {/* 3. 钩子检测 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Target className="h-5 w-5" />开篇 & 章节钩子检测</CardTitle>
+                <CardDescription>检查前200字是否有强冲突/悬念，以及每章结尾是否留了钩子。番茄算法核心指标。</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-sm">章节号：</span>
+                  <Input type="number" value={hookChapterNum} onChange={e => setHookChapterNum(+e.target.value)} className="w-20" min={1} />
+                  <Button onClick={handleHookCheck} disabled={platformLoading === "hook"} variant="outline">
+                    {platformLoading === "hook" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Target className="h-4 w-4 mr-2" />}
+                    检测开篇钩子
+                  </Button>
+                  <Button onClick={handleGenChapterTitle} disabled={platformLoading === "chapterTitle"} variant="outline">
+                    {platformLoading === "chapterTitle" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileEdit className="h-4 w-4 mr-2" />}
+                    生成章节标题
+                  </Button>
+                  <Separator orientation="vertical" className="h-8" />
+                  <Button onClick={handleBatchHookCheck} disabled={platformLoading === "batch"} variant="outline">
+                    {platformLoading === "batch" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                    批量检测所有章节结尾钩子
+                  </Button>
+                </div>
+
+                {hookResult && (
+                  <div className="p-4 rounded-lg border space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">评分：</span>
+                      <Badge variant={hookResult.score >= 7 ? "default" : "destructive"}>{hookResult.score}/10</Badge>
+                      <Badge variant="outline">{hookResult.hook_strength}</Badge>
+                    </div>
+                    {hookResult.issues?.length > 0 && (
+                      <div className="text-sm text-muted-foreground">
+                        <span className="text-destructive font-medium">问题：</span>
+                        {hookResult.issues.map((issue: string, i: number) => (
+                          <p key={i} className="ml-2">- {issue}</p>
+                        ))}
+                      </div>
+                    )}
+                    {hookResult.rewrite_suggestion && <p className="text-sm">建议：{hookResult.rewrite_suggestion}</p>}
+                    {hookResult.rewritten_opening && (
+                      <div className="p-3 rounded bg-muted/50 text-sm">
+                        <p className="text-xs text-muted-foreground mb-1">改写示例：</p>
+                        <p>{hookResult.rewritten_opening}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {chapterTitles.length > 0 && (
+                  <div className="space-y-1 p-3 rounded-lg border bg-muted/30">
+                    <p className="text-xs text-muted-foreground mb-2">番茄式章节标题候选：</p>
+                    {chapterTitles.map((t, i) => <p key={i} className="text-sm">「{t}」</p>)}
+                  </div>
+                )}
+
+                {batchHookResult.length > 0 && (
+                  <div className="space-y-2 max-h-64 overflow-auto">
+                    <p className="text-sm font-medium">批量检测结果：</p>
+                    {batchHookResult.map((r: any) => (
+                      <div key={r.chapter_number} className="flex items-center gap-3 p-2 rounded border text-sm">
+                        <span className="font-mono">第{r.chapter_number}章</span>
+                        <Badge variant={r.has_hook ? "default" : "destructive"}>{r.has_hook ? "有钩子" : "缺钩子"}</Badge>
+                        {r.hook_type && <span className="text-muted-foreground">{r.hook_type}</span>}
+                        {r.suggestion && <span className="text-muted-foreground text-xs truncate">{r.suggestion}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 4. 标签生成 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Tag className="h-5 w-5" />平台标签 & 关键词</CardTitle>
+                <CardDescription>生成适配番茄搜索算法的标签和关键词，提升搜索曝光</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button onClick={handleGenTags} disabled={platformLoading === "tags"}>
+                  {platformLoading === "tags" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
+                  生成标签
+                </Button>
+                {tagsResult && (
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm font-medium mb-2">主标签：</p>
+                      <div className="flex flex-wrap gap-2">
+                        {tagsResult.main_tags?.map((t: string, i: number) => <Badge key={i} className="cursor-default">{t}</Badge>)}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium mb-2">搜索关键词：</p>
+                      <div className="flex flex-wrap gap-2">
+                        {tagsResult.search_keywords?.map((k: string, i: number) => <Badge key={i} variant="secondary" className="cursor-default">{k}</Badge>)}
+                      </div>
+                    </div>
+                    {tagsResult.category_recommendation && <p className="text-sm">推荐分类：<span className="font-medium">{tagsResult.category_recommendation}</span></p>}
+                    {tagsResult.target_audience && <p className="text-sm text-muted-foreground">目标读者：{tagsResult.target_audience}</p>}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="settings">

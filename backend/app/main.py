@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import init_db
-from backend.app.routes import config, projects, chapters, files, knowledge, generation, characters
+from backend.app.routes import config, projects, chapters, files, knowledge, generation, characters, platform_tools
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 
@@ -23,6 +23,7 @@ app.include_router(files.router)
 app.include_router(knowledge.router)
 app.include_router(generation.router)
 app.include_router(characters.router)
+app.include_router(platform_tools.router)
 
 
 @app.on_event("startup")
