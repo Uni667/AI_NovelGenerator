@@ -1,15 +1,17 @@
 import os
 import datetime
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from backend.app.services import project_service
+from backend.app.auth import get_current_user
 from backend.app.database import get_db
 
 router = APIRouter(tags=["知识库"])
 
 
 @router.post("/api/v1/projects/{project_id}/knowledge/upload")
-async def upload_knowledge(project_id: str, file: UploadFile = File(...)):
-    project = project_service.get_project(project_id)
+async def upload_knowledge(project_id: str, request: Request, file: UploadFile = File(...)):
+    user_id = get_current_user(request)
+    project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
@@ -35,8 +37,9 @@ async def upload_knowledge(project_id: str, file: UploadFile = File(...)):
 
 
 @router.delete("/api/v1/projects/{project_id}/knowledge/clear-vector")
-def clear_vector_db(project_id: str):
-    project = project_service.get_project(project_id)
+def clear_vector_db(project_id: str, request: Request):
+    user_id = get_current_user(request)
+    project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 

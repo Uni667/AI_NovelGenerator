@@ -29,6 +29,43 @@ def get_db():
 def init_db():
     with get_db() as conn:
         conn.executescript("""
+            CREATE TABLE IF NOT EXISTS user (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS user_llm_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                interface_format TEXT NOT NULL DEFAULT 'OpenAI',
+                api_key TEXT NOT NULL,
+                base_url TEXT DEFAULT '',
+                model_name TEXT DEFAULT '',
+                temperature REAL DEFAULT 0.7,
+                max_tokens INTEGER DEFAULT 8192,
+                timeout INTEGER DEFAULT 600,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(user_id, name)
+            );
+
+            CREATE TABLE IF NOT EXISTS user_embedding_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                interface_format TEXT NOT NULL DEFAULT 'OpenAI',
+                api_key TEXT NOT NULL,
+                base_url TEXT DEFAULT '',
+                model_name TEXT DEFAULT '',
+                retrieval_k INTEGER DEFAULT 4,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(user_id, name)
+            );
+
             CREATE TABLE IF NOT EXISTS project (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -106,5 +143,10 @@ def init_db():
             pass
         try:
             conn.execute("ALTER TABLE project_config ADD COLUMN category TEXT DEFAULT ''")
+        except Exception:
+            pass
+        # 迁移：新增 user_id 列（多用户）
+        try:
+            conn.execute("ALTER TABLE project ADD COLUMN user_id TEXT REFERENCES user(id)")
         except Exception:
             pass

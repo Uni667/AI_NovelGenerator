@@ -1,24 +1,29 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from backend.app.services import project_service, chapter_service
+from backend.app.auth import get_current_user
 from backend.app.models.chapter import ChapterUpdate
 
 router = APIRouter(tags=["章节管理"])
 
 
-@router.get("/api/v1/projects/{project_id}/chapters")
-def list_chapters(project_id: str):
-    project = project_service.get_project(project_id)
+def _check_project(project_id: str, request: Request) -> dict:
+    user_id = get_current_user(request)
+    project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    return project
+
+
+@router.get("/api/v1/projects/{project_id}/chapters")
+def list_chapters(project_id: str, request: Request):
+    project = _check_project(project_id, request)
     chapter_service.sync_chapters_from_directory(project_id, project["filepath"])
     return chapter_service.list_chapters(project_id)
 
 
 @router.get("/api/v1/projects/{project_id}/chapters/{chapter_number}")
-def get_chapter(project_id: str, chapter_number: int):
-    project = project_service.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def get_chapter(project_id: str, chapter_number: int, request: Request):
+    project = _check_project(project_id, request)
     meta = chapter_service.get_chapter(project_id, chapter_number)
     content = chapter_service.get_chapter_content(project_id, chapter_number, project["filepath"])
     return {
@@ -29,10 +34,8 @@ def get_chapter(project_id: str, chapter_number: int):
 
 
 @router.put("/api/v1/projects/{project_id}/chapters/{chapter_number}")
-def update_chapter(project_id: str, chapter_number: int, data: ChapterUpdate):
-    project = project_service.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def update_chapter(project_id: str, chapter_number: int, data: ChapterUpdate, request: Request):
+    project = _check_project(project_id, request)
     if data.content:
         result = chapter_service.update_chapter_content(project_id, chapter_number, project["filepath"], data.content)
         return {"message": "已保存", "meta": result}

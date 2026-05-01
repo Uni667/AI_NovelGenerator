@@ -1,8 +1,16 @@
+import { getToken } from "./auth"
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+
+function authHeaders(): Record<string, string> {
+  const token = getToken()
+  if (!token) return {}
+  return { Authorization: `Bearer ${token}` }
+}
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${url}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
     ...options,
   })
   if (!res.ok) {
@@ -14,6 +22,11 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       const text = await res.text()
       if (text) message = text
     }
+    if (res.status === 401 && typeof window !== "undefined") {
+      const { clearToken } = await import("./auth")
+      clearToken()
+      window.location.href = "/login"
+    }
     throw new Error(message)
   }
   const contentType = res.headers.get("content-type") || ""
@@ -21,6 +34,12 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     return res.json()
   }
   return undefined as unknown as T
+}
+
+function sseUrl(path: string): string {
+  const token = getToken()
+  const sep = path.includes("?") ? "&" : "?"
+  return `${BASE_URL}${path}${sep}token=${encodeURIComponent(token || "")}`
 }
 
 export const api = {
@@ -39,7 +58,7 @@ export const api = {
     update: (projectId: string, num: number, data: any) => request<any>(`/api/v1/projects/${projectId}/chapters/${num}`, { method: "PUT", body: JSON.stringify(data) }),
   },
   files: {
-    get: (projectId: string, filename: string) => fetch(`${BASE_URL}/api/v1/projects/${projectId}/files/${filename}`).then(r => r.text()),
+    get: (projectId: string, filename: string) => fetch(`${BASE_URL}/api/v1/projects/${projectId}/files/${filename}`, { headers: authHeaders() }).then(r => r.text()),
   },
   config: {
     llmList: () => request<Record<string, any>>("/api/v1/config/llm"),
@@ -56,15 +75,15 @@ export const api = {
     upload: (projectId: string, file: File) => {
       const formData = new FormData()
       formData.append("file", file)
-      return fetch(`${BASE_URL}/api/v1/projects/${projectId}/knowledge/upload`, { method: "POST", body: formData }).then(r => r.json())
+      return fetch(`${BASE_URL}/api/v1/projects/${projectId}/knowledge/upload`, { method: "POST", body: formData, headers: authHeaders() }).then(r => r.json())
     },
     clearVector: (projectId: string) => request<void>(`/api/v1/projects/${projectId}/knowledge/clear-vector`, { method: "DELETE" }),
   },
   generate: {
-    architecture: (projectId: string) => new EventSource(`${BASE_URL}/api/v1/projects/${projectId}/generate/architecture`),
-    blueprint: (projectId: string) => new EventSource(`${BASE_URL}/api/v1/projects/${projectId}/generate/blueprint`),
-    chapter: (projectId: string, num: number) => new EventSource(`${BASE_URL}/api/v1/projects/${projectId}/generate/chapter/${num}`),
-    finalize: (projectId: string, num: number) => new EventSource(`${BASE_URL}/api/v1/projects/${projectId}/generate/finalize/${num}`),
+    architecture: (projectId: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/architecture`)),
+    blueprint: (projectId: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/blueprint`)),
+    chapter: (projectId: string, num: number) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/chapter/${num}`)),
+    finalize: (projectId: string, num: number) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/finalize/${num}`)),
   },
   characters: {
     list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/characters`),
@@ -75,7 +94,7 @@ export const api = {
   },
   export: {
     download: (projectId: string, format: "txt" | "html" = "txt") => {
-      window.open(`${BASE_URL}/api/v1/projects/${projectId}/export?format=${format}`, "_blank")
+      window.open(sseUrl(`/api/v1/projects/${projectId}/export?format=${format}`), "_blank")
     },
   },
   platform: {

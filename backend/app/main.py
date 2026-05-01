@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import init_db
-from backend.app.routes import config, projects, chapters, files, knowledge, generation, characters, platform_tools
+from backend.app.routes import config, projects, chapters, files, knowledge, generation, characters, platform_tools, auth
 
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
@@ -27,6 +27,7 @@ app.include_router(knowledge.router)
 app.include_router(generation.router)
 app.include_router(characters.router)
 app.include_router(platform_tools.router)
+app.include_router(auth.router)
 
 
 @app.on_event("startup")

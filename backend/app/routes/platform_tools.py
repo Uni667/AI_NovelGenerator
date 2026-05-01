@@ -1,9 +1,10 @@
 import os
 import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from backend.app.services import project_service, chapter_service
-from backend.app.dependencies import get_config as get_global_config, get_llm_config
+from backend.app.dependencies import get_user_llm_config
+from backend.app.auth import get_current_user
 
 router = APIRouter(tags=["番茄平台工具"])
 
@@ -146,8 +147,8 @@ CHAPTER_TITLE_PROMPT = """你是一位番茄免费小说平台的编辑。请根
 
 # ── Helper ──────────────────────────────────────────────────────────
 
-def _get_llm_and_config(project_id: str):
-    project = project_service.get_project(project_id)
+def _get_llm_and_config(project_id: str, user_id: str):
+    project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
@@ -155,9 +156,15 @@ def _get_llm_and_config(project_id: str):
     if not pconfig:
         raise HTTPException(status_code=404, detail="项目配置不存在")
 
-    global_config = get_global_config()
-    llm_name = pconfig.get("prompt_draft_llm", "") or next(iter(global_config.get("llm_configs", {}).keys()), "")
-    llm_conf = get_llm_config(llm_name)
+    llm_name = pconfig.get("prompt_draft_llm", "")
+    from backend.app.services.user_service import list_user_llm_configs, get_user_llm_config_raw
+    if llm_name:
+        llm_conf = get_user_llm_config_raw(user_id, llm_name)
+    else:
+        configs = list_user_llm_configs(user_id)
+        if not configs:
+            raise HTTPException(status_code=400, detail="没有可用的 LLM 配置")
+        llm_conf = get_user_llm_config_raw(user_id, next(iter(configs.keys())))
     if not llm_conf:
         raise HTTPException(status_code=400, detail="没有可用的 LLM 配置")
 
@@ -189,8 +196,9 @@ def _trim_response(text: str, max_chars: int = 3000) -> str:
 # ── 1. 书名生成 ─────────────────────────────────────────────────────
 
 @router.post("/api/v1/projects/{project_id}/tools/titles")
-def generate_titles(project_id: str):
-    llm, project, pconfig = _get_llm_and_config(project_id)
+def generate_titles(project_id: str, request: Request):
+    user_id = get_current_user(request)
+    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
 
     prompt = TITLE_GENERATION_PROMPT.format(
         topic=pconfig.get("topic", ""),
@@ -211,8 +219,9 @@ def generate_titles(project_id: str):
 # ── 2. 简介生成 ─────────────────────────────────────────────────────
 
 @router.post("/api/v1/projects/{project_id}/tools/blurb")
-def generate_blurb(project_id: str):
-    llm, project, pconfig = _get_llm_and_config(project_id)
+def generate_blurb(project_id: str, request: Request):
+    user_id = get_current_user(request)
+    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
     arch_summary = _read_architecture(project["filepath"])
 
     prompt = BLURB_GENERATION_PROMPT.format(
@@ -235,8 +244,9 @@ def generate_blurb(project_id: str):
 # ── 3. 开篇钩子检测 ─────────────────────────────────────────────────
 
 @router.post("/api/v1/projects/{project_id}/tools/hook-check")
-def check_opening_hook(project_id: str, chapter_number: int = 1):
-    llm, project, pconfig = _get_llm_and_config(project_id)
+def check_opening_hook(project_id: str, request: Request, chapter_number: int = 1):
+    user_id = get_current_user(request)
+    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
 
     chapter_content = chapter_service.get_chapter_content(
         project_id, chapter_number, project["filepath"]
@@ -263,8 +273,9 @@ def check_opening_hook(project_id: str, chapter_number: int = 1):
 # ── 4. 章节结尾钩子检测 ─────────────────────────────────────────────
 
 @router.post("/api/v1/projects/{project_id}/tools/chapter-hook-check")
-def check_chapter_ending_hook(project_id: str, chapter_number: int):
-    llm, project, pconfig = _get_llm_and_config(project_id)
+def check_chapter_ending_hook(project_id: str, chapter_number: int, request: Request):
+    user_id = get_current_user(request)
+    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
 
     chapter_content = chapter_service.get_chapter_content(
         project_id, chapter_number, project["filepath"]
@@ -290,8 +301,9 @@ def check_chapter_ending_hook(project_id: str, chapter_number: int):
 # ── 5. 批量章节钩子检测 ─────────────────────────────────────────────
 
 @router.post("/api/v1/projects/{project_id}/tools/batch-hook-check")
-def batch_check_chapter_hooks(project_id: str):
-    llm, project, pconfig = _get_llm_and_config(project_id)
+def batch_check_chapter_hooks(project_id: str, request: Request):
+    user_id = get_current_user(request)
+    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
 
     chapters = chapter_service.list_chapters(project_id)
     if not chapters:
@@ -328,8 +340,9 @@ def batch_check_chapter_hooks(project_id: str):
 # ── 6. 标签/关键词生成 ──────────────────────────────────────────────
 
 @router.post("/api/v1/projects/{project_id}/tools/tags")
-def generate_tags(project_id: str):
-    llm, project, pconfig = _get_llm_and_config(project_id)
+def generate_tags(project_id: str, request: Request):
+    user_id = get_current_user(request)
+    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
     arch_summary = _read_architecture(project["filepath"])
 
     prompt = TAGS_GENERATION_PROMPT.format(
@@ -352,8 +365,9 @@ def generate_tags(project_id: str):
 # ── 7. 章节标题生成 ─────────────────────────────────────────────────
 
 @router.post("/api/v1/projects/{project_id}/tools/chapter-title")
-def generate_chapter_title(project_id: str, chapter_number: int):
-    llm, project, pconfig = _get_llm_and_config(project_id)
+def generate_chapter_title(project_id: str, chapter_number: int, request: Request):
+    user_id = get_current_user(request)
+    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
 
     chapter_meta = chapter_service.get_chapter(project_id, chapter_number)
     chapter_content = chapter_service.get_chapter_content(project_id, chapter_number, project["filepath"])

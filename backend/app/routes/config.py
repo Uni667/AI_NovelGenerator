@@ -1,60 +1,50 @@
-from fastapi import APIRouter, HTTPException
-from backend.app.services import config_service
-from backend.app.utils.crypto import mask_key
+from fastapi import APIRouter, HTTPException, Request
+from backend.app.services import user_service
+from backend.app.auth import get_current_user
 from backend.app.models.config import LLMConfigCreate, LLMConfigUpdate, EmbeddingConfigCreate
 
-router = APIRouter(tags=["全局配置"])
+router = APIRouter(tags=["API 配置"])
 
 
 @router.get("/api/v1/config/llm")
-def list_llm_configs():
-    configs = config_service.get_all_llm_configs()
-    result = {}
-    for name, conf in configs.items():
-        result[name] = {
-            "name": name,
-            "base_url": conf.get("base_url", ""),
-            "model_name": conf.get("model_name", ""),
-            "temperature": conf.get("temperature", 0.7),
-            "max_tokens": conf.get("max_tokens", 8192),
-            "timeout": conf.get("timeout", 600),
-            "interface_format": conf.get("interface_format", "OpenAI"),
-            "api_key_masked": mask_key(conf.get("api_key", ""))
-        }
-    return result
+def list_llm_configs(request: Request):
+    user_id = get_current_user(request)
+    return user_service.list_user_llm_configs(user_id)
 
 
 @router.post("/api/v1/config/llm")
-def create_llm_config(data: LLMConfigCreate):
+def create_llm_config(data: LLMConfigCreate, request: Request):
+    user_id = get_current_user(request)
     try:
-        result = config_service.add_llm_config(data.name, data.model_dump())
-        return {"name": data.name, "api_key_masked": mask_key(result.get("api_key", ""))}
+        return user_service.add_user_llm_config(user_id, data.name, data.model_dump())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.put("/api/v1/config/llm/{name}")
-def update_llm_config(name: str, data: LLMConfigUpdate):
+def update_llm_config(name: str, data: LLMConfigUpdate, request: Request):
+    user_id = get_current_user(request)
     try:
-        result = config_service.update_llm_config(name, data.model_dump(exclude_none=True))
-        return {"name": name, "api_key_masked": mask_key(result.get("api_key", ""))}
+        return user_service.update_user_llm_config(user_id, name, data.model_dump(exclude_none=True))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.delete("/api/v1/config/llm/{name}")
-def delete_llm_config(name: str):
+def delete_llm_config(name: str, request: Request):
+    user_id = get_current_user(request)
     try:
-        config_service.delete_llm_config(name)
+        user_service.delete_user_llm_config(user_id, name)
         return {"message": f"LLM 配置 '{name}' 已删除"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/api/v1/config/llm/{name}/test")
-def test_llm_config_route(name: str):
+def test_llm_config_route(name: str, request: Request):
+    user_id = get_current_user(request)
     try:
-        return config_service.test_llm_config(name)
+        return user_service.test_user_llm_config(user_id, name)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -62,43 +52,35 @@ def test_llm_config_route(name: str):
 
 
 @router.get("/api/v1/config/embedding")
-def list_embedding_configs():
-    configs = config_service.get_all_embedding_configs()
-    result = {}
-    for name, conf in configs.items():
-        result[name] = {
-            "name": name,
-            "base_url": conf.get("base_url", ""),
-            "model_name": conf.get("model_name", ""),
-            "retrieval_k": conf.get("retrieval_k", 4),
-            "interface_format": conf.get("interface_format", "OpenAI"),
-            "api_key_masked": mask_key(conf.get("api_key", ""))
-        }
-    return result
+def list_embedding_configs(request: Request):
+    user_id = get_current_user(request)
+    return user_service.list_user_embedding_configs(user_id)
 
 
 @router.post("/api/v1/config/embedding")
-def create_embedding_config(data: EmbeddingConfigCreate):
+def create_embedding_config(data: EmbeddingConfigCreate, request: Request):
+    user_id = get_current_user(request)
     try:
-        result = config_service.add_embedding_config(data.name, data.model_dump())
-        return {"name": data.name, "api_key_masked": mask_key(result.get("api_key", ""))}
+        return user_service.add_user_embedding_config(user_id, data.name, data.model_dump())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/api/v1/config/embedding/{name}")
-def delete_embedding_config(name: str):
+def delete_embedding_config(name: str, request: Request):
+    user_id = get_current_user(request)
     try:
-        config_service.delete_embedding_config(name)
+        user_service.delete_user_embedding_config(user_id, name)
         return {"message": f"Embedding 配置 '{name}' 已删除"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/api/v1/config/embedding/{name}/test")
-def test_embedding_config_route(name: str):
+def test_embedding_config_route(name: str, request: Request):
+    user_id = get_current_user(request)
     try:
-        return config_service.test_embedding_config(name)
+        return user_service.test_user_embedding_config(user_id, name)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

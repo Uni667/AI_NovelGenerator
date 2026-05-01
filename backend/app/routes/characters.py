@@ -1,18 +1,25 @@
 import os
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from backend.app.database import get_db
 from backend.app.services import project_service
+from backend.app.auth import get_current_user
 from backend.app.models.chapter import CharacterProfileCreate, CharacterProfileUpdate
 
 router = APIRouter(tags=["角色管理"])
 
 
-@router.get("/api/v1/projects/{project_id}/characters")
-def list_characters(project_id: str):
-    project = project_service.get_project(project_id)
+def _check_project(project_id: str, request: Request) -> dict:
+    user_id = get_current_user(request)
+    project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    return project
+
+
+@router.get("/api/v1/projects/{project_id}/characters")
+def list_characters(project_id: str, request: Request):
+    _check_project(project_id, request)
     with get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM character_profile WHERE project_id = ? ORDER BY updated_at DESC",
@@ -22,10 +29,8 @@ def list_characters(project_id: str):
 
 
 @router.post("/api/v1/projects/{project_id}/characters")
-def create_character(project_id: str, data: CharacterProfileCreate):
-    project = project_service.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def create_character(project_id: str, data: CharacterProfileCreate, request: Request):
+    _check_project(project_id, request)
     now = datetime.now().isoformat()
     with get_db() as conn:
         cursor = conn.execute(
@@ -36,10 +41,8 @@ def create_character(project_id: str, data: CharacterProfileCreate):
 
 
 @router.put("/api/v1/projects/{project_id}/characters/{character_id}")
-def update_character(project_id: str, character_id: int, data: CharacterProfileUpdate):
-    project = project_service.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def update_character(project_id: str, character_id: int, data: CharacterProfileUpdate, request: Request):
+    _check_project(project_id, request)
     updates = data.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="没有提供更新字段")
@@ -58,10 +61,8 @@ def update_character(project_id: str, character_id: int, data: CharacterProfileU
 
 
 @router.delete("/api/v1/projects/{project_id}/characters/{character_id}")
-def delete_character(project_id: str, character_id: int):
-    project = project_service.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+def delete_character(project_id: str, character_id: int, request: Request):
+    _check_project(project_id, request)
     with get_db() as conn:
         cursor = conn.execute(
             "DELETE FROM character_profile WHERE id = ? AND project_id = ?",
@@ -73,11 +74,9 @@ def delete_character(project_id: str, character_id: int):
 
 
 @router.post("/api/v1/projects/{project_id}/characters/import-from-state")
-def import_characters_from_state(project_id: str):
+def import_characters_from_state(project_id: str, request: Request):
     """从 character_state.txt 解析角色并导入数据库"""
-    project = project_service.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    project = _check_project(project_id, request)
     state_file = os.path.join(project["filepath"], "character_state.txt")
     if not os.path.exists(state_file):
         raise HTTPException(status_code=404, detail="character_state.txt 不存在，请先生成架构")
@@ -85,7 +84,6 @@ def import_characters_from_state(project_id: str):
     with open(state_file, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # 简单解析：按行分割，查找角色名
     imported = []
     now = datetime.now().isoformat()
     with get_db() as conn:
@@ -93,14 +91,12 @@ def import_characters_from_state(project_id: str):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            # 尝试提取角色名（格式：角色名：描述 / 角色名 - 描述 / **角色名** 等）
             name = line.split("：")[0].split(":")[0].split(" - ")[0].split("–")[0].strip().lstrip("- *>#|")
             if len(name) < 2 or len(name) > 30:
                 continue
             description = line[len(name):].lstrip("：:-– ")
             if not description:
                 description = line
-            # 检查是否已存在
             existing = conn.execute(
                 "SELECT id FROM character_profile WHERE project_id = ? AND name = ?",
                 (project_id, name)

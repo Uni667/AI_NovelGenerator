@@ -5,13 +5,24 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from backend.app.services import project_service, chapter_service
 from backend.app.utils.sse import SSEEmitter, sse_event_generator
-from backend.app.dependencies import get_config as get_global_config, get_llm_config, get_embedding_config
+from backend.app.dependencies import get_user_llm_config, get_user_embedding_config
+from backend.app.auth import get_current_user
 
 router = APIRouter(tags=["AI 生成"])
 
 
+def _check_project(project_id: str, request: Request) -> tuple:
+    user_id = get_current_user(request)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    pconfig = project_service.get_project_config(project_id)
+    if not pconfig:
+        raise HTTPException(status_code=404, detail="项目配置不存在")
+    return project, pconfig, user_id
+
+
 def _run_in_thread(emitter: SSEEmitter, func, *args, **kwargs):
-    """在后台线程运行生成任务，完成后向队列发送 sentinel"""
     try:
         func(emitter, *args, **kwargs)
     finally:
@@ -25,7 +36,6 @@ def _make_streaming_response(
     target_func,
     *args
 ) -> StreamingResponse:
-    """构建 SSE StreamingResponse，每个请求拥有独立的 emitter 和 queue"""
     loop = asyncio.get_event_loop()
     emitter.set_queue(queue, loop)
 
@@ -44,32 +54,46 @@ def _make_streaming_response(
     )
 
 
+def _resolve_llm(user_id: str, preferred: str) -> dict:
+    """根据 preferred 配置名获取用户 LLM 配置，为空则取第一个"""
+    if preferred:
+        conf = get_user_llm_config(user_id, preferred)
+        if conf:
+            return conf
+    # fallback: 取用户第一个 LLM 配置
+    from backend.app.services.user_service import list_user_llm_configs
+    configs = list_user_llm_configs(user_id)
+    if not configs:
+        raise HTTPException(status_code=400, detail="请先在设置中添加 LLM 配置")
+    first_name = next(iter(configs.keys()))
+    conf = configs[first_name]
+    return conf
+
+
+def _resolve_emb(user_id: str, preferred: str) -> dict:
+    """根据 preferred 配置名获取用户 Embedding 配置"""
+    if not preferred:
+        return {}
+    conf = get_user_embedding_config(user_id, preferred)
+    return conf or {}
+
+
 @router.post("/api/v1/projects/{project_id}/generate/architecture")
 @router.get("/api/v1/projects/{project_id}/generate/architecture")
 async def generate_architecture(project_id: str, request: Request):
-    project = project_service.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    pconfig = project_service.get_project_config(project_id)
-    if not pconfig:
-        raise HTTPException(status_code=404, detail="项目配置不存在")
-
+    project, pconfig, user_id = _check_project(project_id, request)
     return _make_streaming_response(
         request, asyncio.Queue(), SSEEmitter(),
-        _run_architecture, project, pconfig
+        _run_architecture, project, pconfig, user_id
     )
 
 
-def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict):
-    global_config = get_global_config()
-    arch_llm_name = pconfig.get("architecture_llm", "") or global_config.get("last_interface_format", "OpenAI")
-    llm_conf = get_llm_config(arch_llm_name)
-    if not llm_conf:
-        emitter.emit("error", {"message": f"LLM 配置 '{arch_llm_name}' 不存在"})
-        return
+def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: str):
+    arch_llm_name = pconfig.get("architecture_llm", "")
+    llm_conf = _resolve_llm(user_id, arch_llm_name)
 
-    emb_config_name = pconfig.get("embedding_config", "") or global_config.get("last_embedding_interface_format", "")
-    emb_conf = get_embedding_config(emb_config_name) if emb_config_name else {}
+    emb_config_name = pconfig.get("embedding_config", "")
+    emb_conf = _resolve_emb(user_id, emb_config_name)
 
     from llm_adapters import create_llm_adapter
     from embedding_adapters import create_embedding_adapter
@@ -143,7 +167,6 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict):
         emitter.emit("error", {"step": "character", "message": str(e)})
         return
 
-    # 生成初始角色状态
     emitter.emit("progress", {"step": "character_state", "status": "running", "message": "正在生成初始角色状态..."})
     try:
         from utils import clear_file_content, save_string_to_txt
@@ -195,7 +218,7 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict):
     clear_file_content(arch_file)
     save_string_to_txt(final_content, arch_file)
 
-    project_service.update_project(project["id"], {"status": "ready"})
+    project_service.update_project(project["id"], {"status": "ready"}, user_id)
 
     emitter.emit("progress", {"step": "all", "status": "done", "message": "小说架构生成完毕！"})
     emitter.emit("partial", {"step": "result", "content": final_content[:1000] + "\n\n...(完整内容请查看小说架构页面)"})
@@ -204,26 +227,16 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict):
 @router.post("/api/v1/projects/{project_id}/generate/blueprint")
 @router.get("/api/v1/projects/{project_id}/generate/blueprint")
 async def generate_blueprint(project_id: str, request: Request):
-    project = project_service.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    pconfig = project_service.get_project_config(project_id)
-    if not pconfig:
-        raise HTTPException(status_code=404, detail="项目配置不存在")
-
+    project, pconfig, user_id = _check_project(project_id, request)
     return _make_streaming_response(
         request, asyncio.Queue(), SSEEmitter(),
-        _run_blueprint, project, pconfig
+        _run_blueprint, project, pconfig, user_id
     )
 
 
-def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict):
-    global_config = get_global_config()
-    outline_llm = pconfig.get("chapter_outline_llm", "") or next(iter(global_config.get("llm_configs", {}).keys()), "")
-    llm_conf = get_llm_config(outline_llm)
-    if not llm_conf:
-        emitter.emit("error", {"message": "LLM 配置不存在"})
-        return
+def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: str):
+    outline_llm_name = pconfig.get("chapter_outline_llm", "")
+    llm_conf = _resolve_llm(user_id, outline_llm_name)
 
     from llm_adapters import create_llm_adapter
     from novel_generator.blueprint import Chapter_blueprint_generate
@@ -262,29 +275,19 @@ def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict):
 @router.post("/api/v1/projects/{project_id}/generate/chapter/{chapter_number}")
 @router.get("/api/v1/projects/{project_id}/generate/chapter/{chapter_number}")
 async def generate_chapter(project_id: str, chapter_number: int, request: Request):
-    project = project_service.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    pconfig = project_service.get_project_config(project_id)
-    if not pconfig:
-        raise HTTPException(status_code=404, detail="项目配置不存在")
-
+    project, pconfig, user_id = _check_project(project_id, request)
     return _make_streaming_response(
         request, asyncio.Queue(), SSEEmitter(),
-        _run_chapter_generation, project, pconfig, chapter_number
+        _run_chapter_generation, project, pconfig, chapter_number, user_id
     )
 
 
-def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int):
-    global_config = get_global_config()
-    draft_llm = pconfig.get("prompt_draft_llm", "") or next(iter(global_config.get("llm_configs", {}).keys()), "")
-    llm_conf = get_llm_config(draft_llm)
-    if not llm_conf:
-        emitter.emit("error", {"message": "LLM 配置不存在"})
-        return
+def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int, user_id: str):
+    draft_llm_name = pconfig.get("prompt_draft_llm", "")
+    llm_conf = _resolve_llm(user_id, draft_llm_name)
 
-    emb_config_name = pconfig.get("embedding_config", "") or global_config.get("last_embedding_interface_format", "")
-    emb_conf = get_embedding_config(emb_config_name) if emb_config_name else {}
+    emb_config_name = pconfig.get("embedding_config", "")
+    emb_conf = _resolve_emb(user_id, emb_config_name)
 
     emitter.emit("progress", {"step": "build_prompt", "status": "running", "message": f"正在构建第{chapter_number}章提示词..."})
 
@@ -351,29 +354,19 @@ def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, c
 @router.post("/api/v1/projects/{project_id}/generate/finalize/{chapter_number}")
 @router.get("/api/v1/projects/{project_id}/generate/finalize/{chapter_number}")
 async def finalize_chapter_route(project_id: str, chapter_number: int, request: Request):
-    project = project_service.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    pconfig = project_service.get_project_config(project_id)
-    if not pconfig:
-        raise HTTPException(status_code=404, detail="项目配置不存在")
-
+    project, pconfig, user_id = _check_project(project_id, request)
     return _make_streaming_response(
         request, asyncio.Queue(), SSEEmitter(),
-        _run_finalize, project, pconfig, chapter_number
+        _run_finalize, project, pconfig, chapter_number, user_id
     )
 
 
-def _run_finalize(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int):
-    global_config = get_global_config()
-    final_llm = pconfig.get("final_chapter_llm", "") or next(iter(global_config.get("llm_configs", {}).keys()), "")
-    llm_conf = get_llm_config(final_llm)
-    if not llm_conf:
-        emitter.emit("error", {"message": "LLM 配置不存在"})
-        return
+def _run_finalize(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int, user_id: str):
+    final_llm_name = pconfig.get("final_chapter_llm", "")
+    llm_conf = _resolve_llm(user_id, final_llm_name)
 
-    emb_config_name = pconfig.get("embedding_config", "") or global_config.get("last_embedding_interface_format", "")
-    emb_conf = get_embedding_config(emb_config_name) if emb_config_name else {}
+    emb_config_name = pconfig.get("embedding_config", "")
+    emb_conf = _resolve_emb(user_id, emb_config_name)
 
     emitter.emit("progress", {"step": "finalize", "status": "running", "message": f"正在定稿第{chapter_number}章..."})
 

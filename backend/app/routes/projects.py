@@ -1,7 +1,8 @@
 import os
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from backend.app.services import project_service, chapter_service
+from backend.app.auth import get_current_user
 from backend.app.models.project import ProjectCreate, ProjectUpdate, ConfigUpdate
 from utils import read_file
 
@@ -9,43 +10,52 @@ router = APIRouter(tags=["项目管理"])
 
 
 @router.get("/api/v1/projects")
-def list_projects():
-    return project_service.list_projects()
+def list_projects(request: Request):
+    user_id = get_current_user(request)
+    return project_service.list_projects(user_id)
 
 
 @router.post("/api/v1/projects")
-def create_project(data: ProjectCreate):
+def create_project(data: ProjectCreate, request: Request):
+    user_id = get_current_user(request)
     try:
-        return project_service.create_project(data.model_dump())
+        return project_service.create_project(data.model_dump(), user_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/api/v1/projects/{project_id}")
-def get_project(project_id: str):
-    project = project_service.get_project(project_id)
+def get_project(project_id: str, request: Request):
+    user_id = get_current_user(request)
+    project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
     return project
 
 
 @router.put("/api/v1/projects/{project_id}")
-def update_project(project_id: str, data: ProjectUpdate):
-    result = project_service.update_project(project_id, data.model_dump(exclude_none=True))
+def update_project(project_id: str, data: ProjectUpdate, request: Request):
+    user_id = get_current_user(request)
+    result = project_service.update_project(project_id, data.model_dump(exclude_none=True), user_id)
     if not result:
         raise HTTPException(status_code=404, detail="项目不存在")
     return result
 
 
 @router.delete("/api/v1/projects/{project_id}")
-def delete_project(project_id: str):
-    if not project_service.delete_project(project_id):
+def delete_project(project_id: str, request: Request):
+    user_id = get_current_user(request)
+    if not project_service.delete_project(project_id, user_id):
         raise HTTPException(status_code=404, detail="项目不存在")
     return {"message": "项目已删除"}
 
 
 @router.get("/api/v1/projects/{project_id}/config")
-def get_project_config(project_id: str):
+def get_project_config(project_id: str, request: Request):
+    user_id = get_current_user(request)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
     config = project_service.get_project_config(project_id)
     if not config:
         raise HTTPException(status_code=404, detail="项目配置不存在")
@@ -53,7 +63,11 @@ def get_project_config(project_id: str):
 
 
 @router.put("/api/v1/projects/{project_id}/config")
-def update_project_config(project_id: str, data: ConfigUpdate):
+def update_project_config(project_id: str, data: ConfigUpdate, request: Request):
+    user_id = get_current_user(request)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
     try:
         return project_service.update_project_config(project_id, data.model_dump(exclude_none=True))
     except ValueError as e:
@@ -61,8 +75,9 @@ def update_project_config(project_id: str, data: ConfigUpdate):
 
 
 @router.get("/api/v1/projects/{project_id}/export")
-def export_project(project_id: str, format: str = Query("txt", pattern="^(txt|html)$")):
-    project = project_service.get_project(project_id)
+def export_project(project_id: str, request: Request, format: str = Query("txt", pattern="^(txt|html)$")):
+    user_id = get_current_user(request)
+    project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 

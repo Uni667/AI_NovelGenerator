@@ -13,3 +13,5 @@ aiohttp>=3.12.0
 python-dotenv>=1.1.0
 PyYAML>=6.0.2
 requests>=2.32.0
+pyjwt>=2.8.0
+argon2-cffi>=23.1.0

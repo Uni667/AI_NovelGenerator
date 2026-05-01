@@ -9,8 +9,11 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { useProjects } from "@/lib/hooks/use-projects"
 import { BackendStatus } from "@/components/layout/backend-status"
+import { getUser, clearToken } from "@/lib/auth"
 import { useState, useEffect } from "react"
 import { useTheme } from "next-themes"
+import { useRouter } from "next/navigation"
+import { LogOut, User } from "lucide-react"
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
@@ -61,9 +64,22 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <Link href="/settings" onClick={onNavigate}>
           <Button variant="ghost" className="w-full justify-start gap-2" size="sm">
             <Settings className="h-4 w-4" />
-            全局设置
+            我的 API 配置
           </Button>
         </Link>
+        <div className="flex items-center gap-2 px-1 py-1.5 text-sm text-muted-foreground">
+          <User className="h-3.5 w-3.5" />
+          <span className="truncate">{getUser()?.username || "未登录"}</span>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2 text-muted-foreground"
+          onClick={() => { clearToken(); window.location.href = "/login" }}
+        >
+          <LogOut className="h-4 w-4" />
+          退出登录
+        </Button>
         {mounted && (
           <Button
             variant="ghost"
