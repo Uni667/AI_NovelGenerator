@@ -10,13 +10,26 @@ export function BackendStatus() {
 
   useEffect(() => {
     let cancelled = false
-    const check = async () => {
+    const checkOnce = async (): Promise<boolean> => {
       try {
         const res = await fetch(`${base}/api/v1/health`, { signal: AbortSignal.timeout(8000) })
-        if (!cancelled) setOnline(res.ok)
+        return res.ok
       } catch {
-        if (!cancelled) setOnline(false)
+        return false
       }
+    }
+    const check = async () => {
+      const ok = await checkOnce()
+      if (cancelled) return
+      if (ok) {
+        setOnline(true)
+        return
+      }
+      // 冷启动重试：等 2s 再试一次
+      await new Promise(r => setTimeout(r, 2000))
+      if (cancelled) return
+      const retry = await checkOnce()
+      if (!cancelled) setOnline(retry)
     }
     check()
     const interval = setInterval(check, 15000)
