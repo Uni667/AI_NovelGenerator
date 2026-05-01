@@ -1,0 +1,13 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "./Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/v1/health"
+
+[service]
+name = "ai-novel-backend"
+
+[volume]
+name = "data"
+mountPath = "/app/data"
