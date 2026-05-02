@@ -19,7 +19,35 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Skeleton } from "@/components/ui/skeleton"
 import { useState, useEffect, useRef, useCallback } from "react"
 import { toast } from "sonner"
-import { Play, FileText, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, FileDown, Wand2, BookMarked, Target, Tag, FileEdit, RefreshCw } from "lucide-react"
+import { Play, FileText, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, FileDown, Wand2, BookMarked, Target, Tag, FileEdit, RefreshCw, Copy } from "lucide-react"
+
+const GENERATED_FILES = [
+  {
+    filename: "Novel_architecture.txt",
+    label: "小说架构",
+    description: "核心种子、角色动力学、世界观和三幕式情节",
+  },
+  {
+    filename: "Novel_directory.txt",
+    label: "章节目录",
+    description: "章节标题和结构安排",
+  },
+  {
+    filename: "global_summary.txt",
+    label: "全局摘要",
+    description: "当前故事进展摘要",
+  },
+  {
+    filename: "character_state.txt",
+    label: "角色状态",
+    description: "角色状态和关系变化",
+  },
+  {
+    filename: "plot_arcs.txt",
+    label: "伏笔与情节线",
+    description: "可选的伏笔记录和情节线",
+  },
+] as const
 
 export default function ProjectDashboard() {
   const params = useParams()
@@ -53,6 +81,12 @@ export default function ProjectDashboard() {
   const [hookChapterNum, setHookChapterNum] = useState(1)
   const [llmConfigs, setLLMConfigs] = useState<Record<string, any>>({})
   const [embConfigs, setEmbConfigs] = useState<Record<string, any>>({})
+  const [selectedOutputFile, setSelectedOutputFile] = useState<(typeof GENERATED_FILES)[number]["filename"]>(GENERATED_FILES[0].filename)
+  const [outputFileContent, setOutputFileContent] = useState("")
+  const [outputFileLoading, setOutputFileLoading] = useState(false)
+  const [outputFileError, setOutputFileError] = useState("")
+  const outputFileRequestId = useRef(0)
+  const autoOpenFilesAfterDoneRef = useRef(false)
 
   const usageLabel = (usage: string) => {
     const map: Record<string, string> = { general: "通用", architecture: "架构生成", outline: "章节目录", draft: "章节草稿", finalize: "定稿", review: "一致性审校", platform: "平台工具" }
@@ -66,6 +100,7 @@ export default function ProjectDashboard() {
 
   const lastPartial = events.filter(e => e.type === "partial").pop()
   const lastError = events.filter(e => e.type === "error").pop()
+  const lastDone = events.filter(e => e.type === "done").pop()
   const hasError = Boolean(lastError)
 
   const debouncedUpdate = (data: Record<string, any>) => {
@@ -168,13 +203,77 @@ export default function ProjectDashboard() {
     setChapterTitles(res.titles)
   })
 
+  const loadOutputFile = useCallback(async (filename: string) => {
+    const requestId = ++outputFileRequestId.current
+    setOutputFileLoading(true)
+    setOutputFileError("")
+    try {
+      const content = await api.files.get(id, filename)
+      if (requestId !== outputFileRequestId.current) return
+      setOutputFileContent(content)
+    } catch (error: any) {
+      if (requestId !== outputFileRequestId.current) return
+      setOutputFileContent("")
+      setOutputFileError(error?.message || `读取 ${filename} 失败`)
+    } finally {
+      if (requestId === outputFileRequestId.current) {
+        setOutputFileLoading(false)
+      }
+    }
+  }, [id])
+
+  useEffect(() => {
+    if (activeTab === "files") {
+      loadOutputFile(selectedOutputFile)
+    }
+  }, [activeTab, selectedOutputFile, loadOutputFile])
+
+  useEffect(() => {
+    if (activeTab !== "generation" || !lastDone || autoOpenFilesAfterDoneRef.current) return
+    if (lastDone.data?.status !== "done") return
+    autoOpenFilesAfterDoneRef.current = true
+    setActiveTab("files")
+  }, [activeTab, lastDone])
+
+  const handleCopyOutput = async () => {
+    if (!outputFileContent) return
+    try {
+      await navigator.clipboard.writeText(outputFileContent)
+      toast.success("已复制到剪贴板")
+    } catch {
+      toast.error("复制失败")
+    }
+  }
+
+  const handleDownloadOutput = async () => {
+    try {
+      const content = outputFileContent || await api.files.get(id, selectedOutputFile)
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = selectedOutputFile
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      toast.success("已下载")
+    } catch (error: any) {
+      toast.error(error?.message || "下载失败")
+    }
+  }
+
   const handleGenerateArchitecture = () => {
+    autoOpenFilesAfterDoneRef.current = false
+    setSelectedOutputFile("Novel_architecture.txt")
     setActiveTab("generation")
     const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
     connect(`${base}/api/v1/projects/${id}/generate/architecture?t=${Date.now()}`)
   }
 
   const handleGenerateBlueprint = () => {
+    autoOpenFilesAfterDoneRef.current = false
+    setSelectedOutputFile("Novel_directory.txt")
     setActiveTab("generation")
     const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
     connect(`${base}/api/v1/projects/${id}/generate/blueprint?t=${Date.now()}`)
@@ -226,6 +325,7 @@ export default function ProjectDashboard() {
         <TabsList className="mb-6 flex-wrap">
           <TabsTrigger value="overview">概览</TabsTrigger>
           <TabsTrigger value="generation">AI 生成</TabsTrigger>
+          <TabsTrigger value="files">文件输出</TabsTrigger>
           <TabsTrigger value="knowledge">知识库</TabsTrigger>
           <TabsTrigger value="characters">角色管理</TabsTrigger>
           <TabsTrigger value="platform">{PLATFORM_CONFIG[config?.platform]?.icon || "📖"} {PLATFORM_CONFIG[config?.platform]?.label || "平台"}工具</TabsTrigger>
@@ -279,6 +379,9 @@ export default function ProjectDashboard() {
               </Button>
               <Button variant="outline" onClick={() => api.export.download(id, "html")}>
                 <FileDown className="h-4 w-4 mr-2" />导出 HTML
+              </Button>
+              <Button variant="outline" onClick={() => setActiveTab("files")}>
+                <FileText className="h-4 w-4 mr-2" />查看生成文件
               </Button>
             </CardContent>
           </Card>
@@ -370,7 +473,89 @@ export default function ProjectDashboard() {
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="files" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle>生成文件</CardTitle>
+                  <CardDescription>这里集中查看架构、章节目录、摘要、角色状态等生成产物</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => loadOutputFile(selectedOutputFile)} disabled={outputFileLoading}>
+                    {outputFileLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                    刷新
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleCopyOutput} disabled={!outputFileContent}>
+                    <Copy className="h-4 w-4 mr-2" />
+                    复制
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleDownloadOutput} disabled={outputFileLoading}>
+                    <FileDown className="h-4 w-4 mr-2" />
+                    下载
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+                <div className="space-y-2">
+                  {GENERATED_FILES.map((file) => (
+                    <button
+                      key={file.filename}
+                      type="button"
+                      onClick={() => setSelectedOutputFile(file.filename)}
+                      className={`w-full rounded-lg border p-3 text-left transition ${
+                        selectedOutputFile === file.filename ? "border-primary bg-primary/5" : "hover:bg-accent"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 shrink-0" />
+                        <span className="font-medium">{file.label}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{file.description}</p>
+                    </button>
+                  ))}
+                </div>
 
+                <div className="rounded-lg border bg-muted/20">
+                  <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="font-medium">{GENERATED_FILES.find((file) => file.filename === selectedOutputFile)?.label}</p>
+                      <p className="text-xs text-muted-foreground">{selectedOutputFile}</p>
+                    </div>
+                    <Badge variant="outline">
+                      {outputFileLoading ? "加载中" : outputFileError ? "异常" : outputFileContent ? "已读取" : "待读取"}
+                    </Badge>
+                  </div>
+                  <ScrollArea className="h-[60vh]">
+                    <div className="p-4">
+                      {outputFileLoading ? (
+                        <div className="space-y-3">
+                          <Skeleton className="h-4 w-3/4" />
+                          <Skeleton className="h-4 w-1/2" />
+                          <Skeleton className="h-4 w-5/6" />
+                          <Skeleton className="h-4 w-2/3" />
+                        </div>
+                      ) : outputFileError ? (
+                        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+                          {outputFileError}
+                        </div>
+                      ) : outputFileContent ? (
+                        <pre className="whitespace-pre-wrap break-words font-mono text-sm leading-6">{outputFileContent}</pre>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">点击左侧文件查看内容。</p>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
+              </div>
+              <p className="mt-4 text-xs text-muted-foreground">
+                架构生成后会写入 <code>Novel_architecture.txt</code>，章节目录、摘要和角色状态也会分别保存在对应文件中。
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
         <TabsContent value="knowledge">
           <Card>
             <CardHeader>

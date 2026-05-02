@@ -75,9 +75,11 @@ export function useSSE() {
       addEvent({ type: "error", data: parsed })
     })
 
-    es.addEventListener("done", () => {
+    es.addEventListener("done", (e) => {
       setIsConnected(false)
-      addEvent({ type: "done", data: { message: "Done" } })
+      const data = "data" in e && typeof e.data === "string" ? e.data : ""
+      const parsed = data ? parseEventData(data) : { message: "Done", status: "done" }
+      addEvent({ type: "done", data: parsed })
       es.close()
       if (sourceRef.current === es) sourceRef.current = null
     })
