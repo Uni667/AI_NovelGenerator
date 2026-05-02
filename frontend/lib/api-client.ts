@@ -25,7 +25,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     if (res.status === 401 && typeof window !== "undefined") {
       const { clearToken } = await import("./auth")
       clearToken()
-      window.location.href = "/login"
+      // 不在此处硬刷新，由 AuthGuard 统一处理路由跳转，避免刷新循环
     }
     throw new Error(message)
   }
