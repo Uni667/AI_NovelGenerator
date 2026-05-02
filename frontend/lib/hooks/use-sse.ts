@@ -75,9 +75,12 @@ export function useSSE() {
     })
 
     es.onerror = () => {
+      if (!error) {
+        setError("连接中断，可能是网络问题或生成超时，请重试")
+      }
       setIsConnected(false)
     }
-  }, [addEvent, disconnect])
+  }, [addEvent, disconnect, error])
 
   useEffect(() => {
     return () => disconnect()

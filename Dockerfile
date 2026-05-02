@@ -24,7 +24,7 @@ EXPOSE 8001
 
 # Startup: start uvicorn directly (no config_manager dependency)
 RUN echo '#!/bin/bash' > /app/start.sh && \
-    echo 'exec uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8001}' >> /app/start.sh && \
+    echo 'exec uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8001} --timeout-keep-alive 300' >> /app/start.sh && \
     chmod +x /app/start.sh
 
 CMD ["/app/start.sh"]

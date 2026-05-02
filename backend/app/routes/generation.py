@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from backend.app.services import project_service, chapter_service
-from backend.app.utils.sse import SSEEmitter, sse_event_generator
+from backend.app.utils.sse import SSEEmitter, sse_event_generator, HEARTBEAT
 from backend.app.dependencies import get_user_llm_config, get_user_embedding_config
 from backend.app.auth import get_current_user
 
@@ -102,6 +102,13 @@ def _require_project_file(filepath: str, filename: str, purpose: str) -> str:
     return content
 
 
+async def _heartbeat(queue: asyncio.Queue, interval: float = 3.0):
+    """每 interval 秒发送 SSE 注释 ping，防止中间代理空闲超时断开连接"""
+    while True:
+        await asyncio.sleep(interval)
+        await queue.put(HEARTBEAT)
+
+
 def _make_streaming_response(
     request: Request,
     queue: asyncio.Queue,
@@ -113,12 +120,16 @@ def _make_streaming_response(
     emitter.set_queue(queue, loop)
 
     async def event_gen():
-        loop.run_in_executor(None, target_func, emitter, *args)
-        async for sse_data in sse_event_generator(queue):
-            if await request.is_disconnected():
-                break
-            yield sse_data
-        emitter.clear()
+        loop.run_in_executor(None, _run_in_thread, emitter, target_func, *args)
+        hb = asyncio.create_task(_heartbeat(queue))
+        try:
+            async for sse_data in sse_event_generator(queue):
+                if await request.is_disconnected():
+                    break
+                yield sse_data
+        finally:
+            hb.cancel()
+            emitter.clear()
 
     return StreamingResponse(
         event_gen(),
