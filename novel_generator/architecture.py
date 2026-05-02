@@ -85,6 +85,7 @@ def Novel_architecture_generate(
     num_chapters = project.num_chapters
     word_number = project.word_number
     user_guidance = project.user_guidance
+    knowledge_context = getattr(project, "knowledge_context", "")
 
     # ── Step 1: 核心种子 ──
     if "core_seed_result" not in partial_data:
@@ -94,7 +95,8 @@ def Novel_architecture_generate(
         prompt_core = prompt_definitions.core_seed_prompt.format(
             topic=topic, genre=genre, category=category,
             number_of_chapters=num_chapters, word_number=word_number,
-            user_guidance=user_guidance
+            user_guidance=user_guidance,
+            knowledge_context=knowledge_context,
         )
         core_seed_result = invoke_with_cleaning(llm, prompt_core)
         if not core_seed_result.strip():
