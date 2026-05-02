@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { BookOpen, Settings, Plus, Home, Menu, Sun, Moon } from "lucide-react"
