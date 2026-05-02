@@ -244,15 +244,15 @@ def create_llm_adapter(
     """工厂函数：根据 interface_format 返回不同的适配器实例"""
     fmt = interface_format.strip().lower()
 
-    if fmt in ("deepseek", "openai", "ollama", "ml studio", "阿里云百炼"):
+    if fmt in ("deepseek", "openai", "ollama", "ml studio", "阿里云百炼", "alibaba bailian"):
         return OpenAICompatibleAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
 
-    if fmt == "火山引擎":
+    if fmt in ("火山引擎", "volcengine"):
         return OpenAIDirectAdapter(api_key, base_url, model_name,
                                    max_tokens, temperature, timeout,
                                    system_prompt="你是 DeepSeek，是一个 AI 人工智能助手")
 
-    if fmt == "硅基流动":
+    if fmt in ("硅基流动", "siliconflow"):
         return OpenAIDirectAdapter(api_key, base_url, model_name,
                                    max_tokens, temperature, timeout,
                                    system_prompt="你是 DeepSeek，是一个 AI 人工智能助手")

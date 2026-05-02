@@ -317,7 +317,9 @@ def create_embedding_adapter(
         return MLStudioEmbeddingAdapter(api_key, base_url, model_name)
     elif fmt == "gemini":
         return GeminiEmbeddingAdapter(api_key, model_name, base_url)
-    elif fmt == "siliconflow":
+    elif fmt in ("siliconflow", "硅基流动"):
         return SiliconFlowEmbeddingAdapter(api_key, base_url, model_name)
+    elif fmt in ("deepseek", "volcengine", "火山引擎", "alibaba bailian", "阿里云百炼"):
+        return OpenAIEmbeddingAdapter(api_key, base_url, model_name)
     else:
         raise ValueError(f"Unknown embedding interface_format: {interface_format}")
