@@ -2,31 +2,65 @@
 # -*- coding: utf-8 -*-
 """
 向量库相关操作（初始化、更新、检索、清空、文本切分等）
+
+注意：全部 heavy dependency 使用懒加载，确保在不安装 chromadb/nltk/numpy 的
+云环境中也能正常 import 本模块（仅在实际调用向量操作时才失败）。
 """
 import os
 import logging
 import traceback
-import nltk
-import numpy as np
 import re
 import ssl
 import requests
 import warnings
-from langchain_chroma import Chroma
-logging.basicConfig(
-    filename='app.log',      # 日志文件名
-    filemode='a',            # 追加模式（'w' 会覆盖）
-    level=logging.INFO,      # 记录 INFO 及以上级别的日志
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+
+logger = logging.getLogger(__name__)
+
 # 禁用特定的Torch警告
 warnings.filterwarnings('ignore', message='.*Torch was not compiled with flash attention.*')
-os.environ["TOKENIZERS_PARALLELISM"] = "false"  # 禁用tokenizer并行警告
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-from chromadb.config import Settings
-from langchain.docstore.document import Document
-from sklearn.metrics.pairwise import cosine_similarity
+# ── Lazy imports ──
+_nltk = _numpy = _Chroma = _Settings = _Document = _cosine_similarity = None
+
+
+def _ensure_nltk():
+    global _nltk
+    if _nltk is None:
+        import nltk as _n
+        _nltk = _n
+
+
+def _ensure_numpy():
+    global _numpy
+    if _numpy is None:
+        import numpy as _np
+        _numpy = _np
+
+
+def _ensure_chroma():
+    global _Chroma, _Settings
+    if _Chroma is None:
+        from langchain_chroma import Chroma as _c
+        from chromadb.config import Settings as _s
+        _Chroma = _c
+        _Settings = _s
+
+
+def _ensure_langchain_doc():
+    global _Document
+    if _Document is None:
+        from langchain.docstore.document import Document as _d
+        _Document = _d
+
+
+def _ensure_sklearn():
+    global _cosine_similarity
+    if _cosine_similarity is None:
+        from sklearn.metrics.pairwise import cosine_similarity as _cs
+        _cosine_similarity = _cs
+
+
 from .common import call_with_retry
 
 def get_vectorstore_dir(filepath: str) -> str:
@@ -54,11 +88,13 @@ def init_vector_store(embedding_adapter, texts, filepath: str):
     在 filepath 下创建/加载一个 Chroma 向量库并插入 texts。
     如果Embedding失败，则返回 None，不中断任务。
     """
+    _ensure_chroma()
+    _ensure_langchain_doc()
     from langchain.embeddings.base import Embeddings as LCEmbeddings
 
     store_dir = get_vectorstore_dir(filepath)
     os.makedirs(store_dir, exist_ok=True)
-    documents = [Document(page_content=str(t)) for t in texts]
+    documents = [_Document(page_content=str(t)) for t in texts]
 
     try:
         class LCEmbeddingWrapper(LCEmbeddings):
@@ -79,11 +115,11 @@ def init_vector_store(embedding_adapter, texts, filepath: str):
                 return res
 
         chroma_embedding = LCEmbeddingWrapper()
-        vectorstore = Chroma.from_documents(
+        vectorstore = _Chroma.from_documents(
             documents,
             embedding=chroma_embedding,
             persist_directory=store_dir,
-            client_settings=Settings(anonymized_telemetry=False),
+            client_settings=_Settings(anonymized_telemetry=False),
             collection_name="novel_collection"
         )
         return vectorstore
@@ -97,6 +133,7 @@ def load_vector_store(embedding_adapter, filepath: str):
     读取已存在的 Chroma 向量库。若不存在则返回 None。
     如果加载失败（embedding 或IO问题），则返回 None。
     """
+    _ensure_chroma()
     from langchain.embeddings.base import Embeddings as LCEmbeddings
     store_dir = get_vectorstore_dir(filepath)
     if not os.path.exists(store_dir):
@@ -122,10 +159,10 @@ def load_vector_store(embedding_adapter, filepath: str):
                 return res
 
         chroma_embedding = LCEmbeddingWrapper()
-        return Chroma(
+        return _Chroma(
             persist_directory=store_dir,
             embedding_function=chroma_embedding,
-            client_settings=Settings(anonymized_telemetry=False),
+            client_settings=_Settings(anonymized_telemetry=False),
             collection_name="novel_collection"
         )
     except Exception as e:
@@ -151,10 +188,9 @@ def split_text_for_vectorstore(chapter_text: str, max_length: int = 500, similar
     """
     if not chapter_text.strip():
         return []
-    
-    # nltk.download('punkt', quiet=True)
-    # nltk.download('punkt_tab', quiet=True)
-    sentences = nltk.sent_tokenize(chapter_text)
+
+    _ensure_nltk()
+    sentences = _nltk.sent_tokenize(chapter_text)
     if not sentences:
         return []
     
@@ -200,8 +236,9 @@ def update_vector_store(embedding_adapter, new_chapter: str, filepath: str):
             logging.info("New vector store created successfully.")
         return
 
+    _ensure_langchain_doc()
     try:
-        docs = [Document(page_content=str(t)) for t in splitted_texts]
+        docs = [_Document(page_content=str(t)) for t in splitted_texts]
         store.add_documents(docs)
         logging.info("Vector store updated with the new chapter splitted segments.")
     except Exception as e:

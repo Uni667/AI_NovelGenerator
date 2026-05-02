@@ -1,4 +1,5 @@
-#novel_generator/__init__.py
+# novel_generator/__init__.py
+from .context import GenerationContext, LLMConfig, EmbeddingConfig, ChapterParams, ProjectConfig
 from .architecture import Novel_architecture_generate
 from .blueprint import Chapter_blueprint_generate
 from .chapter import (
@@ -6,7 +7,7 @@ from .chapter import (
     summarize_recent_chapters,
     get_filtered_knowledge_context,
     build_chapter_prompt,
-    generate_chapter_draft
+    generate_chapter_draft,
 )
 from .finalization import finalize_chapter, enrich_chapter_text
 from .knowledge import import_knowledge_file

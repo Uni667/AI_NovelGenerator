@@ -1,6 +1,5 @@
 import os
 import asyncio
-import threading
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from backend.app.services import project_service, chapter_service
@@ -8,8 +7,12 @@ from backend.app.utils.sse import SSEEmitter, sse_event_generator
 from backend.app.dependencies import get_user_llm_config, get_user_embedding_config
 from backend.app.auth import get_current_user
 
+from novel_generator.context import GenerationContext, ChapterParams, ProjectConfig
+
 router = APIRouter(tags=["AI 生成"])
 
+
+# ── helpers ──
 
 def _check_project(project_id: str, request: Request) -> tuple:
     user_id = get_current_user(request)
@@ -20,6 +23,54 @@ def _check_project(project_id: str, request: Request) -> tuple:
     if not pconfig:
         raise HTTPException(status_code=404, detail="项目配置不存在")
     return project, pconfig, user_id
+
+
+def _resolve_llm(user_id: str, preferred: str) -> dict:
+    if preferred:
+        conf = get_user_llm_config(user_id, preferred)
+        if conf:
+            return conf
+    from backend.app.services.user_service import list_user_llm_configs
+    configs = list_user_llm_configs(user_id)
+    if not configs:
+        raise HTTPException(status_code=400, detail="请先在设置中添加 LLM 配置")
+    return configs[next(iter(configs.keys()))]
+
+
+def _resolve_emb(user_id: str, preferred: str) -> dict:
+    if not preferred:
+        return {}
+    conf = get_user_embedding_config(user_id, preferred)
+    return conf or {}
+
+
+def _make_ctx(llm_conf: dict, emb_conf: dict, filepath: str) -> GenerationContext:
+    return GenerationContext.from_dicts(
+        llm_dict=llm_conf,
+        emb_dict=emb_conf,
+        filepath=filepath,
+    )
+
+
+def _make_project_cfg(pconfig: dict) -> ProjectConfig:
+    return ProjectConfig(
+        topic=pconfig.get("topic", ""),
+        genre=pconfig.get("genre", ""),
+        category=pconfig.get("category", ""),
+        platform=pconfig.get("platform", "tomato"),
+        num_chapters=pconfig.get("num_chapters", 0),
+        word_number=pconfig.get("word_number", 3000),
+        language=pconfig.get("language", "zh"),
+        user_guidance=pconfig.get("user_guidance", ""),
+    )
+
+
+def _make_chapter_params(pconfig: dict, chapter_number: int) -> ChapterParams:
+    return ChapterParams(
+        chapter_number=chapter_number,
+        word_number=pconfig.get("word_number", 3000),
+        user_guidance=pconfig.get("user_guidance", ""),
+    )
 
 
 def _run_in_thread(emitter: SSEEmitter, func, *args, **kwargs):
@@ -34,7 +85,7 @@ def _make_streaming_response(
     queue: asyncio.Queue,
     emitter: SSEEmitter,
     target_func,
-    *args
+    *args,
 ) -> StreamingResponse:
     loop = asyncio.get_event_loop()
     emitter.set_queue(queue, loop)
@@ -50,33 +101,11 @@ def _make_streaming_response(
     return StreamingResponse(
         event_gen(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-def _resolve_llm(user_id: str, preferred: str) -> dict:
-    """根据 preferred 配置名获取用户 LLM 配置，为空则取第一个"""
-    if preferred:
-        conf = get_user_llm_config(user_id, preferred)
-        if conf:
-            return conf
-    # fallback: 取用户第一个 LLM 配置
-    from backend.app.services.user_service import list_user_llm_configs
-    configs = list_user_llm_configs(user_id)
-    if not configs:
-        raise HTTPException(status_code=400, detail="请先在设置中添加 LLM 配置")
-    first_name = next(iter(configs.keys()))
-    conf = configs[first_name]
-    return conf
-
-
-def _resolve_emb(user_id: str, preferred: str) -> dict:
-    """根据 preferred 配置名获取用户 Embedding 配置"""
-    if not preferred:
-        return {}
-    conf = get_user_embedding_config(user_id, preferred)
-    return conf or {}
-
+# ── 架构生成 ──
 
 @router.post("/api/v1/projects/{project_id}/generate/architecture")
 @router.get("/api/v1/projects/{project_id}/generate/architecture")
@@ -84,145 +113,25 @@ async def generate_architecture(project_id: str, request: Request):
     project, pconfig, user_id = _check_project(project_id, request)
     return _make_streaming_response(
         request, asyncio.Queue(), SSEEmitter(),
-        _run_architecture, project, pconfig, user_id
+        _run_architecture, project, pconfig, user_id,
     )
 
 
 def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: str):
-    arch_llm_name = pconfig.get("architecture_llm", "")
-    llm_conf = _resolve_llm(user_id, arch_llm_name)
+    """复用 novel_generator.Novel_architecture_generate，消除重复逻辑"""
+    from novel_generator.architecture import Novel_architecture_generate
 
-    emb_config_name = pconfig.get("embedding_config", "")
-    emb_conf = _resolve_emb(user_id, emb_config_name)
+    llm_conf = _resolve_llm(user_id, pconfig.get("architecture_llm", ""))
+    emb_conf = _resolve_emb(user_id, pconfig.get("embedding_config", ""))
 
-    from llm_adapters import create_llm_adapter
-    from embedding_adapters import create_embedding_adapter
-    from novel_generator.vectorstore_utils import load_vector_store
-    import prompt_definitions
-    from novel_generator.common import invoke_with_cleaning
+    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"])
+    proj_cfg = _make_project_cfg(pconfig)
 
-    llm = create_llm_adapter(
-        interface_format=llm_conf.get("interface_format", "OpenAI"),
-        base_url=llm_conf.get("base_url", ""),
-        model_name=llm_conf.get("model_name", ""),
-        api_key=llm_conf.get("api_key", ""),
-        temperature=llm_conf.get("temperature", 0.7),
-        max_tokens=llm_conf.get("max_tokens", 8192),
-        timeout=llm_conf.get("timeout", 600)
-    )
-
-    filepath = project["filepath"]
-    topic = pconfig.get("topic", "")
-    genre = pconfig.get("genre", "")
-    category = pconfig.get("category", "")
-    num_chapters = pconfig.get("num_chapters", 0)
-    word_number = pconfig.get("word_number", 3000)
-    user_guidance = pconfig.get("user_guidance", "")
-
-    knowledge_context = ""
-    if emb_conf:
-        try:
-            emb_adapter = create_embedding_adapter(
-                interface_format=emb_conf.get("interface_format", "OpenAI"),
-                api_key=emb_conf.get("api_key", ""),
-                base_url=emb_conf.get("base_url", ""),
-                model_name=emb_conf.get("model_name", "")
-            )
-            store = load_vector_store(emb_adapter, filepath)
-            if store:
-                query = f"{topic} {category} {genre} {user_guidance}"
-                docs = store.similarity_search(query, k=5)
-                if docs:
-                    knowledge_context = "\n".join([d.page_content for d in docs])[:3000]
-        except Exception:
-            pass
-
-    emitter.emit("progress", {"step": "init", "status": "running", "message": "正在准备生成架构..."})
-
-    # Step 1: 核心种子
-    emitter.emit("progress", {"step": "core_seed", "status": "running", "message": "正在生成核心种子..."})
-    try:
-        prompt_core = prompt_definitions.core_seed_prompt.format(
-            topic=topic, genre=genre, category=category,
-            number_of_chapters=num_chapters, word_number=word_number,
-            user_guidance=user_guidance,
-            knowledge_context=knowledge_context or "（无相关知识库内容）"
-        )
-        core_seed = invoke_with_cleaning(llm, prompt_core)
-        emitter.emit("progress", {"step": "core_seed", "status": "done", "message": "核心种子生成完成"})
-        emitter.emit("partial", {"step": "core_seed", "content": core_seed[:500] + "..."})
-    except Exception as e:
-        emitter.emit("error", {"step": "core_seed", "message": str(e)})
-        return
-
-    # Step 2: 角色动力学
-    emitter.emit("progress", {"step": "character", "status": "running", "message": "正在生成角色动力学..."})
-    try:
-        prompt_char = prompt_definitions.character_dynamics_prompt.format(
-            core_seed=core_seed, user_guidance=user_guidance
-        )
-        char_dynamics = invoke_with_cleaning(llm, prompt_char)
-        emitter.emit("progress", {"step": "character", "status": "done", "message": "角色动力学生成完成"})
-    except Exception as e:
-        emitter.emit("error", {"step": "character", "message": str(e)})
-        return
-
-    emitter.emit("progress", {"step": "character_state", "status": "running", "message": "正在生成初始角色状态..."})
-    try:
-        from utils import clear_file_content, save_string_to_txt
-        prompt_cs = prompt_definitions.create_character_state_prompt.format(character_dynamics=char_dynamics)
-        char_state = invoke_with_cleaning(llm, prompt_cs)
-        cs_file = os.path.join(filepath, "character_state.txt")
-        clear_file_content(cs_file)
-        save_string_to_txt(char_state, cs_file)
-        emitter.emit("progress", {"step": "character_state", "status": "done", "message": "角色状态表已生成"})
-    except Exception as e:
-        emitter.emit("error", {"step": "character_state", "message": str(e)})
-        return
-
-    # Step 3: 世界观
-    emitter.emit("progress", {"step": "world", "status": "running", "message": "正在生成世界观..."})
-    try:
-        prompt_world = prompt_definitions.world_building_prompt.format(
-            core_seed=core_seed, user_guidance=user_guidance
-        )
-        world_building = invoke_with_cleaning(llm, prompt_world)
-        emitter.emit("progress", {"step": "world", "status": "done", "message": "世界观生成完成"})
-    except Exception as e:
-        emitter.emit("error", {"step": "world", "message": str(e)})
-        return
-
-    # Step 4: 三幕式情节
-    emitter.emit("progress", {"step": "plot", "status": "running", "message": "正在生成三幕式情节架构..."})
-    try:
-        prompt_plot = prompt_definitions.plot_architecture_prompt.format(
-            core_seed=core_seed, character_dynamics=char_dynamics,
-            world_building=world_building, user_guidance=user_guidance
-        )
-        plot_arch = invoke_with_cleaning(llm, prompt_plot)
-        emitter.emit("progress", {"step": "plot", "status": "done", "message": "情节架构生成完成"})
-    except Exception as e:
-        emitter.emit("error", {"step": "plot", "message": str(e)})
-        return
-
-    final_content = (
-        f"#=== 0) 小说设定 ===\n"
-        f"主题：{topic}, 类型：{category}, 风格流派：{genre}, 篇幅：约{num_chapters}章（每章{word_number}字）\n\n"
-        f"#=== 1) 核心种子 ===\n{core_seed}\n\n"
-        f"#=== 2) 角色动力学 ===\n{char_dynamics}\n\n"
-        f"#=== 3) 世界观 ===\n{world_building}\n\n"
-        f"#=== 4) 三幕式情节架构 ===\n{plot_arch}\n"
-    )
-    arch_file = os.path.join(filepath, "Novel_architecture.txt")
-    from utils import clear_file_content, save_string_to_txt
-    clear_file_content(arch_file)
-    save_string_to_txt(final_content, arch_file)
-
+    Novel_architecture_generate(ctx, proj_cfg, emitter=emitter)
     project_service.update_project(project["id"], {"status": "ready"}, user_id)
 
-    emitter.emit("progress", {"step": "all", "status": "done", "message": "小说架构生成完毕！"})
-    emitter.emit("partial", {"step": "result", "content": final_content[:1000] + "\n\n...(完整内容请查看小说架构页面)"})
 
+# ── 蓝本章节目录生成 ──
 
 @router.post("/api/v1/projects/{project_id}/generate/blueprint")
 @router.get("/api/v1/projects/{project_id}/generate/blueprint")
@@ -230,47 +139,23 @@ async def generate_blueprint(project_id: str, request: Request):
     project, pconfig, user_id = _check_project(project_id, request)
     return _make_streaming_response(
         request, asyncio.Queue(), SSEEmitter(),
-        _run_blueprint, project, pconfig, user_id
+        _run_blueprint, project, pconfig, user_id,
     )
 
 
 def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: str):
-    outline_llm_name = pconfig.get("chapter_outline_llm", "")
-    llm_conf = _resolve_llm(user_id, outline_llm_name)
-
-    from llm_adapters import create_llm_adapter
+    """复用 novel_generator.Chapter_blueprint_generate"""
     from novel_generator.blueprint import Chapter_blueprint_generate
 
-    llm = create_llm_adapter(
-        interface_format=llm_conf.get("interface_format", "OpenAI"),
-        base_url=llm_conf.get("base_url", ""),
-        model_name=llm_conf.get("model_name", ""),
-        api_key=llm_conf.get("api_key", ""),
-        temperature=llm_conf.get("temperature", 0.7),
-        max_tokens=llm_conf.get("max_tokens", 8192),
-        timeout=llm_conf.get("timeout", 600)
-    )
+    llm_conf = _resolve_llm(user_id, pconfig.get("chapter_outline_llm", ""))
+    ctx = _make_ctx(llm_conf, {}, project["filepath"])
+    proj_cfg = _make_project_cfg(pconfig)
 
-    emitter.emit("progress", {"step": "blueprint", "status": "running", "message": "正在生成章节目录..."})
+    Chapter_blueprint_generate(ctx, proj_cfg, emitter=emitter)
+    chapter_service.sync_chapters_from_directory(project["id"], project["filepath"])
 
-    try:
-        Chapter_blueprint_generate(
-            interface_format=llm_conf.get("interface_format", "OpenAI"),
-            api_key=llm_conf.get("api_key", ""),
-            base_url=llm_conf.get("base_url", ""),
-            llm_model=llm_conf.get("model_name", ""),
-            number_of_chapters=pconfig.get("num_chapters", 10),
-            filepath=project["filepath"],
-            temperature=llm_conf.get("temperature", 0.7),
-            max_tokens=llm_conf.get("max_tokens", 8192),
-            timeout=llm_conf.get("timeout", 600),
-            user_guidance=pconfig.get("user_guidance", "")
-        )
-        chapter_service.sync_chapters_from_directory(project["id"], project["filepath"])
-        emitter.emit("progress", {"step": "blueprint", "status": "done", "message": "章节目录生成完成"})
-    except Exception as e:
-        emitter.emit("error", {"step": "blueprint", "message": str(e)})
 
+# ── 章节草稿生成 ──
 
 @router.post("/api/v1/projects/{project_id}/generate/chapter/{chapter_number}")
 @router.get("/api/v1/projects/{project_id}/generate/chapter/{chapter_number}")
@@ -278,78 +163,43 @@ async def generate_chapter(project_id: str, chapter_number: int, request: Reques
     project, pconfig, user_id = _check_project(project_id, request)
     return _make_streaming_response(
         request, asyncio.Queue(), SSEEmitter(),
-        _run_chapter_generation, project, pconfig, chapter_number, user_id
+        _run_chapter_generation, project, pconfig, chapter_number, user_id,
     )
 
 
 def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int, user_id: str):
-    draft_llm_name = pconfig.get("prompt_draft_llm", "")
-    llm_conf = _resolve_llm(user_id, draft_llm_name)
+    """复用 novel_generator.build_chapter_prompt + generate_chapter_draft"""
+    from novel_generator.chapter import build_chapter_prompt, generate_chapter_draft
 
-    emb_config_name = pconfig.get("embedding_config", "")
-    emb_conf = _resolve_emb(user_id, emb_config_name)
+    llm_conf = _resolve_llm(user_id, pconfig.get("prompt_draft_llm", ""))
+    emb_conf = _resolve_emb(user_id, pconfig.get("embedding_config", ""))
 
-    emitter.emit("progress", {"step": "build_prompt", "status": "running", "message": f"正在构建第{chapter_number}章提示词..."})
+    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"])
+    params = _make_chapter_params(pconfig, chapter_number)
 
-    try:
-        from novel_generator.chapter import build_chapter_prompt, generate_chapter_draft
+    emitter.emit("progress", {"step": "build_prompt", "status": "running",
+                               "message": f"正在构建第{chapter_number}章提示词..."})
 
-        prompt_text = build_chapter_prompt(
-            api_key=llm_conf.get("api_key", ""),
-            base_url=llm_conf.get("base_url", ""),
-            model_name=llm_conf.get("model_name", ""),
-            filepath=project["filepath"],
-            novel_number=chapter_number,
-            word_number=pconfig.get("word_number", 3000),
-            temperature=llm_conf.get("temperature", 0.7),
-            user_guidance=pconfig.get("user_guidance", ""),
-            characters_involved="", key_items="", scene_location="", time_constraint="",
-            embedding_api_key=emb_conf.get("api_key", ""),
-            embedding_url=emb_conf.get("base_url", ""),
-            embedding_interface_format=emb_conf.get("interface_format", "OpenAI"),
-            embedding_model_name=emb_conf.get("model_name", ""),
-            embedding_retrieval_k=emb_conf.get("retrieval_k", 4),
-            interface_format=llm_conf.get("interface_format", "OpenAI"),
-            max_tokens=llm_conf.get("max_tokens", 8192),
-            timeout=llm_conf.get("timeout", 600)
-        )
+    prompt_text = build_chapter_prompt(ctx, params)
+    emitter.emit("progress", {"step": "build_prompt", "status": "done", "message": "提示词构建完成"})
 
-        emitter.emit("progress", {"step": "build_prompt", "status": "done", "message": "提示词构建完成"})
-        emitter.emit("progress", {"step": "draft", "status": "running", "message": f"正在生成第{chapter_number}章草稿..."})
+    emitter.emit("progress", {"step": "draft", "status": "running",
+                               "message": f"正在生成第{chapter_number}章草稿..."})
 
-        draft_text = generate_chapter_draft(
-            api_key=llm_conf.get("api_key", ""),
-            base_url=llm_conf.get("base_url", ""),
-            model_name=llm_conf.get("model_name", ""),
-            filepath=project["filepath"],
-            novel_number=chapter_number,
-            word_number=pconfig.get("word_number", 3000),
-            temperature=llm_conf.get("temperature", 0.7),
-            user_guidance=pconfig.get("user_guidance", ""),
-            characters_involved="", key_items="", scene_location="", time_constraint="",
-            embedding_api_key=emb_conf.get("api_key", ""),
-            embedding_url=emb_conf.get("base_url", ""),
-            embedding_interface_format=emb_conf.get("interface_format", "OpenAI"),
-            embedding_model_name=emb_conf.get("model_name", ""),
-            embedding_retrieval_k=emb_conf.get("retrieval_k", 4),
-            interface_format=llm_conf.get("interface_format", "OpenAI"),
-            max_tokens=llm_conf.get("max_tokens", 8192),
-            timeout=llm_conf.get("timeout", 600),
-            custom_prompt_text=prompt_text
-        )
+    draft_text = generate_chapter_draft(ctx, params, custom_prompt_text=prompt_text)
 
-        if draft_text:
-            emitter.emit("progress", {"step": "draft", "status": "done", "message": f"第{chapter_number}章草稿生成完成"})
-            emitter.emit("partial", {"step": "draft", "content": draft_text[:500] + "..."})
-            from utils import get_word_count
-            wc = get_word_count(draft_text)
-            chapter_service.mark_chapter_final(project["id"], chapter_number, wc)
-        else:
-            emitter.emit("error", {"step": "draft", "message": "草稿生成返回空内容"})
+    if draft_text:
+        from utils import get_word_count
+        wc = get_word_count(draft_text)
+        chapter_service.mark_chapter_final(project["id"], chapter_number, wc)
+        emitter.emit("progress", {"step": "draft", "status": "done",
+                                   "message": f"第{chapter_number}章草稿生成完成"})
+        emitter.emit("partial", {"step": "draft", "content": draft_text[:500] + "..."})
+    else:
+        emitter.emit("error", {"step": "draft", "message": "草稿生成返回空内容"})
 
-    except Exception as e:
-        emitter.emit("error", {"step": "chapter", "message": str(e)})
 
+# ── 定稿 ──
 
 @router.post("/api/v1/projects/{project_id}/generate/finalize/{chapter_number}")
 @router.get("/api/v1/projects/{project_id}/generate/finalize/{chapter_number}")
@@ -357,44 +207,29 @@ async def finalize_chapter_route(project_id: str, chapter_number: int, request: 
     project, pconfig, user_id = _check_project(project_id, request)
     return _make_streaming_response(
         request, asyncio.Queue(), SSEEmitter(),
-        _run_finalize, project, pconfig, chapter_number, user_id
+        _run_finalize, project, pconfig, chapter_number, user_id,
     )
 
 
 def _run_finalize(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int, user_id: str):
-    final_llm_name = pconfig.get("final_chapter_llm", "")
-    llm_conf = _resolve_llm(user_id, final_llm_name)
+    """复用 novel_generator.finalize_chapter"""
+    from novel_generator.finalization import finalize_chapter
 
-    emb_config_name = pconfig.get("embedding_config", "")
-    emb_conf = _resolve_emb(user_id, emb_config_name)
+    llm_conf = _resolve_llm(user_id, pconfig.get("final_chapter_llm", ""))
+    emb_conf = _resolve_emb(user_id, pconfig.get("embedding_config", ""))
 
-    emitter.emit("progress", {"step": "finalize", "status": "running", "message": f"正在定稿第{chapter_number}章..."})
+    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"])
+    params = _make_chapter_params(pconfig, chapter_number)
 
-    try:
-        from novel_generator.finalization import finalize_chapter
+    emitter.emit("progress", {"step": "finalize", "status": "running",
+                               "message": f"正在定稿第{chapter_number}章..."})
 
-        finalize_chapter(
-            novel_number=chapter_number,
-            word_number=pconfig.get("word_number", 3000),
-            api_key=llm_conf.get("api_key", ""),
-            base_url=llm_conf.get("base_url", ""),
-            model_name=llm_conf.get("model_name", ""),
-            temperature=llm_conf.get("temperature", 0.7),
-            filepath=project["filepath"],
-            embedding_api_key=emb_conf.get("api_key", ""),
-            embedding_url=emb_conf.get("base_url", ""),
-            embedding_interface_format=emb_conf.get("interface_format", "OpenAI"),
-            embedding_model_name=emb_conf.get("model_name", ""),
-            interface_format=llm_conf.get("interface_format", "OpenAI"),
-            max_tokens=llm_conf.get("max_tokens", 8192),
-            timeout=llm_conf.get("timeout", 600)
-        )
+    finalize_chapter(ctx, params)
 
-        from utils import read_file, get_word_count
-        chapter_text = read_file(os.path.join(project["filepath"], "chapters", f"chapter_{chapter_number}.txt"))
-        wc = get_word_count(chapter_text)
-        chapter_service.mark_chapter_final(project["id"], chapter_number, wc)
+    from utils import read_file, get_word_count
+    chapter_text = read_file(os.path.join(project["filepath"], "chapters", f"chapter_{chapter_number}.txt"))
+    wc = get_word_count(chapter_text)
+    chapter_service.mark_chapter_final(project["id"], chapter_number, wc)
 
-        emitter.emit("progress", {"step": "finalize", "status": "done", "message": f"第{chapter_number}章定稿完成"})
-    except Exception as e:
-        emitter.emit("error", {"step": "finalize", "message": str(e)})
+    emitter.emit("progress", {"step": "finalize", "status": "done",
+                               "message": f"第{chapter_number}章定稿完成"})

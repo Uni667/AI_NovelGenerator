@@ -10,7 +10,6 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { useProjects } from "@/lib/hooks/use-projects"
 import { BackendStatus } from "@/components/layout/backend-status"
 import { getUser, clearToken } from "@/lib/auth"
-import { useState, useEffect } from "react"
 import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { LogOut, User } from "lucide-react"
@@ -19,8 +18,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const { data: projects } = useProjects()
   const { theme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
+  const router = useRouter()
 
   return (
     <>
@@ -75,25 +73,24 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           variant="ghost"
           size="sm"
           className="w-full justify-start gap-2 text-muted-foreground"
-          onClick={() => { clearToken(); window.location.href = "/login" }}
+          onClick={() => { clearToken(); router.push("/login") }}
         >
           <LogOut className="h-4 w-4" />
           退出登录
         </Button>
-        {mounted && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start gap-2"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          >
-            {theme === "dark" ? (
-              <><Sun className="h-4 w-4" />浅色模式</>
-            ) : (
-              <><Moon className="h-4 w-4" />深色模式</>
-            )}
-          </Button>
-        )}
+        {/* 主题切换 — 始终渲染占位空间，避免布局跳动 */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        >
+          {theme === "dark" ? (
+            <><Sun className="h-4 w-4" />浅色模式</>
+          ) : (
+            <><Moon className="h-4 w-4" />深色模式</>
+          )}
+        </Button>
         <div className="flex justify-center mt-1">
           <BackendStatus />
         </div>

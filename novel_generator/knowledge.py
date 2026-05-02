@@ -10,6 +10,8 @@ import traceback
 import warnings
 from utils import read_file
 
+logger = logging.getLogger(__name__)
+
 # Lazy imports for heavy dependencies
 _nltk = _Document = None
 _load_vs = _init_vs = None
@@ -36,13 +38,8 @@ def _ensure_vectorstore():
 # 禁用特定的Torch警告
 warnings.filterwarnings('ignore', message='.*Torch was not compiled with flash attention.*')
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-logging.basicConfig(
-    filename='app.log',      # 日志文件名
-    filemode='a',            # 追加模式（'w' 会覆盖）
-    level=logging.INFO,      # 记录 INFO 及以上级别的日志
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+
+
 def advanced_split_content(content: str, similarity_threshold: float = 0.7, max_length: int = 500) -> list:
     """使用基本分段策略"""
     _ensure_nltk()

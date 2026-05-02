@@ -10,9 +10,7 @@ RUN pip install --no-cache-dir -r requirements-cloud.txt
 COPY backend/ backend/
 COPY llm_adapters.py .
 COPY embedding_adapters.py .
-COPY config_manager.py .
 COPY prompt_definitions.py .
-COPY prompt_definitions_en.py .
 COPY utils.py .
 COPY chapter_directory_parser.py .
 COPY consistency_checker.py .
@@ -24,9 +22,8 @@ RUN mkdir -p /app/data
 # Railway provides PORT env var
 EXPOSE 8001
 
-# Startup: write config from env var, then start uvicorn
+# Startup: start uvicorn directly (no config_manager dependency)
 RUN echo '#!/bin/bash' > /app/start.sh && \
-    echo 'echo "$RAILWAY_CONFIG_JSON" > /app/config.json' >> /app/start.sh && \
     echo 'exec uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8001}' >> /app/start.sh && \
     chmod +x /app/start.sh
 

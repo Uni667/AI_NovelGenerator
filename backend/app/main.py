@@ -1,8 +1,17 @@
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import init_db
 from backend.app.routes import config, projects, chapters, files, knowledge, generation, characters, platform_tools, auth
+
+# 统一日志配置（整个应用只在此处配置一次）
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[logging.StreamHandler()],
+)
 
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",

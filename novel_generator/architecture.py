@@ -1,7 +1,11 @@
-#novel_generator/architecture.py
 # -*- coding: utf-8 -*-
 """
 小说总体架构生成（Novel_architecture_generate 及相关辅助函数）
+
+重构要点：
+- 接受 GenerationContext + ProjectConfig 替代散落参数
+- 可选 emitter 回调（用于 Web SSE 进度推送）
+- 保留 partial_architecture.json 断点续传机制
 """
 import os
 import json
@@ -12,48 +16,36 @@ from llm_adapters import create_llm_adapter
 import prompt_definitions
 from utils import clear_file_content, save_string_to_txt
 
+logger = logging.getLogger(__name__)
+
+
 def load_partial_architecture_data(filepath: str) -> dict:
-    """
-    从 filepath 下的 partial_architecture.json 读取已有的阶段性数据。
-    如果文件不存在或无法解析，返回空 dict。
-    """
     partial_file = os.path.join(filepath, "partial_architecture.json")
     if not os.path.exists(partial_file):
         return {}
     try:
         with open(partial_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data
-    except Exception as e:
-        logging.warning(f"Failed to load partial_architecture.json: {e}")
+            return json.load(f)
+    except Exception:
+        logger.warning("Failed to load partial_architecture.json")
         return {}
 
+
 def save_partial_architecture_data(filepath: str, data: dict):
-    """
-    将阶段性数据写入 partial_architecture.json。
-    """
     partial_file = os.path.join(filepath, "partial_architecture.json")
     try:
         with open(partial_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logging.warning(f"Failed to save partial_architecture.json: {e}")
+    except Exception:
+        logger.warning("Failed to save partial_architecture.json")
+
 
 def Novel_architecture_generate(
-    interface_format: str,
-    api_key: str,
-    base_url: str,
-    llm_model: str,
-    topic: str,
-    genre: str,
-    category: str = "",
-    number_of_chapters: int,
-    word_number: int,
-    filepath: str,
-    user_guidance: str = "",  # 新增参数
-    temperature: float = 0.7,
-    max_tokens: int = 2048,
-    timeout: int = 600
+    # ---- 新接口：统一上下文 ----
+    ctx,         # GenerationContext
+    project,     # ProjectConfig
+    # ---- 可选 emitter 回调 ----
+    emitter=None,
 ) -> None:
     """
     依次调用:
@@ -61,70 +53,95 @@ def Novel_architecture_generate(
       2. character_dynamics_prompt
       3. world_building_prompt
       4. plot_architecture_prompt
-    若在中间任何一步报错且重试多次失败，则将已经生成的内容写入 partial_architecture.json 并退出；
-    下次调用时可从该步骤继续。
-    最终输出 Novel_architecture.txt
 
-    新增：
-    - 在完成角色动力学设定后，依据该角色体系，使用 create_character_state_prompt 生成初始角色状态表，
-      并存储到 character_state.txt，后续维护更新。
+    若中间任何一步失败且重试多次失败，则将已生成内容写入 partial_architecture.json 并退出；
+    下次调用时可从该步骤继续。
+
+    emitter (可选): 具有 .emit(event_type, data) 方法的对象，用于 SSE 进度推送。
     """
+
+    def _emit(event_type: str, data: dict):
+        if emitter and hasattr(emitter, "emit"):
+            emitter.emit(event_type, data)
+
+    filepath = ctx.filepath
     os.makedirs(filepath, exist_ok=True)
+
     partial_data = load_partial_architecture_data(filepath)
-    llm_adapter = create_llm_adapter(
-        interface_format=interface_format,
-        base_url=base_url,
-        model_name=llm_model,
-        api_key=api_key,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        timeout=timeout
+
+    llm = create_llm_adapter(
+        interface_format=ctx.llm.interface_format,
+        base_url=ctx.llm.base_url,
+        model_name=ctx.llm.model_name,
+        api_key=ctx.llm.api_key,
+        temperature=ctx.llm.temperature,
+        max_tokens=ctx.llm.max_tokens,
+        timeout=ctx.llm.timeout,
     )
-    # Step1: 核心种子
+
+    topic = project.topic
+    genre = project.genre
+    category = project.category
+    num_chapters = project.num_chapters
+    word_number = project.word_number
+    user_guidance = project.user_guidance
+
+    # ── Step 1: 核心种子 ──
     if "core_seed_result" not in partial_data:
-        logging.info("Step1: Generating core_seed_prompt (核心种子) ...")
+        logger.info("Step1: Generating core_seed_prompt (核心种子) ...")
+        _emit("progress", {"step": "core_seed", "status": "running", "message": "正在生成核心种子..."})
+
         prompt_core = prompt_definitions.core_seed_prompt.format(
-            topic=topic,
-            genre=genre,
-            category=category,
-            number_of_chapters=number_of_chapters,
-            word_number=word_number,
-            user_guidance=user_guidance  # 修复：添加内容指导
+            topic=topic, genre=genre, category=category,
+            number_of_chapters=num_chapters, word_number=word_number,
+            user_guidance=user_guidance
         )
-        core_seed_result = invoke_with_cleaning(llm_adapter, prompt_core)
+        core_seed_result = invoke_with_cleaning(llm, prompt_core)
         if not core_seed_result.strip():
-            logging.warning("core_seed_prompt generation failed and returned empty.")
+            logger.warning("core_seed_prompt generation failed and returned empty.")
+            _emit("error", {"step": "core_seed", "message": "核心种子生成失败"})
             save_partial_architecture_data(filepath, partial_data)
             return
         partial_data["core_seed_result"] = core_seed_result
         save_partial_architecture_data(filepath, partial_data)
+        _emit("progress", {"step": "core_seed", "status": "done", "message": "核心种子生成完成"})
+        _emit("partial", {"step": "core_seed", "content": core_seed_result[:500] + "..."})
     else:
-        logging.info("Step1 already done. Skipping...")
-    # Step2: 角色动力学
+        logger.info("Step1 already done. Skipping...")
+
+    # ── Step 2: 角色动力学 ──
     if "character_dynamics_result" not in partial_data:
-        logging.info("Step2: Generating character_dynamics_prompt ...")
+        logger.info("Step2: Generating character_dynamics_prompt ...")
+        _emit("progress", {"step": "character", "status": "running", "message": "正在生成角色动力学..."})
+
         prompt_character = prompt_definitions.character_dynamics_prompt.format(
             core_seed=partial_data["core_seed_result"].strip(),
             user_guidance=user_guidance
         )
-        character_dynamics_result = invoke_with_cleaning(llm_adapter, prompt_character)
+        character_dynamics_result = invoke_with_cleaning(llm, prompt_character)
         if not character_dynamics_result.strip():
-            logging.warning("character_dynamics_prompt generation failed.")
+            logger.warning("character_dynamics_prompt generation failed.")
+            _emit("error", {"step": "character", "message": "角色动力学生成失败"})
             save_partial_architecture_data(filepath, partial_data)
             return
         partial_data["character_dynamics_result"] = character_dynamics_result
         save_partial_architecture_data(filepath, partial_data)
+        _emit("progress", {"step": "character", "status": "done", "message": "角色动力学生成完成"})
     else:
-        logging.info("Step2 already done. Skipping...")
-    # 生成初始角色状态
+        logger.info("Step2 already done. Skipping...")
+
+    # ── 生成初始角色状态 ──
     if "character_dynamics_result" in partial_data and "character_state_result" not in partial_data:
-        logging.info("Generating initial character state from character dynamics ...")
+        logger.info("Generating initial character state from character dynamics ...")
+        _emit("progress", {"step": "character_state", "status": "running", "message": "正在生成初始角色状态..."})
+
         prompt_char_state_init = prompt_definitions.create_character_state_prompt.format(
             character_dynamics=partial_data["character_dynamics_result"].strip()
         )
-        character_state_init = invoke_with_cleaning(llm_adapter, prompt_char_state_init)
+        character_state_init = invoke_with_cleaning(llm, prompt_char_state_init)
         if not character_state_init.strip():
-            logging.warning("create_character_state_prompt generation failed.")
+            logger.warning("create_character_state_prompt generation failed.")
+            _emit("error", {"step": "character_state", "message": "角色状态生成失败"})
             save_partial_architecture_data(filepath, partial_data)
             return
         partial_data["character_state_result"] = character_state_init
@@ -132,41 +149,52 @@ def Novel_architecture_generate(
         clear_file_content(character_state_file)
         save_string_to_txt(character_state_init, character_state_file)
         save_partial_architecture_data(filepath, partial_data)
-        logging.info("Initial character state created and saved.")
-    # Step3: 世界观
+        _emit("progress", {"step": "character_state", "status": "done", "message": "角色状态表已生成"})
+        logger.info("Initial character state created and saved.")
+
+    # ── Step 3: 世界观 ──
     if "world_building_result" not in partial_data:
-        logging.info("Step3: Generating world_building_prompt ...")
+        logger.info("Step3: Generating world_building_prompt ...")
+        _emit("progress", {"step": "world", "status": "running", "message": "正在生成世界观..."})
+
         prompt_world = prompt_definitions.world_building_prompt.format(
             core_seed=partial_data["core_seed_result"].strip(),
-            user_guidance=user_guidance  # 修复：添加用户指导
+            user_guidance=user_guidance
         )
-        world_building_result = invoke_with_cleaning(llm_adapter, prompt_world)
+        world_building_result = invoke_with_cleaning(llm, prompt_world)
         if not world_building_result.strip():
-            logging.warning("world_building_prompt generation failed.")
+            logger.warning("world_building_prompt generation failed.")
+            _emit("error", {"step": "world", "message": "世界观生成失败"})
             save_partial_architecture_data(filepath, partial_data)
             return
         partial_data["world_building_result"] = world_building_result
         save_partial_architecture_data(filepath, partial_data)
+        _emit("progress", {"step": "world", "status": "done", "message": "世界观生成完成"})
     else:
-        logging.info("Step3 already done. Skipping...")
-    # Step4: 三幕式情节
+        logger.info("Step3 already done. Skipping...")
+
+    # ── Step 4: 三幕式情节 ──
     if "plot_arch_result" not in partial_data:
-        logging.info("Step4: Generating plot_architecture_prompt ...")
+        logger.info("Step4: Generating plot_architecture_prompt ...")
+        _emit("progress", {"step": "plot", "status": "running", "message": "正在生成三幕式情节架构..."})
+
         prompt_plot = prompt_definitions.plot_architecture_prompt.format(
             core_seed=partial_data["core_seed_result"].strip(),
             character_dynamics=partial_data["character_dynamics_result"].strip(),
             world_building=partial_data["world_building_result"].strip(),
-            user_guidance=user_guidance  # 修复：添加用户指导
+            user_guidance=user_guidance
         )
-        plot_arch_result = invoke_with_cleaning(llm_adapter, prompt_plot)
+        plot_arch_result = invoke_with_cleaning(llm, prompt_plot)
         if not plot_arch_result.strip():
-            logging.warning("plot_architecture_prompt generation failed.")
+            logger.warning("plot_architecture_prompt generation failed.")
+            _emit("error", {"step": "plot", "message": "情节架构生成失败"})
             save_partial_architecture_data(filepath, partial_data)
             return
         partial_data["plot_arch_result"] = plot_arch_result
         save_partial_architecture_data(filepath, partial_data)
+        _emit("progress", {"step": "plot", "status": "done", "message": "情节架构生成完成"})
     else:
-        logging.info("Step4 already done. Skipping...")
+        logger.info("Step4 already done. Skipping...")
 
     core_seed_result = partial_data["core_seed_result"]
     character_dynamics_result = partial_data["character_dynamics_result"]
@@ -175,7 +203,7 @@ def Novel_architecture_generate(
 
     final_content = (
         "#=== 0) 小说设定 ===\n"
-        f"主题：{topic},类型：{category},风格流派：{genre},篇幅：约{number_of_chapters}章（每章{word_number}字）\n\n"
+        f"主题：{topic}, 类型：{category}, 风格流派：{genre}, 篇幅：约{num_chapters}章（每章{word_number}字）\n\n"
         "#=== 1) 核心种子 ===\n"
         f"{core_seed_result}\n\n"
         "#=== 2) 角色动力学 ===\n"
@@ -189,9 +217,12 @@ def Novel_architecture_generate(
     arch_file = os.path.join(filepath, "Novel_architecture.txt")
     clear_file_content(arch_file)
     save_string_to_txt(final_content, arch_file)
-    logging.info("Novel_architecture.txt has been generated successfully.")
+    logger.info("Novel_architecture.txt has been generated successfully.")
 
     partial_arch_file = os.path.join(filepath, "partial_architecture.json")
     if os.path.exists(partial_arch_file):
         os.remove(partial_arch_file)
-        logging.info("partial_architecture.json removed (all steps completed).")
+        logger.info("partial_architecture.json removed (all steps completed).")
+
+    _emit("progress", {"step": "all", "status": "done", "message": "小说架构生成完毕！"})
+    _emit("partial", {"step": "result", "content": final_content[:1000] + "\n\n...(完整内容请查看小说架构页面)"})

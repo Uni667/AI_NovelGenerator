@@ -51,23 +51,13 @@ def save_data_to_json(data: dict, file_path: str) -> bool:
     except Exception as e:
         print(f"[save_data_to_json] 保存数据到JSON文件时出错: {e}")
 
-def get_word_count(text: str) -> int:
+def get_word_count(text: str, language: str = "zh") -> int:
     """
-    根据 config_manager.IS_ENGLISH 计算字数。
-    如果是英文模式，按单词（空格分隔）计算；
-    如果是中文模式，按字符数计算。
+    language='en' 按单词计算，否则按字符数计算。
+    （原 config_manager.IS_ENGLISH 全局变量已废弃，改为参数传递。）
     """
-    try:
-        import config_manager
-        is_english = getattr(config_manager, 'IS_ENGLISH', False)
-    except ImportError:
-        is_english = False
-
     if not text:
         return 0
-    if is_english:
-        # 英文模式：按单词计算
+    if language == "en":
         return len(text.split())
-    else:
-        # 中文模式：按字符计算
-        return len(text)
+    return len(text)
