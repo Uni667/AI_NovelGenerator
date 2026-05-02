@@ -57,6 +57,9 @@ def check_base_url(url: str) -> str:
 
 class BaseLLMAdapter:
     """统一的 LLM 接口基类"""
+    def __init__(self):
+        self.last_error: str = ""
+
     def invoke(self, prompt: str) -> str:
         raise NotImplementedError("Subclasses must implement .invoke(prompt) method.")
 
@@ -66,6 +69,7 @@ class OpenAICompatibleAdapter(BaseLLMAdapter):
     def __init__(self, api_key: str, base_url: str, model_name: str,
                  max_tokens: int, temperature: float = 0.7,
                  timeout: Optional[int] = 600):
+        super().__init__()
         _ensure_openai()
         self._client = _ChatOpenAI(
             model=model_name,
@@ -80,10 +84,11 @@ class OpenAICompatibleAdapter(BaseLLMAdapter):
         try:
             response = self._client.invoke(prompt)
             if not response:
-                logging.warning("No response from OpenAICompatibleAdapter.")
+                self.last_error = "No response from LLM"
                 return ""
             return response.content
         except Exception as e:
+            self.last_error = str(e)
             logging.error(f"API 调用失败: {e}")
             return ""
 
@@ -94,6 +99,7 @@ class OpenAIDirectAdapter(BaseLLMAdapter):
                  max_tokens: int, temperature: float = 0.7,
                  timeout: Optional[int] = 600,
                  system_prompt: str = "You are a helpful assistant."):
+        super().__init__()
         self.model_name = model_name
         self.max_tokens = max_tokens
         self.temperature = temperature
@@ -120,9 +126,10 @@ class OpenAIDirectAdapter(BaseLLMAdapter):
             )
             if response and response.choices:
                 return response.choices[0].message.content
-            logging.warning("No response from OpenAIDirectAdapter.")
+            self.last_error = "No response from LLM"
             return ""
         except Exception as e:
+            self.last_error = str(e)
             logging.error(f"API 调用失败: {e}")
             return ""
 
@@ -132,6 +139,7 @@ class GeminiAdapter(BaseLLMAdapter):
     def __init__(self, api_key: str, base_url: str, model_name: str,
                  max_tokens: int, temperature: float = 0.7,
                  timeout: Optional[int] = 600):
+        super().__init__()
         self.model_name = model_name
         self.max_tokens = max_tokens
         self.temperature = temperature
@@ -151,9 +159,10 @@ class GeminiAdapter(BaseLLMAdapter):
             )
             if response and response.text:
                 return response.text
-            logging.warning("No text response from Gemini API.")
+            self.last_error = "No text response from Gemini API"
             return ""
         except Exception as e:
+            self.last_error = str(e)
             logging.error(f"Gemini API 调用失败: {e}")
             return ""
 
@@ -163,6 +172,7 @@ class AzureOpenAIAdapter(BaseLLMAdapter):
     def __init__(self, api_key: str, base_url: str, model_name: str,
                  max_tokens: int, temperature: float = 0.7,
                  timeout: Optional[int] = 600):
+        super().__init__()
         match = re.match(
             r'https://(.+?)/openai/deployments/(.+?)/chat/completions\?api-version=(.+)',
             base_url
@@ -184,10 +194,11 @@ class AzureOpenAIAdapter(BaseLLMAdapter):
         try:
             response = self._client.invoke(prompt)
             if not response:
-                logging.warning("No response from AzureOpenAIAdapter.")
+                self.last_error = "No response from Azure OpenAI"
                 return ""
             return response.content
         except Exception as e:
+            self.last_error = str(e)
             logging.error(f"Azure OpenAI API 调用失败: {e}")
             return ""
 
@@ -197,6 +208,7 @@ class AzureAIAdapter(BaseLLMAdapter):
     def __init__(self, api_key: str, base_url: str, model_name: str,
                  max_tokens: int, temperature: float = 0.7,
                  timeout: Optional[int] = 600):
+        super().__init__()
         match = re.match(
             r'https://(.+?)\.services\.ai\.azure\.com(?:/models)?(?:/chat/completions)?(?:\?api-version=(.+))?',
             base_url
@@ -206,6 +218,7 @@ class AzureAIAdapter(BaseLLMAdapter):
                 "Invalid Azure AI base_url format. "
                 "Expected: https://<endpoint>.services.ai.azure.com/models/chat/completions?api-version=xxx"
             )
+        _ensure_azure()
         self._client = _ChatCompletionsClient(
             endpoint=f"https://{match.group(1)}.services.ai.azure.com/models",
             credential=_AzureKeyCredential(api_key),
@@ -225,9 +238,10 @@ class AzureAIAdapter(BaseLLMAdapter):
             )
             if response and response.choices:
                 return response.choices[0].message.content
-            logging.warning("No response from AzureAIAdapter.")
+            self.last_error = "No response from Azure AI"
             return ""
         except Exception as e:
+            self.last_error = str(e)
             logging.error(f"Azure AI Inference API 调用失败: {e}")
             return ""
 

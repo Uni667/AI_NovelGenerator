@@ -154,7 +154,8 @@ def test_user_llm_config(user_id: str, name: str) -> dict:
     response = adapter.invoke("Please reply 'OK'")
     if response:
         return {"success": True, "message": f"测试成功！回复: {response[:200]}"}
-    return {"success": False, "message": "未获取到响应"}
+    err = getattr(adapter, "last_error", "") or "未获取到响应"
+    return {"success": False, "message": f"测试失败: {err}"}
 
 
 def get_user_llm_config_raw(user_id: str, name: str) -> dict:
@@ -247,7 +248,8 @@ def test_user_embedding_config(user_id: str, name: str) -> dict:
     result = adapter.embed_query("测试文本")
     if result and len(result) > 0:
         return {"success": True, "message": f"测试成功！向量维度: {len(result)}"}
-    return {"success": False, "message": "未获取到向量"}
+    err = getattr(adapter, "last_error", "") or "未获取到向量"
+    return {"success": False, "message": f"测试失败: {err}"}
 
 
 def get_user_embedding_config_raw(user_id: str, name: str) -> dict:

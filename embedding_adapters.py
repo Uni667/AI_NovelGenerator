@@ -39,6 +39,9 @@ class BaseEmbeddingAdapter:
     """
     Embedding 接口统一基类
     """
+    def __init__(self):
+        self.last_error: str = ""
+
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         raise NotImplementedError
 
@@ -50,6 +53,7 @@ class OpenAIEmbeddingAdapter(BaseEmbeddingAdapter):
     基于 OpenAIEmbeddings（或兼容接口）的适配器
     """
     def __init__(self, api_key: str, base_url: str, model_name: str):
+        super().__init__()
         _ensure_openai_emb()
         self._embedding = _OpenAIEmbeddings(
             openai_api_key=api_key,
@@ -68,6 +72,7 @@ class AzureOpenAIEmbeddingAdapter(BaseEmbeddingAdapter):
     基于 AzureOpenAIEmbeddings（或兼容接口）的适配器
     """
     def __init__(self, api_key: str, base_url: str, model_name: str):
+        super().__init__()
         import re
         match = re.match(r'https://(.+?)/openai/deployments/(.+?)/embeddings\?api-version=(.+)', base_url)
         if match:
@@ -96,6 +101,7 @@ class OllamaEmbeddingAdapter(BaseEmbeddingAdapter):
     其接口路径为 /api/embeddings
     """
     def __init__(self, model_name: str, base_url: str):
+        super().__init__()
         self.model_name = model_name
         self.base_url = base_url.rstrip("/")
 
@@ -142,6 +148,7 @@ class MLStudioEmbeddingAdapter(BaseEmbeddingAdapter):
     基于 LM Studio 的 embedding 适配器
     """
     def __init__(self, api_key: str, base_url: str, model_name: str):
+        super().__init__()
         self.url = ensure_openai_base_url_has_v1(base_url)
         if not self.url.endswith('/embeddings'):
             self.url = f"{self.url}/embeddings"
@@ -203,6 +210,7 @@ class GeminiEmbeddingAdapter(BaseEmbeddingAdapter):
         :param model_name: 这里一般是 "text-embedding-004"
         :param base_url: e.g. https://generativelanguage.googleapis.com/v1beta/models (已弃用，SDK会自动处理)
         """
+        super().__init__()
         self.api_key = api_key
         self.model_name = model_name
         _ensure_google()
@@ -243,6 +251,7 @@ class SiliconFlowEmbeddingAdapter(BaseEmbeddingAdapter):
     基于 SiliconFlow 的 embedding 适配器
     """
     def __init__(self, api_key: str, base_url: str, model_name: str):
+        super().__init__()
         # 自动为 base_url 添加 scheme（如果缺失）
         if not base_url.startswith("http://") and not base_url.startswith("https://"):
             base_url = "https://" + base_url
