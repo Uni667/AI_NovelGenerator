@@ -1,7 +1,7 @@
 "use client"
 
 import { useParams, useRouter } from "next/navigation"
-import { useChapter, useChapters, useProject } from "@/lib/hooks/use-projects"
+import { useChapter, useChapters } from "@/lib/hooks/use-projects"
 import { useSSE } from "@/lib/hooks/use-sse"
 import { api } from "@/lib/api-client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,7 +19,6 @@ export default function ChapterPage() {
   const router = useRouter()
   const projectId = params.id as string
   const chapterNum = parseInt(params.num as string)
-  const { data: project } = useProject(projectId)
   const { data: chapters } = useChapters(projectId)
   const { data: chapterData, isLoading } = useChapter(projectId, chapterNum)
   const { events, isConnected, connect } = useSSE()
@@ -46,7 +45,6 @@ export default function ChapterPage() {
     connect(`${base}/api/v1/projects/${projectId}/generate/finalize/${chapterNum}?t=${Date.now()}`)
   }
 
-  const lastPartial = events.filter(e => e.type === "partial").pop()
   const isDone = events.some(e => e.type === "done")
 
   useEffect(() => {
@@ -56,7 +54,7 @@ export default function ChapterPage() {
         if (d?.content) setContent(d.content)
       })
     }
-  }, [isDone])
+  }, [chapterNum, isDone, projectId])
 
   const prevChapter = chapters?.find((c: any) => c.chapter_number === chapterNum - 1)
   const nextChapter = chapters?.find((c: any) => c.chapter_number === chapterNum + 1)

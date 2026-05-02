@@ -17,9 +17,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { toast } from "sonner"
-import { Play, FileText, BookOpen, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, FileDown, Wand2, BookMarked, Target, Tag, FileEdit, RefreshCw } from "lucide-react"
+import { Play, FileText, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, FileDown, Wand2, BookMarked, Target, Tag, FileEdit, RefreshCw } from "lucide-react"
 
 export default function ProjectDashboard() {
   const params = useParams()
@@ -54,12 +54,16 @@ export default function ProjectDashboard() {
   const [llmConfigs, setLLMConfigs] = useState<Record<string, any>>({})
   const [embConfigs, setEmbConfigs] = useState<Record<string, any>>({})
 
+  const usageLabel = (usage: string) => {
+    const map: Record<string, string> = { general: "通用", architecture: "架构生成", outline: "章节目录", draft: "章节草稿", finalize: "定稿", review: "一致性审校", platform: "平台工具" }
+    return map[usage] || "通用"
+  }
+
   useEffect(() => {
     api.config.llmList().then(setLLMConfigs).catch(() => {})
     api.config.embList().then(setEmbConfigs).catch(() => {})
   }, [])
 
-  const lastProgress = events.filter(e => e.type === "progress").pop()
   const lastPartial = events.filter(e => e.type === "partial").pop()
   const hasError = events.some(e => e.type === "error")
 
@@ -72,13 +76,13 @@ export default function ProjectDashboard() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [])
 
-  const loadCharacters = async () => {
+  const loadCharacters = useCallback(async () => {
     try { setCharacters(await api.characters.list(id)) } catch { /* ignore */ }
-  }
+  }, [id])
 
   useEffect(() => {
     if (activeTab === "characters") loadCharacters()
-  }, [activeTab, id])
+  }, [activeTab, id, loadCharacters])
 
   const handleCreateCharacter = async () => {
     if (!charName.trim()) return
@@ -646,7 +650,7 @@ export default function ProjectDashboard() {
                     <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">默认（第一个可用）</SelectItem>
-                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{llmConfigs[name]?.model_name || name}</SelectItem>)}
+                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{name} [{usageLabel(llmConfigs[name]?.usage)}] - {llmConfigs[name]?.model_name || ""}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -656,7 +660,7 @@ export default function ProjectDashboard() {
                     <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">默认（第一个可用）</SelectItem>
-                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{llmConfigs[name]?.model_name || name}</SelectItem>)}
+                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{name} [{usageLabel(llmConfigs[name]?.usage)}] - {llmConfigs[name]?.model_name || ""}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -666,7 +670,7 @@ export default function ProjectDashboard() {
                     <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">默认（第一个可用）</SelectItem>
-                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{llmConfigs[name]?.model_name || name}</SelectItem>)}
+                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{name} [{usageLabel(llmConfigs[name]?.usage)}] - {llmConfigs[name]?.model_name || ""}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -676,7 +680,7 @@ export default function ProjectDashboard() {
                     <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">默认（第一个可用）</SelectItem>
-                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{llmConfigs[name]?.model_name || name}</SelectItem>)}
+                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{name} [{usageLabel(llmConfigs[name]?.usage)}] - {llmConfigs[name]?.model_name || ""}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -686,7 +690,7 @@ export default function ProjectDashboard() {
                     <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">默认（第一个可用）</SelectItem>
-                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{llmConfigs[name]?.model_name || name}</SelectItem>)}
+                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{name} [{usageLabel(llmConfigs[name]?.usage)}] - {llmConfigs[name]?.model_name || ""}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>

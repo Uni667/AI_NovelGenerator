@@ -11,6 +11,7 @@ class LLMConfigCreate(BaseModel):
     max_tokens: int = Field(default=8192, ge=1, le=200000)
     timeout: int = Field(default=600, ge=10, le=3600)
     interface_format: str = "OpenAI"
+    usage: str = "general"
 
 
 class LLMConfigUpdate(BaseModel):
@@ -21,6 +22,7 @@ class LLMConfigUpdate(BaseModel):
     max_tokens: Optional[int] = None
     timeout: Optional[int] = None
     interface_format: Optional[str] = None
+    usage: Optional[str] = None
 
 
 class LLMConfigResponse(BaseModel):
@@ -31,6 +33,7 @@ class LLMConfigResponse(BaseModel):
     max_tokens: int
     timeout: int
     interface_format: str
+    usage: str
     api_key_masked: str
 
 

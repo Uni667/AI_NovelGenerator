@@ -61,6 +61,7 @@ def list_user_llm_configs(user_id: str) -> dict:
             "max_tokens": r["max_tokens"],
             "timeout": r["timeout"],
             "interface_format": r["interface_format"],
+            "usage": r["usage"] if r["usage"] else "general",
             "api_key_masked": mask_key(key),
             "api_key": key
         }
@@ -77,8 +78,8 @@ def add_user_llm_config(user_id: str, name: str, config: dict) -> dict:
         if existing:
             raise ValueError(f"LLM 配置 '{name}' 已存在")
         conn.execute(
-            "INSERT INTO user_llm_config (user_id, name, interface_format, api_key, base_url, model_name, temperature, max_tokens, timeout, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO user_llm_config (user_id, name, interface_format, api_key, base_url, model_name, temperature, max_tokens, timeout, usage, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (user_id, name,
              config.get("interface_format", "OpenAI"),
              encrypted_key,
@@ -87,13 +88,14 @@ def add_user_llm_config(user_id: str, name: str, config: dict) -> dict:
              config.get("temperature", 0.7),
              config.get("max_tokens", 8192),
              config.get("timeout", 600),
+             config.get("usage", "general"),
              now, now)
         )
     return {"name": name, "api_key_masked": mask_key(config["api_key"])}
 
 
 def update_user_llm_config(user_id: str, name: str, updates: dict) -> dict:
-    allowed = ["api_key", "base_url", "model_name", "temperature", "max_tokens", "timeout", "interface_format"]
+    allowed = ["api_key", "base_url", "model_name", "temperature", "max_tokens", "timeout", "interface_format", "usage"]
     sets = []
     params = []
     for key in allowed:

@@ -14,14 +14,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       setReady(true)
       return
     }
+
     if (!isAuthenticated()) {
       router.replace("/login")
       return
     }
+
     try {
       const user = await fetchMe()
       if (!user) {
-        // token 无效，清除并跳转
         clearToken()
         router.replace("/login")
         return
@@ -29,14 +30,19 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       setUser(user)
       setReady(true)
     } catch {
-      // 网络错误等不回跳，等用户重试
       setReady(true)
     }
   }, [pathname, router])
 
   useEffect(() => {
-    checkAuth()
+    void checkAuth()
   }, [checkAuth])
+
+  useEffect(() => {
+    if (ready && pathname !== "/login" && !isAuthenticated()) {
+      router.replace("/login")
+    }
+  }, [pathname, ready, router])
 
   if (pathname === "/login") return <>{children}</>
 
@@ -48,13 +54,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     )
   }
 
-  // 渲染后如发现 token 被清除（api-client 401 触发），跳登录
-  if (!isAuthenticated()) {
-    if (typeof window !== "undefined") {
-      window.location.href = "/login"
-    }
-    return null
-  }
+  if (!isAuthenticated()) return null
 
   return <>{children}</>
 }

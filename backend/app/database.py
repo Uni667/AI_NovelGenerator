@@ -150,3 +150,8 @@ def init_db():
             conn.execute("ALTER TABLE project ADD COLUMN user_id TEXT REFERENCES user(id)")
         except Exception:
             pass
+        # 迁移：新增 usage 列（LLM 配置用途）
+        try:
+            conn.execute("ALTER TABLE user_llm_config ADD COLUMN usage TEXT DEFAULT 'general'")
+        except Exception:
+            pass
