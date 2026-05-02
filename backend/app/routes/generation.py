@@ -1,5 +1,6 @@
 import os
 import asyncio
+import logging
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from backend.app.services import project_service, chapter_service
@@ -8,8 +9,10 @@ from backend.app.dependencies import get_user_llm_config, get_user_embedding_con
 from backend.app.auth import get_current_user
 
 from novel_generator.context import GenerationContext, ChapterParams, ProjectConfig
+from utils import read_file
 
 router = APIRouter(tags=["AI 生成"])
+logger = logging.getLogger(__name__)
 
 
 # ── helpers ──
@@ -34,7 +37,8 @@ def _resolve_llm(user_id: str, preferred: str) -> dict:
     configs = list_user_llm_configs(user_id)
     if not configs:
         raise HTTPException(status_code=400, detail="请先在设置中添加 LLM 配置")
-    return configs[next(iter(configs.keys()))]
+    first_name = next(iter(configs.keys()))
+    return get_user_llm_config(user_id, first_name)
 
 
 def _resolve_emb(user_id: str, preferred: str) -> dict:
@@ -74,10 +78,28 @@ def _make_chapter_params(pconfig: dict, chapter_number: int) -> ChapterParams:
 
 
 def _run_in_thread(emitter: SSEEmitter, func, *args, **kwargs):
+    failed = False
     try:
         func(emitter, *args, **kwargs)
+    except HTTPException as e:
+        failed = True
+        emitter.emit("error", {"step": "request", "message": str(e.detail)})
+    except Exception as e:
+        failed = True
+        logger.exception("Generation task failed")
+        emitter.emit("error", {"step": "server", "message": f"{func.__name__} 执行失败: {e}"})
     finally:
-        emitter.emit("done", {"message": "完成"})
+        emitter.emit("done", {"message": "已结束" if failed else "完成", "status": "error" if failed else "done"})
+
+
+def _require_project_file(filepath: str, filename: str, purpose: str) -> str:
+    full_path = os.path.join(filepath, filename)
+    if not os.path.exists(full_path):
+        raise RuntimeError(f"缺少{purpose}文件: {filename}。请先生成对应内容。")
+    content = read_file(full_path).strip()
+    if not content:
+        raise RuntimeError(f"{purpose}文件为空: {filename}。请重新生成对应内容。")
+    return content
 
 
 def _make_streaming_response(
@@ -147,6 +169,7 @@ def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: s
     """复用 novel_generator.Chapter_blueprint_generate"""
     from novel_generator.blueprint import Chapter_blueprint_generate
 
+    _require_project_file(project["filepath"], "Novel_architecture.txt", "小说架构")
     llm_conf = _resolve_llm(user_id, pconfig.get("chapter_outline_llm", ""))
     ctx = _make_ctx(llm_conf, {}, project["filepath"])
     proj_cfg = _make_project_cfg(pconfig)
@@ -171,6 +194,8 @@ def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, c
     """复用 novel_generator.build_chapter_prompt + generate_chapter_draft"""
     from novel_generator.chapter import build_chapter_prompt, generate_chapter_draft
 
+    _require_project_file(project["filepath"], "Novel_architecture.txt", "小说架构")
+    _require_project_file(project["filepath"], "Novel_directory.txt", "章节目录")
     llm_conf = _resolve_llm(user_id, pconfig.get("prompt_draft_llm", ""))
     emb_conf = _resolve_emb(user_id, pconfig.get("embedding_config", ""))
 
@@ -215,6 +240,8 @@ def _run_finalize(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_num
     """复用 novel_generator.finalize_chapter"""
     from novel_generator.finalization import finalize_chapter
 
+    chapter_filename = os.path.join("chapters", f"chapter_{chapter_number}.txt")
+    _require_project_file(project["filepath"], chapter_filename, f"第{chapter_number}章草稿")
     llm_conf = _resolve_llm(user_id, pconfig.get("final_chapter_llm", ""))
     emb_conf = _resolve_emb(user_id, pconfig.get("embedding_config", ""))
 
@@ -226,7 +253,7 @@ def _run_finalize(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_num
 
     finalize_chapter(ctx, params)
 
-    from utils import read_file, get_word_count
+    from utils import get_word_count
     chapter_text = read_file(os.path.join(project["filepath"], "chapters", f"chapter_{chapter_number}.txt"))
     wc = get_word_count(chapter_text)
     chapter_service.mark_chapter_final(project["id"], chapter_number, wc)

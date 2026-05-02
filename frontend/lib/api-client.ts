@@ -8,16 +8,34 @@ function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${token}` }
 }
 
+function formatErrorDetail(detail: unknown): string {
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item: any) => {
+        const loc = Array.isArray(item?.loc) ? item.loc.join(".") : ""
+        const msg = item?.msg || JSON.stringify(item)
+        return loc ? `${loc}: ${msg}` : msg
+      })
+      .join("; ")
+  }
+  if (detail && typeof detail === "object") {
+    const value = detail as { message?: string; error?: string }
+    return value.message || value.error || JSON.stringify(detail)
+  }
+  return typeof detail === "string" ? detail : ""
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const method = options?.method || "GET"
   const res = await fetch(`${BASE_URL}${url}`, {
-    headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
     ...options,
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
   })
   if (!res.ok) {
     let message = res.statusText
     try {
       const body = await res.json()
-      message = body.detail || body.message || message
+      message = formatErrorDetail(body.detail) || body.message || message
     } catch {
       const text = await res.text()
       if (text) message = text
@@ -27,13 +45,13 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       clearToken()
       // 不在此处硬刷新，由 AuthGuard 统一处理路由跳转，避免刷新循环
     }
-    throw new Error(message)
+    throw new Error(`接口请求失败（${method} ${url}，${res.status}）: ${message}`)
   }
   const contentType = res.headers.get("content-type") || ""
   if (contentType.includes("application/json")) {
     return res.json()
   }
-  return undefined as unknown as T
+  return (await res.text()) as unknown as T
 }
 
 function sseUrl(path: string): string {
@@ -58,7 +76,7 @@ export const api = {
     update: (projectId: string, num: number, data: any) => request<any>(`/api/v1/projects/${projectId}/chapters/${num}`, { method: "PUT", body: JSON.stringify(data) }),
   },
   files: {
-    get: (projectId: string, filename: string) => fetch(`${BASE_URL}/api/v1/projects/${projectId}/files/${filename}`, { headers: authHeaders() }).then(r => r.text()),
+    get: (projectId: string, filename: string) => request<string>(`/api/v1/projects/${projectId}/files/${encodeURIComponent(filename)}`),
   },
   config: {
     llmList: () => request<Record<string, any>>("/api/v1/config/llm"),
@@ -68,6 +86,7 @@ export const api = {
     llmTest: (name: string) => request<any>(`/api/v1/config/llm/${encodeURIComponent(name)}/test`, { method: "POST" }),
     embList: () => request<Record<string, any>>("/api/v1/config/embedding"),
     embCreate: (data: any) => request<any>("/api/v1/config/embedding", { method: "POST", body: JSON.stringify(data) }),
+    embUpdate: (name: string, data: any) => request<any>(`/api/v1/config/embedding/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) }),
     embDelete: (name: string) => request<void>(`/api/v1/config/embedding/${encodeURIComponent(name)}`, { method: "DELETE" }),
     embTest: (name: string) => request<any>(`/api/v1/config/embedding/${encodeURIComponent(name)}/test`, { method: "POST" }),
   },

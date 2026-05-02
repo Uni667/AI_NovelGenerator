@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional
 
 
 class LLMConfigCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
-    api_key: str
+    api_key: str = ""
     base_url: str = "https://api.openai.com/v1"
     model_name: str = "gpt-4o-mini"
     temperature: float = Field(default=0.7, ge=0, le=2.0)
@@ -18,9 +18,9 @@ class LLMConfigUpdate(BaseModel):
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     model_name: Optional[str] = None
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    timeout: Optional[int] = None
+    temperature: Optional[float] = Field(default=None, ge=0, le=2.0)
+    max_tokens: Optional[int] = Field(default=None, ge=1, le=200000)
+    timeout: Optional[int] = Field(default=None, ge=10, le=3600)
     interface_format: Optional[str] = None
     usage: Optional[str] = None
 
@@ -39,7 +39,7 @@ class LLMConfigResponse(BaseModel):
 
 class EmbeddingConfigCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
-    api_key: str
+    api_key: str = ""
     base_url: str = "https://api.openai.com/v1"
     model_name: str = "text-embedding-ada-002"
     retrieval_k: int = Field(default=4, ge=1, le=20)
@@ -50,7 +50,7 @@ class EmbeddingConfigUpdate(BaseModel):
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     model_name: Optional[str] = None
-    retrieval_k: Optional[int] = None
+    retrieval_k: Optional[int] = Field(default=None, ge=1, le=20)
     interface_format: Optional[str] = None
 
 

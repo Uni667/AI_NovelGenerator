@@ -65,7 +65,8 @@ export default function ProjectDashboard() {
   }, [])
 
   const lastPartial = events.filter(e => e.type === "partial").pop()
-  const hasError = events.some(e => e.type === "error")
+  const lastError = events.filter(e => e.type === "error").pop()
+  const hasError = Boolean(lastError)
 
   const debouncedUpdate = (data: Record<string, any>) => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -356,7 +357,7 @@ export default function ProjectDashboard() {
               {hasError && (
                 <div className="flex items-start gap-3 p-3 rounded-lg bg-destructive/10 text-destructive">
                   <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
-                  <p>生成过程中出现错误，请查看日志</p>
+                  <p className="font-medium">{lastError?.data?.message || "生成过程中出现错误"}</p>
                 </div>
               )}
 

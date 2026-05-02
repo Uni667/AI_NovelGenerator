@@ -100,6 +100,7 @@ export interface LLMConfig {
   max_tokens: number
   timeout: number
   interface_format: string
+  usage: string
   api_key_masked: string
 }
 

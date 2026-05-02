@@ -1,28 +1,28 @@
-﻿"use client"
+"use client"
 
 import { useCallback, useEffect, useState } from "react"
 import { api } from "@/lib/api-client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Cpu, Key, Plus, TestTube, Trash2 } from "lucide-react"
+import { Cpu, Key, Pencil, Plus, Save, TestTube, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-const INTERFACE_FORMATS = [
-  "OpenAI",
-  "Azure OpenAI",
-  "Ollama",
-  "DeepSeek",
-  "Gemini",
-  "ML Studio",
-  "SiliconFlow",
-  "Volcengine",
-  "Alibaba Bailian",
+const PROVIDER_PRESETS = [
+  { value: "OpenAI", label: "OpenAI", llmBaseUrl: "https://api.openai.com/v1", llmModel: "gpt-4o-mini", embBaseUrl: "https://api.openai.com/v1", embModel: "text-embedding-ada-002" },
+  { value: "DeepSeek", label: "DeepSeek", llmBaseUrl: "https://api.deepseek.com", llmModel: "deepseek-chat", embBaseUrl: "https://api.openai.com/v1", embModel: "text-embedding-ada-002" },
+  { value: "SiliconFlow", label: "SiliconFlow", llmBaseUrl: "https://api.siliconflow.cn/v1", llmModel: "deepseek-ai/DeepSeek-V3", embBaseUrl: "https://api.siliconflow.cn/v1/embeddings", embModel: "BAAI/bge-m3" },
+  { value: "Ollama", label: "Ollama", llmBaseUrl: "http://localhost:11434", llmModel: "llama3.1", embBaseUrl: "http://localhost:11434", embModel: "nomic-embed-text" },
+  { value: "Gemini", label: "Gemini", llmBaseUrl: "", llmModel: "gemini-1.5-flash", embBaseUrl: "", embModel: "text-embedding-004" },
+  { value: "Azure OpenAI", label: "Azure OpenAI", llmBaseUrl: "https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=2024-02-15-preview", llmModel: "<deployment>", embBaseUrl: "https://<resource>.openai.azure.com/openai/deployments/<deployment>/embeddings?api-version=2024-02-15-preview", embModel: "<deployment>" },
+  { value: "ML Studio", label: "LM Studio", llmBaseUrl: "http://localhost:1234/v1", llmModel: "local-model", embBaseUrl: "http://localhost:1234/v1", embModel: "local-embedding" },
+  { value: "Volcengine", label: "火山引擎", llmBaseUrl: "https://ark.cn-beijing.volces.com/api/v3", llmModel: "", embBaseUrl: "https://ark.cn-beijing.volces.com/api/v3", embModel: "" },
+  { value: "Alibaba Bailian", label: "阿里云百炼", llmBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", llmModel: "qwen-plus", embBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", embModel: "text-embedding-v3" },
 ]
 
 const USAGE_OPTIONS = [
@@ -44,6 +44,7 @@ type LLMConfig = {
   api_key_masked?: string
   temperature?: number
   max_tokens?: number
+  timeout?: number
   usage?: string
 }
 
@@ -55,30 +56,91 @@ type EmbeddingConfig = {
   retrieval_k?: number
 }
 
+type LLMForm = {
+  name: string
+  api_key: string
+  base_url: string
+  model_name: string
+  temperature: number
+  max_tokens: number
+  timeout: number
+  interface_format: string
+  usage: string
+}
+
+type EmbForm = {
+  name: string
+  api_key: string
+  base_url: string
+  model_name: string
+  retrieval_k: number
+  interface_format: string
+}
+
+const defaultLLMForm = (): LLMForm => ({
+  name: "",
+  api_key: "",
+  base_url: "https://api.openai.com/v1",
+  model_name: "gpt-4o-mini",
+  temperature: 0.7,
+  max_tokens: 8192,
+  timeout: 600,
+  interface_format: "OpenAI",
+  usage: "general",
+})
+
+const defaultEmbForm = (): EmbForm => ({
+  name: "",
+  api_key: "",
+  base_url: "https://api.openai.com/v1",
+  model_name: "text-embedding-ada-002",
+  retrieval_k: 4,
+  interface_format: "OpenAI",
+})
+
+function getProvider(format?: string) {
+  return PROVIDER_PRESETS.find((p) => p.value === format)
+}
+
+function providerLabel(format?: string) {
+  return getProvider(format)?.label || format || "未知"
+}
+
+function usageLabel(value?: string) {
+  return USAGE_OPTIONS.find((u) => u.value === value)?.label || "通用"
+}
+
+function requiresApiKey(format: string) {
+  return format.toLowerCase() !== "ollama"
+}
+
+function applyProviderPreset<T extends { interface_format: string; base_url: string; model_name: string }>(
+  form: T,
+  format: string,
+  kind: "llm" | "emb"
+): T {
+  const preset = getProvider(format) || PROVIDER_PRESETS[0]
+  return {
+    ...form,
+    interface_format: format,
+    base_url: kind === "llm" ? preset.llmBaseUrl : preset.embBaseUrl,
+    model_name: kind === "llm" ? preset.llmModel : preset.embModel,
+  }
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
+}
+
 export default function SettingsPage() {
   const [llmConfigs, setLLMConfigs] = useState<Record<string, LLMConfig>>({})
   const [embConfigs, setEmbConfigs] = useState<Record<string, EmbeddingConfig>>({})
-  const [newLLM, setNewLLM] = useState({
-    name: "",
-    api_key: "",
-    base_url: "https://api.openai.com/v1",
-    model_name: "gpt-4o-mini",
-    temperature: 0.7,
-    max_tokens: 8192,
-    timeout: 600,
-    interface_format: "OpenAI",
-    usage: "general",
-  })
-  const [newEmb, setNewEmb] = useState({
-    name: "",
-    api_key: "",
-    base_url: "https://api.openai.com/v1",
-    model_name: "text-embedding-ada-002",
-    retrieval_k: 4,
-    interface_format: "OpenAI",
-  })
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const [llmForm, setLLMForm] = useState<LLMForm>(defaultLLMForm)
+  const [embForm, setEmbForm] = useState<EmbForm>(defaultEmbForm)
+  const [llmDialogOpen, setLLMDialogOpen] = useState(false)
   const [embDialogOpen, setEmbDialogOpen] = useState(false)
+  const [editingLLMName, setEditingLLMName] = useState<string | null>(null)
+  const [editingEmbName, setEditingEmbName] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null)
 
   const loadConfigs = useCallback(async () => {
@@ -94,53 +156,174 @@ export default function SettingsPage() {
     void loadConfigs()
   }, [loadConfigs])
 
-  const handleAddLLM = async () => {
-    await api.config.llmCreate(newLLM)
-    toast.success("LLM config added")
-    setDialogOpen(false)
-    await loadConfigs()
+  const openAddLLM = () => {
+    setEditingLLMName(null)
+    setLLMForm(defaultLLMForm())
+    setLLMDialogOpen(true)
+  }
+
+  const openEditLLM = (name: string, conf: LLMConfig) => {
+    setEditingLLMName(name)
+    setLLMForm({
+      ...defaultLLMForm(),
+      name,
+      api_key: "",
+      base_url: conf.base_url || "",
+      model_name: conf.model_name || "",
+      temperature: conf.temperature ?? 0.7,
+      max_tokens: conf.max_tokens ?? 8192,
+      timeout: conf.timeout ?? 600,
+      interface_format: conf.interface_format || "OpenAI",
+      usage: conf.usage || "general",
+    })
+    setLLMDialogOpen(true)
+  }
+
+  const openAddEmb = () => {
+    setEditingEmbName(null)
+    setEmbForm(defaultEmbForm())
+    setEmbDialogOpen(true)
+  }
+
+  const openEditEmb = (name: string, conf: EmbeddingConfig) => {
+    setEditingEmbName(name)
+    setEmbForm({
+      ...defaultEmbForm(),
+      name,
+      api_key: "",
+      base_url: conf.base_url || "",
+      model_name: conf.model_name || "",
+      retrieval_k: conf.retrieval_k ?? 4,
+      interface_format: conf.interface_format || "OpenAI",
+    })
+    setEmbDialogOpen(true)
+  }
+
+  const buildLLMPayload = () => {
+    const payload: Record<string, unknown> = {
+      name: llmForm.name.trim(),
+      api_key: llmForm.api_key.trim(),
+      base_url: llmForm.base_url.trim(),
+      model_name: llmForm.model_name.trim(),
+      temperature: llmForm.temperature,
+      max_tokens: llmForm.max_tokens,
+      timeout: llmForm.timeout,
+      interface_format: llmForm.interface_format,
+      usage: llmForm.usage,
+    }
+    if (editingLLMName) {
+      delete payload.name
+      if (!payload.api_key) delete payload.api_key
+    } else if (!payload.api_key && !requiresApiKey(llmForm.interface_format)) {
+      payload.api_key = "ollama"
+    }
+    return payload
+  }
+
+  const buildEmbPayload = () => {
+    const payload: Record<string, unknown> = {
+      name: embForm.name.trim(),
+      api_key: embForm.api_key.trim(),
+      base_url: embForm.base_url.trim(),
+      model_name: embForm.model_name.trim(),
+      retrieval_k: embForm.retrieval_k,
+      interface_format: embForm.interface_format,
+    }
+    if (editingEmbName) {
+      delete payload.name
+      if (!payload.api_key) delete payload.api_key
+    } else if (!payload.api_key && !requiresApiKey(embForm.interface_format)) {
+      payload.api_key = "ollama"
+    }
+    return payload
+  }
+
+  const handleSaveLLM = async () => {
+    try {
+      if (editingLLMName) {
+        await api.config.llmUpdate(editingLLMName, buildLLMPayload())
+        toast.success("LLM 配置已更新")
+      } else {
+        await api.config.llmCreate(buildLLMPayload())
+        toast.success("LLM 配置已添加")
+      }
+      setLLMDialogOpen(false)
+      setEditingLLMName(null)
+      await loadConfigs()
+    } catch (error) {
+      toast.error(errorMessage(error, "LLM 配置保存失败"))
+    }
+  }
+
+  const handleSaveEmb = async () => {
+    try {
+      if (editingEmbName) {
+        await api.config.embUpdate(editingEmbName, buildEmbPayload())
+        toast.success("Embedding 配置已更新")
+      } else {
+        await api.config.embCreate(buildEmbPayload())
+        toast.success("Embedding 配置已添加")
+      }
+      setEmbDialogOpen(false)
+      setEditingEmbName(null)
+      await loadConfigs()
+    } catch (error) {
+      toast.error(errorMessage(error, "Embedding 配置保存失败"))
+    }
   }
 
   const handleTestLLM = async (name: string) => {
     try {
       const res = await api.config.llmTest(name)
-      toast.success(res.message || "Test succeeded")
-    } catch (e: any) {
-      toast.error(e.message || "Test failed")
+      if (res.success) toast.success(res.message || "测试成功")
+      else toast.error(res.message || "测试失败")
+    } catch (error) {
+      toast.error(errorMessage(error, "测试失败"))
     }
-  }
-
-  const handleAddEmb = async () => {
-    await api.config.embCreate(newEmb)
-    toast.success("Embedding config added")
-    setEmbDialogOpen(false)
-    await loadConfigs()
   }
 
   const handleTestEmb = async (name: string) => {
     try {
       const res = await api.config.embTest(name)
-      toast.success(res.message || "Test succeeded")
-    } catch (e: any) {
-      toast.error(e.message || "Test failed")
+      if (res.success) toast.success(res.message || "测试成功")
+      else toast.error(res.message || "测试失败")
+    } catch (error) {
+      toast.error(errorMessage(error, "测试失败"))
     }
   }
 
   const handleDelete = async () => {
     if (!deleteTarget) return
-    if (deleteTarget.type === "llm") {
-      await api.config.llmDelete(deleteTarget.name)
-    } else {
-      await api.config.embDelete(deleteTarget.name)
+    try {
+      if (deleteTarget.type === "llm") {
+        await api.config.llmDelete(deleteTarget.name)
+      } else {
+        await api.config.embDelete(deleteTarget.name)
+      }
+      toast.success("配置已删除")
+      setDeleteTarget(null)
+      await loadConfigs()
+    } catch (error) {
+      toast.error(errorMessage(error, "删除失败"))
     }
-    toast.success("Config deleted")
-    setDeleteTarget(null)
-    await loadConfigs()
   }
+
+  const llmCanSave = Boolean(
+    llmForm.name.trim() &&
+    llmForm.model_name.trim() &&
+    (llmForm.base_url.trim() || llmForm.interface_format === "Gemini") &&
+    (editingLLMName || llmForm.api_key.trim() || !requiresApiKey(llmForm.interface_format))
+  )
+  const embCanSave = Boolean(
+    embForm.name.trim() &&
+    embForm.model_name.trim() &&
+    (embForm.base_url.trim() || embForm.interface_format === "Gemini") &&
+    (editingEmbName || embForm.api_key.trim() || !requiresApiKey(embForm.interface_format))
+  )
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-8 text-3xl font-bold">API Settings</h1>
+      <h1 className="mb-8 text-3xl font-bold">API 设置</h1>
 
       <Tabs defaultValue="llm">
         <TabsList className="mb-6">
@@ -156,34 +339,14 @@ export default function SettingsPage() {
 
         <TabsContent value="llm">
           <div className="mb-4 flex justify-end">
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add LLM
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add LLM config</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <ConfigInput label="Name" value={newLLM.name} onChange={(name) => setNewLLM({ ...newLLM, name })} />
-                  <ConfigInput label="API Key" type="password" value={newLLM.api_key} onChange={(api_key) => setNewLLM({ ...newLLM, api_key })} />
-                  <ConfigInput label="Base URL" value={newLLM.base_url} onChange={(base_url) => setNewLLM({ ...newLLM, base_url })} />
-                  <ConfigInput label="Model" value={newLLM.model_name} onChange={(model_name) => setNewLLM({ ...newLLM, model_name })} />
-                  <FormatSelect value={newLLM.interface_format} onChange={(interface_format) => setNewLLM({ ...newLLM, interface_format })} />
-                  <UsageSelect value={newLLM.usage} onChange={(usage) => setNewLLM({ ...newLLM, usage })} />
-                  <Button onClick={handleAddLLM} className="w-full" disabled={!newLLM.name || !newLLM.api_key}>
-                    Add
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <Button onClick={openAddLLM}>
+              <Plus className="mr-2 h-4 w-4" />
+              添加 LLM
+            </Button>
           </div>
 
           {Object.keys(llmConfigs).length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">No LLM configs yet.</p>
+            <p className="py-8 text-center text-muted-foreground">暂无 LLM 配置</p>
           ) : (
             <div className="space-y-3">
               {Object.entries(llmConfigs).map(([name, conf]) => (
@@ -192,11 +355,11 @@ export default function SettingsPage() {
                     <div className="flex items-center justify-between gap-3">
                       <CardTitle className="text-base">{name}</CardTitle>
                       <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className="text-xs">{USAGE_OPTIONS.find(u => u.value === conf.usage)?.label || "通用"}</Badge>
-                        <Badge>{conf.interface_format || "Unknown"}</Badge>
+                        <Badge variant="outline" className="text-xs">{usageLabel(conf.usage)}</Badge>
+                        <Badge>{providerLabel(conf.interface_format)}</Badge>
                       </div>
                     </div>
-                    <CardDescription className="truncate">{conf.model_name} - {conf.base_url}</CardDescription>
+                    <CardDescription className="truncate">{conf.model_name} - {conf.base_url || "默认地址"}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -204,7 +367,11 @@ export default function SettingsPage() {
                       <span>Temp: {conf.temperature ?? "-"}</span>
                       <span>Max Tokens: {conf.max_tokens ?? "-"}</span>
                     </div>
-                    <ConfigActions onTest={() => handleTestLLM(name)} onDelete={() => setDeleteTarget({ type: "llm", name })} />
+                    <ConfigActions
+                      onEdit={() => openEditLLM(name, conf)}
+                      onTest={() => handleTestLLM(name)}
+                      onDelete={() => setDeleteTarget({ type: "llm", name })}
+                    />
                   </CardContent>
                 </Card>
               ))}
@@ -214,33 +381,14 @@ export default function SettingsPage() {
 
         <TabsContent value="embedding">
           <div className="mb-4 flex justify-end">
-            <Dialog open={embDialogOpen} onOpenChange={setEmbDialogOpen}>
-              <DialogTrigger>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Embedding
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Embedding config</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <ConfigInput label="Name" value={newEmb.name} onChange={(name) => setNewEmb({ ...newEmb, name })} />
-                  <ConfigInput label="API Key" type="password" value={newEmb.api_key} onChange={(api_key) => setNewEmb({ ...newEmb, api_key })} />
-                  <ConfigInput label="Base URL" value={newEmb.base_url} onChange={(base_url) => setNewEmb({ ...newEmb, base_url })} />
-                  <ConfigInput label="Model" value={newEmb.model_name} onChange={(model_name) => setNewEmb({ ...newEmb, model_name })} />
-                  <FormatSelect value={newEmb.interface_format} onChange={(interface_format) => setNewEmb({ ...newEmb, interface_format })} />
-                  <Button onClick={handleAddEmb} className="w-full" disabled={!newEmb.name || !newEmb.api_key}>
-                    Add
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <Button onClick={openAddEmb}>
+              <Plus className="mr-2 h-4 w-4" />
+              添加 Embedding
+            </Button>
           </div>
 
           {Object.keys(embConfigs).length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">No Embedding configs yet.</p>
+            <p className="py-8 text-center text-muted-foreground">暂无 Embedding 配置</p>
           ) : (
             <div className="space-y-3">
               {Object.entries(embConfigs).map(([name, conf]) => (
@@ -248,15 +396,19 @@ export default function SettingsPage() {
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between gap-3">
                       <CardTitle className="text-base">{name}</CardTitle>
-                      <Badge>{conf.interface_format || "Unknown"}</Badge>
+                      <Badge>{providerLabel(conf.interface_format)}</Badge>
                     </div>
-                    <CardDescription className="truncate">{conf.model_name} - {conf.base_url}</CardDescription>
+                    <CardDescription className="truncate">{conf.model_name} - {conf.base_url || "默认地址"}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="mb-2 text-sm text-muted-foreground">
                       Key: {conf.api_key_masked || "-"} / Top-K: {conf.retrieval_k ?? "-"}
                     </div>
-                    <ConfigActions onTest={() => handleTestEmb(name)} onDelete={() => setDeleteTarget({ type: "emb", name })} />
+                    <ConfigActions
+                      onEdit={() => openEditEmb(name, conf)}
+                      onTest={() => handleTestEmb(name)}
+                      onDelete={() => setDeleteTarget({ type: "emb", name })}
+                    />
                   </CardContent>
                 </Card>
               ))}
@@ -265,17 +417,81 @@ export default function SettingsPage() {
         </TabsContent>
       </Tabs>
 
+      <Dialog open={llmDialogOpen} onOpenChange={(open) => { setLLMDialogOpen(open); if (!open) setEditingLLMName(null) }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingLLMName ? "编辑 LLM" : "添加 LLM"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ConfigInput label="名称" value={llmForm.name} disabled={!!editingLLMName} onChange={(name) => setLLMForm({ ...llmForm, name })} />
+            <ProviderSelect value={llmForm.interface_format} onChange={(format) => setLLMForm((form) => applyProviderPreset(form, format, "llm"))} />
+            <ConfigInput label="模型" value={llmForm.model_name} onChange={(model_name) => setLLMForm({ ...llmForm, model_name })} />
+            <UsageSelect value={llmForm.usage} onChange={(usage) => setLLMForm({ ...llmForm, usage })} />
+            <div className="sm:col-span-2">
+              <ConfigInput label="Base URL" value={llmForm.base_url} onChange={(base_url) => setLLMForm({ ...llmForm, base_url })} />
+            </div>
+            <div className="sm:col-span-2">
+              <ConfigInput
+                label={editingLLMName ? "API Key（留空则不改）" : "API Key"}
+                type="password"
+                value={llmForm.api_key}
+                onChange={(api_key) => setLLMForm({ ...llmForm, api_key })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLLMDialogOpen(false)}>取消</Button>
+            <Button onClick={handleSaveLLM} disabled={!llmCanSave}>
+              <Save className="mr-2 h-4 w-4" />
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={embDialogOpen} onOpenChange={(open) => { setEmbDialogOpen(open); if (!open) setEditingEmbName(null) }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingEmbName ? "编辑 Embedding" : "添加 Embedding"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ConfigInput label="名称" value={embForm.name} disabled={!!editingEmbName} onChange={(name) => setEmbForm({ ...embForm, name })} />
+            <ProviderSelect value={embForm.interface_format} onChange={(format) => setEmbForm((form) => applyProviderPreset(form, format, "emb"))} />
+            <ConfigInput label="模型" value={embForm.model_name} onChange={(model_name) => setEmbForm({ ...embForm, model_name })} />
+            <NumberInput label="Top-K" value={embForm.retrieval_k} min={1} max={20} onChange={(retrieval_k) => setEmbForm({ ...embForm, retrieval_k })} />
+            <div className="sm:col-span-2">
+              <ConfigInput label="Base URL" value={embForm.base_url} onChange={(base_url) => setEmbForm({ ...embForm, base_url })} />
+            </div>
+            <div className="sm:col-span-2">
+              <ConfigInput
+                label={editingEmbName ? "API Key（留空则不改）" : "API Key"}
+                type="password"
+                value={embForm.api_key}
+                onChange={(api_key) => setEmbForm({ ...embForm, api_key })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmbDialogOpen(false)}>取消</Button>
+            <Button onClick={handleSaveEmb} disabled={!embCanSave}>
+              <Save className="mr-2 h-4 w-4" />
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!deleteTarget} onOpenChange={(v) => { if (!v) setDeleteTarget(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete config</DialogTitle>
+            <DialogTitle>删除配置</DialogTitle>
             <DialogDescription>
-              Delete config {deleteTarget?.name}. The server may reject deleting the only remaining config.
+              删除 {deleteTarget?.name} 后不可撤销。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>取消</Button>
+            <Button variant="destructive" onClick={handleDelete}>删除</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -288,31 +504,60 @@ function ConfigInput({
   value,
   onChange,
   type = "text",
+  disabled = false,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   type?: string
+  disabled?: boolean
 }) {
   return (
     <div>
       <Label>{label}</Label>
-      <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input type={type} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} />
     </div>
   )
 }
 
-function FormatSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function NumberInput({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  min?: number
+  max?: number
+}) {
   return (
     <div>
-      <Label>Interface format</Label>
+      <Label>{label}</Label>
+      <Input
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    </div>
+  )
+}
+
+function ProviderSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div>
+      <Label>服务商</Label>
       <Select value={value} onValueChange={(v) => v && onChange(v)}>
-        <SelectTrigger>
+        <SelectTrigger className="w-full">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {INTERFACE_FORMATS.map((format) => (
-            <SelectItem key={format} value={format}>{format}</SelectItem>
+          {PROVIDER_PRESETS.map((provider) => (
+            <SelectItem key={provider.value} value={provider.value}>{provider.label}</SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -323,9 +568,9 @@ function FormatSelect({ value, onChange }: { value: string; onChange: (value: st
 function UsageSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
     <div>
-      <Label>用途 (usage)</Label>
+      <Label>用途</Label>
       <Select value={value} onValueChange={(v) => v && onChange(v)}>
-        <SelectTrigger>
+        <SelectTrigger className="w-full">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -338,16 +583,28 @@ function UsageSelect({ value, onChange }: { value: string; onChange: (value: str
   )
 }
 
-function ConfigActions({ onTest, onDelete }: { onTest: () => void; onDelete: () => void }) {
+function ConfigActions({
+  onEdit,
+  onTest,
+  onDelete,
+}: {
+  onEdit: () => void
+  onTest: () => void
+  onDelete: () => void
+}) {
   return (
     <div className="flex gap-2">
+      <Button size="sm" variant="outline" onClick={onEdit}>
+        <Pencil className="mr-1 h-3 w-3" />
+        编辑
+      </Button>
       <Button size="sm" variant="outline" onClick={onTest}>
         <TestTube className="mr-1 h-3 w-3" />
-        Test
+        测试
       </Button>
       <Button size="sm" variant="ghost" onClick={onDelete}>
         <Trash2 className="mr-1 h-3 w-3" />
-        Delete
+        删除
       </Button>
     </div>
   )

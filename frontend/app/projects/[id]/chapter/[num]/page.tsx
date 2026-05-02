@@ -12,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
-import { ChevronLeft, ChevronRight, Save, PenLine, CheckCircle, Loader2, Play } from "lucide-react"
+import { AlertCircle, ChevronLeft, ChevronRight, Save, PenLine, CheckCircle, Loader2, Play } from "lucide-react"
 
 export default function ChapterPage() {
   const params = useParams()
@@ -46,6 +46,7 @@ export default function ChapterPage() {
   }
 
   const isDone = events.some(e => e.type === "done")
+  const lastError = events.filter(e => e.type === "error").pop()
 
   useEffect(() => {
     if (isDone) {
@@ -100,6 +101,12 @@ export default function ChapterPage() {
             {e.data.message}
           </div>
         ))}
+        {lastError && (
+          <div className="flex items-start gap-2 mb-2 rounded-lg bg-destructive/10 p-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{lastError.data?.message || "生成失败"}</span>
+          </div>
+        )}
 
         {/* 内容区 */}
         <div className="flex-1 border rounded-lg overflow-hidden">
