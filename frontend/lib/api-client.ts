@@ -77,6 +77,7 @@ export const api = {
   },
   files: {
     get: (projectId: string, filename: string) => request<string>(`/api/v1/projects/${projectId}/files/${encodeURIComponent(filename)}`),
+    delete: (projectId: string, filename: string) => request<{ message: string; filename: string }>(`/api/v1/projects/${projectId}/files/${encodeURIComponent(filename)}`, { method: "DELETE" }),
   },
   config: {
     llmList: () => request<Record<string, any>>("/api/v1/config/llm"),

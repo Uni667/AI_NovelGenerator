@@ -30,7 +30,7 @@ def create_llm_config(data: LLMConfigCreate, request: Request):
         raise HTTPException(status_code=_config_error_status(str(e)), detail=str(e))
 
 
-@router.put("/api/v1/config/llm/{name}")
+@router.put("/api/v1/config/llm/{name:path}")
 def update_llm_config(name: str, data: LLMConfigUpdate, request: Request):
     user_id = get_current_user(request)
     try:
@@ -39,7 +39,7 @@ def update_llm_config(name: str, data: LLMConfigUpdate, request: Request):
         raise HTTPException(status_code=_config_error_status(str(e)), detail=str(e))
 
 
-@router.delete("/api/v1/config/llm/{name}")
+@router.delete("/api/v1/config/llm/{name:path}")
 def delete_llm_config(name: str, request: Request):
     user_id = get_current_user(request)
     try:
@@ -49,7 +49,7 @@ def delete_llm_config(name: str, request: Request):
         raise HTTPException(status_code=_config_error_status(str(e)), detail=str(e))
 
 
-@router.post("/api/v1/config/llm/{name}/test")
+@router.post("/api/v1/config/llm/{name:path}/test")
 def test_llm_config_route(name: str, request: Request):
     user_id = get_current_user(request)
     try:
@@ -75,7 +75,7 @@ def create_embedding_config(data: EmbeddingConfigCreate, request: Request):
         raise HTTPException(status_code=_config_error_status(str(e)), detail=str(e))
 
 
-@router.put("/api/v1/config/embedding/{name}")
+@router.put("/api/v1/config/embedding/{name:path}")
 def update_embedding_config(name: str, data: EmbeddingConfigUpdate, request: Request):
     user_id = get_current_user(request)
     try:
@@ -84,7 +84,7 @@ def update_embedding_config(name: str, data: EmbeddingConfigUpdate, request: Req
         raise HTTPException(status_code=_config_error_status(str(e)), detail=str(e))
 
 
-@router.delete("/api/v1/config/embedding/{name}")
+@router.delete("/api/v1/config/embedding/{name:path}")
 def delete_embedding_config(name: str, request: Request):
     user_id = get_current_user(request)
     try:
@@ -94,7 +94,7 @@ def delete_embedding_config(name: str, request: Request):
         raise HTTPException(status_code=_config_error_status(str(e)), detail=str(e))
 
 
-@router.post("/api/v1/config/embedding/{name}/test")
+@router.post("/api/v1/config/embedding/{name:path}/test")
 def test_embedding_config_route(name: str, request: Request):
     user_id = get_current_user(request)
     try:

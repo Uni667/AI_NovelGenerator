@@ -14,6 +14,12 @@ def list_chapters(project_id: str) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def clear_chapter_directory(project_id: str):
+    """清空章节目录同步出来的章节元数据，不删除章节正文文件。"""
+    with get_db() as conn:
+        conn.execute("DELETE FROM chapter WHERE project_id=?", (project_id,))
+
+
 def get_chapter(project_id: str, chapter_number: int) -> dict | None:
     with get_db() as conn:
         row = conn.execute(

@@ -362,6 +362,13 @@ def delete_user_embedding_config(user_id: str, name: str):
         cursor = conn.execute("DELETE FROM user_embedding_config WHERE name = ? AND user_id = ?", (name, user_id))
         if cursor.rowcount == 0:
             raise ValueError(f"Embedding 配置 '{name}' 不存在")
+        conn.execute(
+            """UPDATE project_config
+               SET embedding_config = ''
+               WHERE embedding_config = ?
+               AND project_id IN (SELECT id FROM project WHERE user_id = ?)""",
+            (name, user_id)
+        )
 
 
 def test_user_embedding_config(user_id: str, name: str) -> dict:

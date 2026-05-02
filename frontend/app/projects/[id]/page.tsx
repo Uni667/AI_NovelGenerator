@@ -111,6 +111,7 @@ export default function ProjectDashboard() {
   const [outputFileContent, setOutputFileContent] = useState("")
   const [outputFileLoading, setOutputFileLoading] = useState(false)
   const [outputFileError, setOutputFileError] = useState("")
+  const [deleteOutputDialogOpen, setDeleteOutputDialogOpen] = useState(false)
   const [generationChapterCount, setGenerationChapterCount] = useState(0)
   const [generationWordCount, setGenerationWordCount] = useState(3000)
   const [selectedChapterNumber, setSelectedChapterNumber] = useState(1)
@@ -477,6 +478,23 @@ export default function ProjectDashboard() {
       toast.success("已下载")
     } catch (error: any) {
       toast.error(error?.message || "下载失败")
+    }
+  }
+
+  const handleDeleteOutputFile = async () => {
+    try {
+      const result = await api.files.delete(id, selectedOutputFile)
+      toast.success(result.message || "文件已删除")
+      setDeleteOutputDialogOpen(false)
+      setOutputFileContent("")
+      setOutputFileError(`文件已删除: ${selectedOutputFile}`)
+      if (selectedOutputFile === "Novel_directory.txt") {
+        setChapterEditorContent("")
+        setChapterEditorMeta(null)
+        await queryClient.invalidateQueries({ queryKey: ["chapters", id] })
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "删除失败")
     }
   }
 
@@ -986,6 +1004,10 @@ export default function ProjectDashboard() {
                   <Button variant="outline" size="sm" onClick={handleDownloadOutput} disabled={outputFileLoading}>
                     <FileDown className="h-4 w-4 mr-2" />
                     下载
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => setDeleteOutputDialogOpen(true)} disabled={outputFileLoading}>
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    删除
                   </Button>
                 </div>
               </div>
@@ -1590,6 +1612,22 @@ export default function ProjectDashboard() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setClearDialogOpen(false)}>取消</Button>
             <Button variant="destructive" onClick={handleClearVector}>确认清空</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOutputDialogOpen} onOpenChange={setDeleteOutputDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除生成文件</DialogTitle>
+            <DialogDescription>
+              将删除 {GENERATED_FILES.find((file) => file.filename === selectedOutputFile)?.label || selectedOutputFile}。
+              {selectedOutputFile === "Novel_directory.txt" ? " 章节目录删除后，章节规划列表也会同步清空，但已生成的章节正文文件会保留。" : " 此操作不会影响其他生成文件。"}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOutputDialogOpen(false)}>取消</Button>
+            <Button variant="destructive" onClick={handleDeleteOutputFile}>确认删除</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
