@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { getToken } from "@/lib/auth"
 
 const MAX_EVENTS = 500
 
@@ -43,7 +44,14 @@ export function useSSE() {
     setEvents([])
     setError(null)
 
-    const es = new EventSource(url)
+    let sseUrl = url
+    const token = getToken()
+    if (token && !sseUrl.includes("token=")) {
+      sseUrl += sseUrl.includes("?") ? "&" : "?"
+      sseUrl += `token=${encodeURIComponent(token)}`
+    }
+
+    const es = new EventSource(sseUrl)
     sourceRef.current = es
 
     es.onopen = () => setIsConnected(true)
