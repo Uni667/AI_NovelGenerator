@@ -122,6 +122,13 @@
     @apply border-border outline-ring/50;
   }
 
+  /* 首屏防白：在 JS 挂载 dark class 前，html 先用暗色背景；
+     等 next-themes 脚本设定 class 后，CSS 变量自动更新为正确主题色。 */
+  html {
+    background-color: oklch(0.145 0 0);
+    color: oklch(0.985 0 0);
+  }
+
   body {
     @apply bg-background text-foreground;
   }

@@ -15,27 +15,23 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-CN" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
-      <head>
-        {/* 阻止 next-themes 引发的深色模式 FOUC：在 hydration 前同步设置 class */}
+    <html
+      lang="zh-CN"
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
+      style={{ colorScheme: "dark light" } as React.CSSProperties}
+    >
+      <body className="min-h-full flex bg-background text-foreground">
+        {/* 关键：body 第一个子节点必须是同步脚本。
+            浏览器解析到此处时立即执行，在 CSS 生效前就挂好 dark class，
+            从而完全消除白屏闪烁。next-themes 脚本与此等效，不会被覆盖。 */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              (function() {
-                try {
-                  var theme = localStorage.getItem('theme');
-                  if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                    document.documentElement.classList.add('dark');
-                  } else {
-                    document.documentElement.classList.remove('dark');
-                  }
-                } catch(e) {}
-              })();
+              (function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();
             `,
           }}
         />
-      </head>
-      <body className="min-h-full flex">
         <Providers>
           <AuthGuard>
             <Sidebar />
