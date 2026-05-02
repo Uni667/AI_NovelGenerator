@@ -17,21 +17,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="zh-CN"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
       suppressHydrationWarning
-      style={{ colorScheme: "dark light" } as React.CSSProperties}
+      style={{ colorScheme: "dark" } as React.CSSProperties}
     >
       <body className="min-h-full flex bg-background text-foreground">
-        {/* 关键：body 第一个子节点必须是同步脚本。
-            浏览器解析到此处时立即执行，在 CSS 生效前就挂好 dark class，
-            从而完全消除白屏闪烁。next-themes 脚本与此等效，不会被覆盖。 */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();
-            `,
-          }}
-        />
         <Providers>
           <AuthGuard>
             <Sidebar />
