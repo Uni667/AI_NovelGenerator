@@ -85,6 +85,15 @@ def update_chapter_content(project_id: str, chapter_number: int, filepath: str, 
     return get_chapter(project_id, chapter_number)
 
 
+def mark_chapter_draft(project_id: str, chapter_number: int, word_count: int = 0):
+    now = datetime.datetime.now().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE chapter SET status='draft', word_count=?, updated_at=? WHERE project_id=? AND chapter_number=?",
+            (word_count, now, project_id, chapter_number)
+        )
+
+
 def mark_chapter_final(project_id: str, chapter_number: int, word_count: int = 0):
     now = datetime.datetime.now().isoformat()
     with get_db() as conn:

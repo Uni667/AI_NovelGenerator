@@ -102,14 +102,16 @@ export const api = {
     architecture: (projectId: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/architecture`)),
     blueprint: (projectId: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/blueprint`)),
     chapter: (projectId: string, num: number) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/chapter/${num}`)),
+    chapterBatch: (projectId: string, startChapter: number, count: number) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/chapters?start_chapter=${startChapter}&count=${count}`)),
     finalize: (projectId: string, num: number) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/finalize/${num}`)),
   },
   characters: {
     list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/characters`),
-    create: (projectId: string, data: { name: string; description?: string }) => request<any>(`/api/v1/projects/${projectId}/characters`, { method: "POST", body: JSON.stringify(data) }),
+    create: (projectId: string, data: { name: string; description?: string; status?: string; source?: string; first_appearance_chapter?: number | null }) => request<any>(`/api/v1/projects/${projectId}/characters`, { method: "POST", body: JSON.stringify(data) }),
     update: (projectId: string, charId: number, data: any) => request<any>(`/api/v1/projects/${projectId}/characters/${charId}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (projectId: string, charId: number) => request<void>(`/api/v1/projects/${projectId}/characters/${charId}`, { method: "DELETE" }),
     importFromState: (projectId: string) => request<any>(`/api/v1/projects/${projectId}/characters/import-from-state`, { method: "POST" }),
+    suggest: (projectId: string) => request<{ characters: any[] }>(`/api/v1/projects/${projectId}/characters/suggest`, { method: "POST" }),
   },
   export: {
     download: (projectId: string, format: "txt" | "html" = "txt") => {

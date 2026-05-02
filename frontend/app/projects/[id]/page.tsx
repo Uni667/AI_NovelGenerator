@@ -18,8 +18,9 @@ import { Separator } from "@/components/ui/separator"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useState, useEffect, useRef, useCallback } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Play, FileText, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, FileDown, Wand2, BookMarked, Target, Tag, FileEdit, RefreshCw, Copy } from "lucide-react"
+import { Play, FileText, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, FileDown, Wand2, BookMarked, Target, Tag, FileEdit, RefreshCw, Copy, Save, BookOpen, MessageSquare, Sparkles, Eye, ListChecks, Gauge, PlusCircle } from "lucide-react"
 
 const GENERATED_FILES = [
   {
@@ -49,6 +50,25 @@ const GENERATED_FILES = [
   },
 ] as const
 
+const CHARACTER_STATUS_OPTIONS = [
+  { value: "appeared", label: "已出现" },
+  { value: "planned", label: "计划登场" },
+  { value: "suggested", label: "AI 建议" },
+] as const
+
+const CHARACTER_SOURCE_OPTIONS = [
+  { value: "user", label: "我设定" },
+  { value: "ai", label: "AI 生成" },
+] as const
+
+const characterStatusLabel = (status?: string) => {
+  return CHARACTER_STATUS_OPTIONS.find((item) => item.value === status)?.label || "已出现"
+}
+
+const characterSourceLabel = (source?: string) => {
+  return CHARACTER_SOURCE_OPTIONS.find((item) => item.value === source)?.label || "我设定"
+}
+
 export default function ProjectDashboard() {
   const params = useParams()
   const router = useRouter()
@@ -58,6 +78,7 @@ export default function ProjectDashboard() {
   const { data: chapters } = useChapters(id)
   const updateConfig = useUpdateProjectConfig(id)
   const { events, isConnected, connect } = useSSE()
+  const queryClient = useQueryClient()
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const [activeTab, setActiveTab] = useState("overview")
@@ -68,7 +89,12 @@ export default function ProjectDashboard() {
   const [editChar, setEditChar] = useState<any>(null)
   const [charName, setCharName] = useState("")
   const [charDesc, setCharDesc] = useState("")
+  const [charStatus, setCharStatus] = useState("planned")
+  const [charSource, setCharSource] = useState("user")
+  const [charFirstChapter, setCharFirstChapter] = useState<number | "">("")
   const [deleteCharTarget, setDeleteCharTarget] = useState<number | null>(null)
+  const [characterSuggestions, setCharacterSuggestions] = useState<any[]>([])
+  const [characterLoading, setCharacterLoading] = useState("")
 
   // 平台工具状态
   const [titles, setTitles] = useState<string[]>([])
@@ -85,6 +111,17 @@ export default function ProjectDashboard() {
   const [outputFileContent, setOutputFileContent] = useState("")
   const [outputFileLoading, setOutputFileLoading] = useState(false)
   const [outputFileError, setOutputFileError] = useState("")
+  const [generationChapterCount, setGenerationChapterCount] = useState(0)
+  const [generationWordCount, setGenerationWordCount] = useState(3000)
+  const [selectedChapterNumber, setSelectedChapterNumber] = useState(1)
+  const [batchChapterCount, setBatchChapterCount] = useState(1)
+  const [chapterEditorContent, setChapterEditorContent] = useState("")
+  const [chapterEditorMeta, setChapterEditorMeta] = useState<any>(null)
+  const [chapterEditorLoading, setChapterEditorLoading] = useState(false)
+  const [chapterEditorSaving, setChapterEditorSaving] = useState(false)
+  const [readerChapterNum, setReaderChapterNum] = useState(1)
+  const [chapterHookResult, setChapterHookResult] = useState<any>(null)
+  const [sseAction, setSseAction] = useState<"architecture" | "blueprint" | "chapter" | "chapterBatch" | "finalize" | null>(null)
   const outputFileRequestId = useRef(0)
   const autoOpenFilesAfterDoneRef = useRef(false)
 
@@ -97,6 +134,22 @@ export default function ProjectDashboard() {
     api.config.llmList().then(setLLMConfigs).catch(() => {})
     api.config.embList().then(setEmbConfigs).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!config) return
+    setGenerationChapterCount(config.num_chapters || 0)
+    setGenerationWordCount(config.word_number || 3000)
+  }, [config])
+
+  useEffect(() => {
+    if (!chapters?.length) return
+    const exists = chapters.some((chapter: any) => chapter.chapter_number === selectedChapterNumber)
+    if (!exists) {
+      setSelectedChapterNumber(chapters[0].chapter_number)
+      setReaderChapterNum(chapters[0].chapter_number)
+      setHookChapterNum(chapters[0].chapter_number)
+    }
+  }, [chapters, selectedChapterNumber])
 
   const lastPartial = events.filter(e => e.type === "partial").pop()
   const lastError = events.filter(e => e.type === "error").pop()
@@ -122,20 +175,34 @@ export default function ProjectDashboard() {
 
   const handleCreateCharacter = async () => {
     if (!charName.trim()) return
-    await api.characters.create(id, { name: charName, description: charDesc })
+    await api.characters.create(id, {
+      name: charName,
+      description: charDesc,
+      status: charStatus,
+      source: charSource,
+      first_appearance_chapter: charFirstChapter === "" ? null : Number(charFirstChapter),
+    })
     toast.success("角色已创建")
     setCharDialogOpen(false)
     setCharName("")
     setCharDesc("")
+    setCharFirstChapter("")
     loadCharacters()
   }
 
   const handleUpdateCharacter = async () => {
     if (!editChar || !charName.trim()) return
-    await api.characters.update(id, editChar.id, { name: charName, description: charDesc })
+    await api.characters.update(id, editChar.id, {
+      name: charName,
+      description: charDesc,
+      status: charStatus,
+      source: charSource,
+      first_appearance_chapter: charFirstChapter === "" ? null : Number(charFirstChapter),
+    })
     toast.success("角色已更新")
     setEditChar(null)
     setCharDialogOpen(false)
+    setCharFirstChapter("")
     loadCharacters()
   }
 
@@ -153,17 +220,49 @@ export default function ProjectDashboard() {
     loadCharacters()
   }
 
+  const handleSuggestCharacters = async () => {
+    setCharacterLoading("suggest")
+    try {
+      const result = await api.characters.suggest(id)
+      setCharacterSuggestions(result.characters || [])
+      toast.success(`已生成 ${result.characters?.length || 0} 个角色建议`)
+    } catch (error: any) {
+      toast.error(error?.message || "角色建议生成失败")
+    } finally {
+      setCharacterLoading("")
+    }
+  }
+
+  const handleAcceptCharacterSuggestion = async (suggestion: any) => {
+    await api.characters.create(id, {
+      name: suggestion.name,
+      description: suggestion.description,
+      status: "planned",
+      source: "ai",
+      first_appearance_chapter: suggestion.first_appearance_chapter ?? null,
+    })
+    toast.success("已加入计划登场")
+    setCharacterSuggestions((items) => items.filter((item) => item.name !== suggestion.name))
+    loadCharacters()
+  }
+
   const openEditDialog = (char: any) => {
     setEditChar(char)
     setCharName(char.name)
     setCharDesc(char.description || "")
+    setCharStatus(char.status || "appeared")
+    setCharSource(char.source || "user")
+    setCharFirstChapter(char.first_appearance_chapter ?? "")
     setCharDialogOpen(true)
   }
 
-  const openCreateDialog = () => {
+  const openCreateDialog = (status = "planned", source = "user") => {
     setEditChar(null)
     setCharName("")
     setCharDesc("")
+    setCharStatus(status)
+    setCharSource(source)
+    setCharFirstChapter("")
     setCharDialogOpen(true)
   }
 
@@ -203,6 +302,113 @@ export default function ProjectDashboard() {
     setChapterTitles(res.titles)
   })
 
+  const saveGenerationTargets = useCallback(async () => {
+    const updates: Record<string, number> = {}
+    if (generationChapterCount && generationChapterCount !== config?.num_chapters) {
+      updates.num_chapters = generationChapterCount
+    }
+    if (generationWordCount && generationWordCount !== config?.word_number) {
+      updates.word_number = generationWordCount
+    }
+    if (Object.keys(updates).length > 0) {
+      await updateConfig.mutateAsync(updates)
+    }
+  }, [config?.num_chapters, config?.word_number, generationChapterCount, generationWordCount, updateConfig])
+
+  const handleApplyGenerationTargets = async () => {
+    await saveGenerationTargets()
+    toast.success("生成控制已更新")
+  }
+
+  const loadWorkbenchChapter = useCallback(async (chapterNumber: number) => {
+    setChapterEditorLoading(true)
+    try {
+      const data = await api.chapters.get(id, chapterNumber)
+      setChapterEditorContent(data.content || "")
+      setChapterEditorMeta(data.meta || null)
+    } catch (error: any) {
+      toast.error(error?.message || "章节内容读取失败")
+      setChapterEditorContent("")
+      setChapterEditorMeta(null)
+    } finally {
+      setChapterEditorLoading(false)
+    }
+  }, [id])
+
+  useEffect(() => {
+    if (activeTab === "workbench") {
+      loadWorkbenchChapter(selectedChapterNumber)
+    }
+  }, [activeTab, loadWorkbenchChapter, selectedChapterNumber])
+
+  const handleSaveWorkbenchChapter = async () => {
+    if (!chapterEditorContent.trim()) {
+      toast.error("章节内容不能为空")
+      return
+    }
+    setChapterEditorSaving(true)
+    try {
+      const result = await api.chapters.update(id, selectedChapterNumber, { content: chapterEditorContent })
+      setChapterEditorMeta(result.meta)
+      await queryClient.invalidateQueries({ queryKey: ["chapters", id] })
+      toast.success("章节草稿已保存")
+    } catch (error: any) {
+      toast.error(error?.message || "保存失败")
+    } finally {
+      setChapterEditorSaving(false)
+    }
+  }
+
+  const handleGenerateWorkbenchChapter = async () => {
+    await saveGenerationTargets()
+    setSseAction("chapter")
+    setActiveTab("workbench")
+    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+    connect(`${base}/api/v1/projects/${id}/generate/chapter/${selectedChapterNumber}?t=${Date.now()}`)
+  }
+
+  const handleGenerateChapterBatch = async () => {
+    await saveGenerationTargets()
+    setSseAction("chapterBatch")
+    setActiveTab("workbench")
+    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+    connect(`${base}/api/v1/projects/${id}/generate/chapters?start_chapter=${selectedChapterNumber}&count=${batchChapterCount}&t=${Date.now()}`)
+  }
+
+  const handleFinalizeWorkbenchChapter = () => {
+    setSseAction("finalize")
+    setActiveTab("workbench")
+    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+    connect(`${base}/api/v1/projects/${id}/generate/finalize/${selectedChapterNumber}?t=${Date.now()}`)
+  }
+
+  const handleWorkbenchOpeningHook = () => withLoading("workbenchOpening", async () => {
+    const res = await api.platform.hookCheck(id, selectedChapterNumber)
+    setHookResult(res.analysis)
+    setReaderChapterNum(selectedChapterNumber)
+  })
+
+  const handleWorkbenchEndingHook = () => withLoading("workbenchEnding", async () => {
+    const res = await api.platform.chapterHookCheck(id, selectedChapterNumber)
+    setChapterHookResult(res.analysis)
+    setReaderChapterNum(selectedChapterNumber)
+  })
+
+  const handleGenSelectedChapterTitle = () => withLoading("workbenchTitle", async () => {
+    const res = await api.platform.chapterTitle(id, selectedChapterNumber)
+    setChapterTitles(res.titles)
+  })
+
+  const handleReaderOpeningCheck = () => withLoading("readerOpening", async () => {
+    const res = await api.platform.hookCheck(id, readerChapterNum)
+    setHookResult(res.analysis)
+  })
+
+  const handleReaderEndingCheck = () => withLoading("readerEnding", async () => {
+    const res = await api.platform.chapterHookCheck(id, readerChapterNum)
+    setChapterHookResult(res.analysis)
+  })
+
   const loadOutputFile = useCallback(async (filename: string) => {
     const requestId = ++outputFileRequestId.current
     setOutputFileLoading(true)
@@ -229,11 +435,22 @@ export default function ProjectDashboard() {
   }, [activeTab, selectedOutputFile, loadOutputFile])
 
   useEffect(() => {
-    if (activeTab !== "generation" || !lastDone || autoOpenFilesAfterDoneRef.current) return
-    if (lastDone.data?.status !== "done") return
-    autoOpenFilesAfterDoneRef.current = true
-    setActiveTab("files")
-  }, [activeTab, lastDone])
+    if (!lastDone || lastDone.data?.status !== "done") return
+
+    if (
+      activeTab === "generation" &&
+      (sseAction === "architecture" || sseAction === "blueprint") &&
+      !autoOpenFilesAfterDoneRef.current
+    ) {
+      autoOpenFilesAfterDoneRef.current = true
+      setActiveTab("files")
+    }
+
+    if (sseAction === "chapter" || sseAction === "chapterBatch" || sseAction === "finalize") {
+      loadWorkbenchChapter(selectedChapterNumber)
+      queryClient.invalidateQueries({ queryKey: ["chapters", id] })
+    }
+  }, [activeTab, id, lastDone, loadWorkbenchChapter, queryClient, selectedChapterNumber, sseAction])
 
   const handleCopyOutput = async () => {
     if (!outputFileContent) return
@@ -263,7 +480,9 @@ export default function ProjectDashboard() {
     }
   }
 
-  const handleGenerateArchitecture = () => {
+  const handleGenerateArchitecture = async () => {
+    await saveGenerationTargets()
+    setSseAction("architecture")
     autoOpenFilesAfterDoneRef.current = false
     setSelectedOutputFile("Novel_architecture.txt")
     setActiveTab("generation")
@@ -271,7 +490,9 @@ export default function ProjectDashboard() {
     connect(`${base}/api/v1/projects/${id}/generate/architecture?t=${Date.now()}`)
   }
 
-  const handleGenerateBlueprint = () => {
+  const handleGenerateBlueprint = async () => {
+    await saveGenerationTargets()
+    setSseAction("blueprint")
     autoOpenFilesAfterDoneRef.current = false
     setSelectedOutputFile("Novel_directory.txt")
     setActiveTab("generation")
@@ -291,6 +512,19 @@ export default function ProjectDashboard() {
     toast.success("向量库已清空")
     setClearDialogOpen(false)
   }
+
+  const completedChapters = chapters?.filter((chapter: any) => chapter.status === "final").length || 0
+  const draftChapters = chapters?.filter((chapter: any) => chapter.status === "draft").length || 0
+  const pendingChapters = chapters?.filter((chapter: any) => chapter.status !== "final" && chapter.status !== "draft").length || 0
+  const totalWords = chapters?.reduce((sum: number, chapter: any) => sum + (chapter.word_count || 0), 0) || 0
+  const selectedChapterFromList = chapters?.find((chapter: any) => chapter.chapter_number === selectedChapterNumber)
+  const activeChapterMeta = chapterEditorMeta || selectedChapterFromList
+  const appearedCharacters = characters.filter((char: any) => (char.status || "appeared") === "appeared")
+  const plannedCharacters = characters.filter((char: any) => char.status === "planned")
+  const suggestedCharacters = characters.filter((char: any) => char.status === "suggested")
+  const readerScore = typeof hookResult?.score === "number" ? hookResult.score : null
+  const readerRiskLabel = readerScore === null ? "待评估" : readerScore >= 8 ? "低流失" : readerScore >= 6 ? "中等风险" : "高流失风险"
+  const readerRiskVariant: "default" | "outline" | "destructive" = readerScore === null ? "outline" : readerScore >= 7 ? "default" : "destructive"
 
   if (isLoading) {
     return (
@@ -324,10 +558,12 @@ export default function ProjectDashboard() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-6 flex-wrap">
           <TabsTrigger value="overview">概览</TabsTrigger>
+          <TabsTrigger value="workbench">章节工作台</TabsTrigger>
           <TabsTrigger value="generation">AI 生成</TabsTrigger>
           <TabsTrigger value="files">文件输出</TabsTrigger>
           <TabsTrigger value="knowledge">知识库</TabsTrigger>
-          <TabsTrigger value="characters">角色管理</TabsTrigger>
+          <TabsTrigger value="characters">人物规划</TabsTrigger>
+          <TabsTrigger value="reader">读者反馈</TabsTrigger>
           <TabsTrigger value="platform">{PLATFORM_CONFIG[config?.platform]?.icon || "📖"} {PLATFORM_CONFIG[config?.platform]?.label || "平台"}工具</TabsTrigger>
           <TabsTrigger value="settings">参数设置</TabsTrigger>
         </TabsList>
@@ -340,7 +576,11 @@ export default function ProjectDashboard() {
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">已完成</CardTitle></CardHeader>
-              <CardContent><span className="text-3xl font-bold">{chapters?.filter((c: any) => c.status === "final").length || 0}</span></CardContent>
+              <CardContent><span className="text-3xl font-bold">{completedChapters}</span></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">草稿章节</CardTitle></CardHeader>
+              <CardContent><span className="text-3xl font-bold">{draftChapters}</span></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">目标平台</CardTitle></CardHeader>
@@ -380,8 +620,11 @@ export default function ProjectDashboard() {
               <Button variant="outline" onClick={() => api.export.download(id, "html")}>
                 <FileDown className="h-4 w-4 mr-2" />导出 HTML
               </Button>
-              <Button variant="outline" onClick={() => setActiveTab("files")}>
-                <FileText className="h-4 w-4 mr-2" />查看生成文件
+            <Button variant="outline" onClick={() => setActiveTab("files")}>
+              <FileText className="h-4 w-4 mr-2" />查看生成文件
+            </Button>
+              <Button variant="outline" onClick={() => setActiveTab("workbench")}>
+                <BookOpen className="h-4 w-4 mr-2" />进入章节工作台
               </Button>
             </CardContent>
           </Card>
@@ -420,6 +663,256 @@ export default function ProjectDashboard() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="workbench" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Gauge className="h-5 w-5" />生成控制</CardTitle>
+              <CardDescription>控制架构、目录和章节草稿的生成规模</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[150px_150px_150px_150px_minmax(0,1fr)]">
+                <div>
+                  <Label>总章节</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={generationChapterCount}
+                    onChange={(event) => setGenerationChapterCount(Math.max(1, Number(event.target.value) || 1))}
+                  />
+                </div>
+                <div>
+                  <Label>每章字数</Label>
+                  <Input
+                    type="number"
+                    min={500}
+                    step={500}
+                    value={generationWordCount}
+                    onChange={(event) => setGenerationWordCount(Math.max(500, Number(event.target.value) || 500))}
+                  />
+                </div>
+                <div>
+                  <Label>当前章节</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={generationChapterCount || undefined}
+                    value={selectedChapterNumber}
+                    onChange={(event) => {
+                      const value = Math.max(1, Number(event.target.value) || 1)
+                      setSelectedChapterNumber(value)
+                      setReaderChapterNum(value)
+                      setHookChapterNum(value)
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label>本轮章数</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={batchChapterCount}
+                    onChange={(event) => setBatchChapterCount(Math.min(20, Math.max(1, Number(event.target.value) || 1)))}
+                  />
+                </div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <Button variant="outline" onClick={handleApplyGenerationTargets} disabled={updateConfig.isPending}>
+                    {updateConfig.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                    保存控制
+                  </Button>
+                  <Button onClick={handleGenerateArchitecture} disabled={isConnected}>
+                    <Wand2 className="h-4 w-4 mr-2" />生成架构
+                  </Button>
+                  <Button onClick={handleGenerateBlueprint} disabled={isConnected} variant="outline">
+                    <ListChecks className="h-4 w-4 mr-2" />生成目录
+                  </Button>
+                  <Button onClick={handleGenerateWorkbenchChapter} disabled={isConnected} variant="outline">
+                    <Play className="h-4 w-4 mr-2" />生成本章
+                  </Button>
+                  <Button onClick={handleGenerateChapterBatch} disabled={isConnected} variant="outline">
+                    <RefreshCw className="h-4 w-4 mr-2" />批量生成
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">章节目录</CardTitle>
+                <CardDescription>{completedChapters} 定稿 / {draftChapters} 草稿 / {pendingChapters} 待生成</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {!chapters?.length ? (
+                  <div className="px-4 pb-4 text-sm text-muted-foreground">尚未生成章节目录</div>
+                ) : (
+                  <ScrollArea className="h-[66vh]">
+                    <div className="space-y-1 p-2">
+                      {chapters.map((chapter: any) => (
+                        <button
+                          key={chapter.chapter_number}
+                          type="button"
+                          onClick={() => {
+                            setSelectedChapterNumber(chapter.chapter_number)
+                            setReaderChapterNum(chapter.chapter_number)
+                            setHookChapterNum(chapter.chapter_number)
+                          }}
+                          className={`w-full rounded-lg px-3 py-2 text-left transition ${
+                            selectedChapterNumber === chapter.chapter_number ? "bg-primary/10 text-primary" : "hover:bg-accent"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-xs">第{chapter.chapter_number}章</span>
+                            <Badge variant={chapter.status === "final" ? "default" : chapter.status === "draft" ? "secondary" : "outline"}>
+                              {chapter.status === "final" ? "定稿" : chapter.status === "draft" ? "草稿" : "待写"}
+                            </Badge>
+                          </div>
+                          <p className="mt-1 truncate text-sm font-medium">{chapter.chapter_title || "未命名"}</p>
+                          {chapter.word_count > 0 && <p className="mt-1 text-xs text-muted-foreground">{chapter.word_count} 字</p>}
+                        </button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <CardTitle className="truncate">
+                      第{selectedChapterNumber}章 {activeChapterMeta?.chapter_title || selectedChapterFromList?.chapter_title || ""}
+                    </CardTitle>
+                    <CardDescription className="truncate">
+                      {activeChapterMeta?.chapter_summary || selectedChapterFromList?.chapter_summary || "章节内容编辑区"}
+                    </CardDescription>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Badge variant={activeChapterMeta?.status === "final" ? "default" : activeChapterMeta?.status === "draft" ? "secondary" : "outline"}>
+                      {activeChapterMeta?.status === "final" ? "已定稿" : activeChapterMeta?.status === "draft" ? "草稿" : "待生成"}
+                    </Badge>
+                    <Badge variant="outline">{activeChapterMeta?.word_count || chapterEditorContent.length || 0} 字</Badge>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {(sseAction === "chapter" || sseAction === "chapterBatch" || sseAction === "finalize") && isConnected && (
+                  <div className="flex items-center gap-2 rounded-lg bg-primary/10 p-3 text-sm text-primary">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>AI 正在处理第{selectedChapterNumber}章...</span>
+                  </div>
+                )}
+                {(sseAction === "chapter" || sseAction === "chapterBatch" || sseAction === "finalize") && events.filter(e => e.type === "progress").slice(-3).map((event, index) => (
+                  <div key={`${event.data.step}-${index}`} className="flex items-start gap-2 rounded-lg bg-muted/50 p-2 text-sm">
+                    {event.data.status === "done" ? <CheckCircle className="mt-0.5 h-4 w-4 text-green-500" /> : <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-primary" />}
+                    <span>{event.data.message}</span>
+                  </div>
+                ))}
+                {(sseAction === "chapter" || sseAction === "chapterBatch" || sseAction === "finalize") && lastError && (
+                  <div className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{lastError.data?.message || "生成失败"}</span>
+                  </div>
+                )}
+
+                {chapterEditorLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-4 w-2/3" />
+                    <Skeleton className="h-4 w-5/6" />
+                    <Skeleton className="h-[54vh] w-full rounded-lg" />
+                  </div>
+                ) : (
+                  <Textarea
+                    value={chapterEditorContent}
+                    onChange={(event) => setChapterEditorContent(event.target.value)}
+                    className="min-h-[54vh] resize-none font-serif text-base leading-7"
+                    placeholder="在这里生成、编辑、保存章节草稿..."
+                  />
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={handleSaveWorkbenchChapter} disabled={chapterEditorSaving || chapterEditorLoading}>
+                    {chapterEditorSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                    保存草稿
+                  </Button>
+                  <Button variant="outline" onClick={handleGenerateWorkbenchChapter} disabled={isConnected}>
+                    <Play className="h-4 w-4 mr-2" />AI 生成本章
+                  </Button>
+                  <Button variant="secondary" onClick={handleFinalizeWorkbenchChapter} disabled={isConnected || !chapterEditorContent.trim()}>
+                    <CheckCircle className="h-4 w-4 mr-2" />定稿
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">章节信息</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div><span className="text-muted-foreground">定位：</span>{activeChapterMeta?.chapter_role || "-"}</div>
+                  <div><span className="text-muted-foreground">核心作用：</span>{activeChapterMeta?.chapter_purpose || "-"}</div>
+                  <div><span className="text-muted-foreground">悬念密度：</span>{activeChapterMeta?.suspense_level || "-"}</div>
+                  <div><span className="text-muted-foreground">伏笔操作：</span>{activeChapterMeta?.foreshadowing || "-"}</div>
+                  <div><span className="text-muted-foreground">认知颠覆：</span>{activeChapterMeta?.plot_twist_level || "-"}</div>
+                  <Separator />
+                  <div><span className="text-muted-foreground">项目字数：</span>{totalWords} 字</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">平台编辑</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Button className="w-full justify-start" variant="outline" onClick={handleWorkbenchOpeningHook} disabled={platformLoading === "workbenchOpening"}>
+                    {platformLoading === "workbenchOpening" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Target className="h-4 w-4 mr-2" />}
+                    检测开篇钩子
+                  </Button>
+                  <Button className="w-full justify-start" variant="outline" onClick={handleWorkbenchEndingHook} disabled={platformLoading === "workbenchEnding"}>
+                    {platformLoading === "workbenchEnding" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Eye className="h-4 w-4 mr-2" />}
+                    检测结尾钩子
+                  </Button>
+                  <Button className="w-full justify-start" variant="outline" onClick={handleGenSelectedChapterTitle} disabled={platformLoading === "workbenchTitle"}>
+                    {platformLoading === "workbenchTitle" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileEdit className="h-4 w-4 mr-2" />}
+                    生成章节标题
+                  </Button>
+
+                  {chapterTitles.length > 0 && (
+                    <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                      <p className="text-xs text-muted-foreground">标题候选</p>
+                      {chapterTitles.map((title, index) => <p key={index} className="text-sm">「{title}」</p>)}
+                    </div>
+                  )}
+                  {hookResult && (
+                    <div className="space-y-2 rounded-lg border p-3 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">开篇评分</span>
+                        <Badge variant={hookResult.score >= 7 ? "default" : "destructive"}>{hookResult.score}/10</Badge>
+                      </div>
+                      {hookResult.rewrite_suggestion && <p className="text-muted-foreground">{hookResult.rewrite_suggestion}</p>}
+                    </div>
+                  )}
+                  {chapterHookResult && (
+                    <div className="space-y-2 rounded-lg border p-3 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">结尾钩子</span>
+                        <Badge variant={chapterHookResult.has_hook ? "default" : "destructive"}>
+                          {chapterHookResult.has_hook ? "有钩子" : "需加强"}
+                        </Badge>
+                      </div>
+                      {chapterHookResult.suggestion && <p className="text-muted-foreground">{chapterHookResult.suggestion}</p>}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="generation">
@@ -577,48 +1070,238 @@ export default function ProjectDashboard() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="characters">
+        <TabsContent value="characters" className="space-y-6">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                  <CardTitle>角色管理</CardTitle>
-                  <CardDescription>管理小说中的角色信息</CardDescription>
+                  <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />人物规划</CardTitle>
+                  <CardDescription>区分已出现人物、计划登场人物和 AI 建议人物</CardDescription>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button variant="outline" size="sm" onClick={handleImportCharacters}>
                     <Upload className="h-4 w-4 mr-2" />从角色状态导入
                   </Button>
-                  <Button size="sm" onClick={openCreateDialog}>
-                    <UserPlus className="h-4 w-4 mr-2" />新增角色
+                  <Button variant="outline" size="sm" onClick={handleSuggestCharacters} disabled={characterLoading === "suggest"}>
+                    {characterLoading === "suggest" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                    AI 生成人物
+                  </Button>
+                  <Button size="sm" onClick={() => openCreateDialog("planned", "user")}>
+                    <UserPlus className="h-4 w-4 mr-2" />新增计划人物
                   </Button>
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              {characters.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                  <p>暂无角色，先生成架构后可从角色状态导入，或手动创建</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {characters.map((char: any) => (
-                    <div key={char.id} className="flex items-start justify-between p-3 rounded-lg border hover:bg-accent">
-                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openEditDialog(char)}>
-                        <p className="font-medium">{char.name}</p>
-                        {char.description && <p className="text-sm text-muted-foreground truncate mt-1">{char.description}</p>}
-                        <p className="text-xs text-muted-foreground mt-1">{new Date(char.updated_at).toLocaleDateString("zh-CN")}</p>
+          </Card>
+
+          {characterSuggestions.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">本次 AI 建议</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {characterSuggestions.map((suggestion: any) => (
+                  <div key={suggestion.name} className="rounded-lg border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{suggestion.name}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{suggestion.description}</p>
                       </div>
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteCharTarget(char.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                      <Badge variant="outline">AI 建议</Badge>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {suggestion.first_appearance_chapter ? `预计第${suggestion.first_appearance_chapter}章` : "登场待定"}
+                      </span>
+                      <Button size="sm" variant="outline" onClick={() => handleAcceptCharacterSuggestion(suggestion)}>
+                        <PlusCircle className="h-4 w-4 mr-2" />加入计划
                       </Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid gap-6 lg:grid-cols-3">
+            {[
+              { title: "已出现人物", items: appearedCharacters, empty: "从角色状态导入后会出现在这里" },
+              { title: "计划登场人物", items: plannedCharacters, empty: "你准备安排的人物会出现在这里" },
+              { title: "AI 建议人物", items: suggestedCharacters, empty: "AI 生成但尚未采纳的人物会出现在这里" },
+            ].map((group) => (
+              <Card key={group.title}>
+                <CardHeader>
+                  <CardTitle className="text-base">{group.title}</CardTitle>
+                  <CardDescription>{group.items.length} 个</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {group.items.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">{group.empty}</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {group.items.map((char: any) => (
+                        <div key={char.id} className="rounded-lg border p-3 hover:bg-accent">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1 cursor-pointer" onClick={() => openEditDialog(char)}>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-medium">{char.name}</p>
+                                <Badge variant="outline">{characterSourceLabel(char.source)}</Badge>
+                              </div>
+                              {char.description && <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{char.description}</p>}
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                {characterStatusLabel(char.status)}
+                                {char.first_appearance_chapter ? ` · 第${char.first_appearance_chapter}章登场` : ""}
+                              </p>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={() => setDeleteCharTarget(char.id)}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="reader" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2"><MessageSquare className="h-5 w-5" />读者反馈</CardTitle>
+                  <CardDescription>把开篇吸引力、结尾钩子和章节标题放到同一处看</CardDescription>
+                </div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <Label>章节</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      className="w-24"
+                      value={readerChapterNum}
+                      onChange={(event) => setReaderChapterNum(Math.max(1, Number(event.target.value) || 1))}
+                    />
+                  </div>
+                  <Button variant="outline" onClick={handleReaderOpeningCheck} disabled={platformLoading === "readerOpening"}>
+                    {platformLoading === "readerOpening" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Target className="h-4 w-4 mr-2" />}
+                    开篇反馈
+                  </Button>
+                  <Button variant="outline" onClick={handleReaderEndingCheck} disabled={platformLoading === "readerEnding"}>
+                    {platformLoading === "readerEnding" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Eye className="h-4 w-4 mr-2" />}
+                    结尾反馈
+                  </Button>
+                  <Button variant="outline" onClick={handleBatchHookCheck} disabled={platformLoading === "batch"}>
+                    {platformLoading === "batch" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                    全书结尾钩子
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+          </Card>
+
+          <div className="grid gap-6 lg:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">首屏吸引力</CardTitle>
+                <CardDescription>第{readerChapterNum}章</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">流失风险</span>
+                  <Badge variant={readerRiskVariant}>{readerRiskLabel}</Badge>
+                </div>
+                <div className="text-4xl font-bold">{readerScore ?? "-"}<span className="text-base font-normal text-muted-foreground">/10</span></div>
+                {hookResult?.hook_strength && <Badge variant="outline">{hookResult.hook_strength}</Badge>}
+                {hookResult?.issues?.length > 0 && (
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    {hookResult.issues.map((issue: string, index: number) => <p key={index}>- {issue}</p>)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">结尾追读</CardTitle>
+                <CardDescription>第{readerChapterNum}章</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">钩子状态</span>
+                  <Badge variant={chapterHookResult?.has_hook ? "default" : "outline"}>
+                    {chapterHookResult ? (chapterHookResult.has_hook ? "有钩子" : "需加强") : "待检测"}
+                  </Badge>
+                </div>
+                {chapterHookResult?.hook_type && <Badge variant="secondary">{chapterHookResult.hook_type}</Badge>}
+                {chapterHookResult?.hook_description && <p className="text-sm">{chapterHookResult.hook_description}</p>}
+                {chapterHookResult?.suggestion && <p className="text-sm text-muted-foreground">{chapterHookResult.suggestion}</p>}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">平台信号</CardTitle>
+                <CardDescription>{PLATFORM_CONFIG[config?.platform]?.label || "平台"}视角</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">章节完成</span>
+                  <span>{completedChapters}/{config?.num_chapters || chapters?.length || 0}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">草稿库存</span>
+                  <span>{draftChapters}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">累计字数</span>
+                  <span>{totalWords}</span>
+                </div>
+                {tagsResult?.target_audience && (
+                  <div className="rounded-lg border bg-muted/30 p-3 text-muted-foreground">{tagsResult.target_audience}</div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {hookResult?.rewrite_suggestion && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">改写建议</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm">{hookResult.rewrite_suggestion}</p>
+                {hookResult.rewritten_opening && (
+                  <div className="rounded-lg border bg-muted/30 p-4 text-sm leading-7">{hookResult.rewritten_opening}</div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {batchHookResult.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">全书结尾钩子</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {batchHookResult.map((result: any) => (
+                    <div key={result.chapter_number} className="rounded-lg border p-3 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono">第{result.chapter_number}章</span>
+                        <Badge variant={result.has_hook ? "default" : "destructive"}>{result.has_hook ? "有钩子" : "缺钩子"}</Badge>
+                      </div>
+                      {result.hook_type && <p className="mt-2 text-muted-foreground">{result.hook_type}</p>}
+                      {result.suggestion && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{result.suggestion}</p>}
                     </div>
                   ))}
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* 番茄平台工具 Tab */}
@@ -924,6 +1607,40 @@ export default function ProjectDashboard() {
             <div>
               <Label>描述</Label>
               <Textarea value={charDesc} onChange={e => setCharDesc(e.target.value)} rows={4} placeholder="角色的外貌、性格、背景故事等" />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label>人物状态</Label>
+                <Select value={charStatus} onValueChange={(value) => value && setCharStatus(value)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CHARACTER_STATUS_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>来源</Label>
+                <Select value={charSource} onValueChange={(value) => value && setCharSource(value)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CHARACTER_SOURCE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>预计/首次登场章节</Label>
+              <Input
+                type="number"
+                min={1}
+                value={charFirstChapter}
+                onChange={(event) => setCharFirstChapter(event.target.value ? Math.max(1, Number(event.target.value) || 1) : "")}
+                placeholder="留空表示未决定"
+              />
             </div>
             <Button className="w-full" onClick={editChar ? handleUpdateCharacter : handleCreateCharacter} disabled={!charName.trim()}>
               {editChar ? "保存修改" : "创建"}

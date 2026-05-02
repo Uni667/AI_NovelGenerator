@@ -44,14 +44,23 @@ class CharacterProfileResponse(BaseModel):
     project_id: str
     name: str
     description: str
+    status: str = "appeared"
+    source: str = "user"
+    first_appearance_chapter: Optional[int] = None
     updated_at: str
 
 
 class CharacterProfileCreate(BaseModel):
     name: str = Field(..., min_length=1)
     description: str = ""
+    status: str = "appeared"
+    source: str = "user"
+    first_appearance_chapter: Optional[int] = None
 
 
 class CharacterProfileUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    status: Optional[str] = None
+    source: Optional[str] = None
+    first_appearance_chapter: Optional[int] = None

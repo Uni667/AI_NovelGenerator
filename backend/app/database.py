@@ -128,6 +128,9 @@ def init_db():
                 name TEXT NOT NULL,
                 description TEXT DEFAULT '',
                 file_path TEXT DEFAULT '',
+                status TEXT DEFAULT 'appeared',
+                source TEXT DEFAULT 'user',
+                first_appearance_chapter INTEGER,
                 updated_at TEXT NOT NULL
             );
 
@@ -153,5 +156,18 @@ def init_db():
         # 迁移：新增 usage 列（LLM 配置用途）
         try:
             conn.execute("ALTER TABLE user_llm_config ADD COLUMN usage TEXT DEFAULT 'general'")
+        except Exception:
+            pass
+        # 迁移：新增角色规划字段
+        try:
+            conn.execute("ALTER TABLE character_profile ADD COLUMN status TEXT DEFAULT 'appeared'")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE character_profile ADD COLUMN source TEXT DEFAULT 'user'")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE character_profile ADD COLUMN first_appearance_chapter INTEGER")
         except Exception:
             pass

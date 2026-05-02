@@ -201,6 +201,38 @@ async def generate_chapter(project_id: str, chapter_number: int, request: Reques
     )
 
 
+@router.post("/api/v1/projects/{project_id}/generate/chapters")
+@router.get("/api/v1/projects/{project_id}/generate/chapters")
+async def generate_chapter_batch(project_id: str, request: Request, start_chapter: int = 1, count: int = 1):
+    if start_chapter < 1:
+        raise HTTPException(status_code=400, detail="起始章节必须大于 0")
+    if count < 1 or count > 20:
+        raise HTTPException(status_code=400, detail="本轮生成章数必须在 1 到 20 之间")
+    project, pconfig, user_id = _check_project(project_id, request)
+    return _make_streaming_response(
+        request, asyncio.Queue(), SSEEmitter(),
+        _run_chapter_batch_generation, project, pconfig, start_chapter, count, user_id,
+    )
+
+
+def _run_chapter_batch_generation(
+    emitter: SSEEmitter,
+    project: dict,
+    pconfig: dict,
+    start_chapter: int,
+    count: int,
+    user_id: str,
+):
+    for offset in range(count):
+        chapter_number = start_chapter + offset
+        emitter.emit("progress", {
+            "step": "batch",
+            "status": "running",
+            "message": f"开始生成第{chapter_number}章（{offset + 1}/{count}）",
+        })
+        _run_chapter_generation(emitter, project, pconfig, chapter_number, user_id)
+
+
 def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int, user_id: str):
     """复用 novel_generator.build_chapter_prompt + generate_chapter_draft"""
     from novel_generator.chapter import build_chapter_prompt, generate_chapter_draft
@@ -227,7 +259,7 @@ def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, c
     if draft_text:
         from utils import get_word_count
         wc = get_word_count(draft_text)
-        chapter_service.mark_chapter_final(project["id"], chapter_number, wc)
+        chapter_service.mark_chapter_draft(project["id"], chapter_number, wc)
         emitter.emit("progress", {"step": "draft", "status": "done",
                                    "message": f"第{chapter_number}章草稿生成完成"})
         emitter.emit("partial", {"step": "draft", "content": draft_text[:500] + "..."})
