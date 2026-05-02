@@ -62,10 +62,20 @@ class OpenAIEmbeddingAdapter(BaseEmbeddingAdapter):
         )
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        return self._embedding.embed_documents(texts)
+        try:
+            return self._embedding.embed_documents(texts)
+        except Exception as e:
+            self.last_error = str(e)
+            logging.error(f"OpenAI embedding error: {e}")
+            return [[]] * len(texts)
 
     def embed_query(self, query: str) -> List[float]:
-        return self._embedding.embed_query(query)
+        try:
+            return self._embedding.embed_query(query)
+        except Exception as e:
+            self.last_error = str(e)
+            logging.error(f"OpenAI embedding error: {e}")
+            return []
 
 class AzureOpenAIEmbeddingAdapter(BaseEmbeddingAdapter):
     """
@@ -91,10 +101,20 @@ class AzureOpenAIEmbeddingAdapter(BaseEmbeddingAdapter):
         )
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        return self._embedding.embed_documents(texts)
+        try:
+            return self._embedding.embed_documents(texts)
+        except Exception as e:
+            self.last_error = str(e)
+            logging.error(f"Azure OpenAI embedding error: {e}")
+            return [[]] * len(texts)
 
     def embed_query(self, query: str) -> List[float]:
-        return self._embedding.embed_query(query)
+        try:
+            return self._embedding.embed_query(query)
+        except Exception as e:
+            self.last_error = str(e)
+            logging.error(f"Azure OpenAI embedding error: {e}")
+            return []
 
 class OllamaEmbeddingAdapter(BaseEmbeddingAdapter):
     """
@@ -140,6 +160,7 @@ class OllamaEmbeddingAdapter(BaseEmbeddingAdapter):
                 raise ValueError("No 'embedding' field in Ollama response.")
             return result["embedding"]
         except requests.exceptions.RequestException as e:
+            self.last_error = str(e)
             logging.error(f"Ollama embeddings request error: {e}\n{traceback.format_exc()}")
             return []
 
@@ -169,13 +190,16 @@ class MLStudioEmbeddingAdapter(BaseEmbeddingAdapter):
             response.raise_for_status()
             result = response.json()
             if "data" not in result:
+                self.last_error = f"Invalid response format: {result}"
                 logging.error(f"Invalid response format from LM Studio API: {result}")
                 return [[]] * len(texts)
             return [item.get("embedding", []) for item in result["data"]]
         except requests.exceptions.RequestException as e:
+            self.last_error = str(e)
             logging.error(f"LM Studio API request failed: {str(e)}")
             return [[]] * len(texts)
         except (KeyError, IndexError, ValueError, TypeError) as e:
+            self.last_error = str(e)
             logging.error(f"Error parsing LM Studio API response: {str(e)}")
             return [[]] * len(texts)
 
@@ -189,13 +213,16 @@ class MLStudioEmbeddingAdapter(BaseEmbeddingAdapter):
             response.raise_for_status()
             result = response.json()
             if "data" not in result or not result["data"]:
+                self.last_error = f"Invalid response format: {result}"
                 logging.error(f"Invalid response format from LM Studio API: {result}")
                 return []
             return result["data"][0].get("embedding", [])
         except requests.exceptions.RequestException as e:
+            self.last_error = str(e)
             logging.error(f"LM Studio API request failed: {str(e)}")
             return []
         except (KeyError, IndexError, ValueError, TypeError) as e:
+            self.last_error = str(e)
             logging.error(f"Error parsing LM Studio API response: {str(e)}")
             return []
 
@@ -224,6 +251,7 @@ class GeminiEmbeddingAdapter(BaseEmbeddingAdapter):
             )
             return [emb.values for emb in response.embeddings]
         except Exception as e:
+            self.last_error = str(e)
             logging.error(f"Gemini embed_documents error: {e}")
             return [[]] * len(texts)
 
@@ -241,8 +269,10 @@ class GeminiEmbeddingAdapter(BaseEmbeddingAdapter):
             )
             if response and response.embeddings:
                 return response.embeddings[0].values
+            self.last_error = "No embeddings in Gemini response"
             return []
         except Exception as e:
+            self.last_error = str(e)
             logging.error(f"Gemini _embed_single error: {e}")
             return []
 
@@ -276,15 +306,18 @@ class SiliconFlowEmbeddingAdapter(BaseEmbeddingAdapter):
                 response.raise_for_status()
                 result = response.json()
                 if not result or "data" not in result or not result["data"]:
+                    self.last_error = f"Invalid response format: {result}"
                     logging.error(f"Invalid response format from SiliconFlow API: {result}")
                     embeddings.append([])
                     continue
                 emb = result["data"][0].get("embedding", [])
                 embeddings.append(emb)
             except requests.exceptions.RequestException as e:
+                self.last_error = str(e)
                 logging.error(f"SiliconFlow API request failed: {str(e)}")
                 embeddings.append([])
             except (KeyError, IndexError, ValueError, TypeError) as e:
+                self.last_error = str(e)
                 logging.error(f"Error parsing SiliconFlow API response: {str(e)}")
                 embeddings.append([])
         return embeddings
@@ -296,13 +329,16 @@ class SiliconFlowEmbeddingAdapter(BaseEmbeddingAdapter):
             response.raise_for_status()
             result = response.json()
             if not result or "data" not in result or not result["data"]:
+                self.last_error = f"Invalid response format: {result}"
                 logging.error(f"Invalid response format from SiliconFlow API: {result}")
                 return []
             return result["data"][0].get("embedding", [])
         except requests.exceptions.RequestException as e:
+            self.last_error = str(e)
             logging.error(f"SiliconFlow API request failed: {str(e)}")
             return []
         except (KeyError, IndexError, ValueError, TypeError) as e:
+            self.last_error = str(e)
             logging.error(f"Error parsing SiliconFlow API response: {str(e)}")
             return []
 
