@@ -26,7 +26,27 @@ const GENERATED_FILES = [
   {
     filename: "Novel_architecture.txt",
     label: "小说架构",
-    description: "核心种子、角色动力学、世界观和三幕式情节",
+    description: "核心种子、角色架构、世界观和三幕式情节架构",
+  },
+  {
+    filename: "architecture_core_seed.txt",
+    label: "核心种子",
+    description: "小说卖点、主角欲望、主线冲突和读者情绪承诺",
+  },
+  {
+    filename: "architecture_character_dynamics.txt",
+    label: "角色架构",
+    description: "角色总览、人物详卡、关系冲突网、出场路线和写作约束",
+  },
+  {
+    filename: "architecture_world_building.txt",
+    label: "世界观",
+    description: "故事规则、势力结构、资源体系和行动边界",
+  },
+  {
+    filename: "architecture_plot.txt",
+    label: "三幕式情节架构",
+    description: "开局钩子、中段升级、后段爆发收束的全书主线",
   },
   {
     filename: "Novel_directory.txt",
@@ -49,6 +69,58 @@ const GENERATED_FILES = [
     description: "可选的伏笔记录和情节线",
   },
 ] as const
+
+const GENERATION_STEP_META: Record<string, { label: string; description: string }> = {
+  core_seed: {
+    label: "核心种子",
+    description: "确定小说的核心卖点、主角欲望、主线冲突和读者情绪承诺",
+  },
+  character: {
+    label: "角色架构",
+    description: "设计角色总览、人物详卡、关系冲突网、出场路线和人设约束",
+  },
+  character_state: {
+    label: "角色状态表",
+    description: "把角色当前身份、目标、关系和秘密整理成后续章节可追踪的状态",
+  },
+  world: {
+    label: "世界观",
+    description: "确定故事规则、势力结构、资源体系和主角行动边界",
+  },
+  plot: {
+    label: "三幕式情节架构",
+    description: "把整本书拆成开局立钩子、中段冲突升级、后段爆发收束三段主线",
+  },
+  all: {
+    label: "架构汇总",
+    description: "整合核心种子、人物、世界观和三幕式情节架构",
+  },
+  blueprint: {
+    label: "章节目录",
+    description: "把全书架构拆成章节标题、章节作用和每章推进目标",
+  },
+  build_prompt: {
+    label: "章节提示词",
+    description: "根据架构、目录和上下文构建当前章节写作提示",
+  },
+  draft: {
+    label: "章节草稿",
+    description: "生成当前章节正文草稿",
+  },
+  finalize: {
+    label: "章节定稿",
+    description: "定稿章节，并更新全局摘要、角色状态和后续上下文",
+  },
+  batch: {
+    label: "批量章节生成",
+    description: "按顺序生成多章草稿",
+  },
+}
+
+const generationStepMeta = (step?: string) => {
+  if (!step) return { label: "生成步骤", description: "正在执行生成流程" }
+  return GENERATION_STEP_META[step] || { label: step, description: "生成流程中的内部步骤" }
+}
 
 const CHARACTER_STATUS_OPTIONS = [
   { value: "appeared", label: "已出现" },
@@ -954,19 +1026,26 @@ export default function ProjectDashboard() {
                 </div>
               )}
 
-              {events.filter(e => e.type === "progress").map((e, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                  {e.data.status === "done" ? (
-                    <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
-                  ) : (
-                    <Loader2 className="h-5 w-5 animate-spin text-primary mt-0.5 shrink-0" />
-                  )}
-                  <div className="min-w-0">
-                    <p className="font-medium">{e.data.message}</p>
-                    <p className="text-xs text-muted-foreground">步骤: {e.data.step}</p>
+              {events.filter(e => e.type === "progress").map((e, i) => {
+                const meta = generationStepMeta(e.data?.step)
+                return (
+                  <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
+                    {e.data.status === "done" ? (
+                      <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
+                    ) : (
+                      <Loader2 className="h-5 w-5 animate-spin text-primary mt-0.5 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{e.data.message}</p>
+                        <Badge variant="outline">{meta.label}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{meta.description}</p>
+                      <p className="text-xs text-muted-foreground">内部步骤: {e.data.step}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
 
               {hasError && (
                 <div className="flex items-start gap-3 p-3 rounded-lg bg-destructive/10 text-destructive">

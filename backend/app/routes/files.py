@@ -9,10 +9,15 @@ router = APIRouter(tags=["文件读取"])
 
 ALLOWED_FILES = [
     "Novel_architecture.txt",
+    "architecture_core_seed.txt",
+    "architecture_character_dynamics.txt",
+    "architecture_world_building.txt",
+    "architecture_plot.txt",
     "Novel_directory.txt",
     "global_summary.txt",
     "character_state.txt",
-    "plot_arcs.txt"
+    "plot_arcs.txt",
+    "partial_architecture.json",
 ]
 
 

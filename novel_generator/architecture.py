@@ -18,6 +18,13 @@ from utils import clear_file_content, save_string_to_txt
 
 logger = logging.getLogger(__name__)
 
+ARCHITECTURE_SECTION_FILES = {
+    "core_seed_result": "architecture_core_seed.txt",
+    "character_dynamics_result": "architecture_character_dynamics.txt",
+    "world_building_result": "architecture_world_building.txt",
+    "plot_arch_result": "architecture_plot.txt",
+}
+
 
 def load_partial_architecture_data(filepath: str) -> dict:
     partial_file = os.path.join(filepath, "partial_architecture.json")
@@ -38,6 +45,12 @@ def save_partial_architecture_data(filepath: str, data: dict):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
         logger.warning("Failed to save partial_architecture.json")
+
+
+def save_architecture_section(filepath: str, filename: str, title: str, content: str):
+    section_file = os.path.join(filepath, filename)
+    clear_file_content(section_file)
+    save_string_to_txt(f"# {title}\n\n{content.strip()}\n", section_file)
 
 
 def Novel_architecture_generate(
@@ -115,15 +128,17 @@ def Novel_architecture_generate(
             _fail("core_seed", _failure_message("核心种子生成"))
         partial_data["core_seed_result"] = core_seed_result
         save_partial_architecture_data(filepath, partial_data)
+        save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["core_seed_result"], "核心种子", core_seed_result)
         _emit("progress", {"step": "core_seed", "status": "done", "message": "核心种子生成完成"})
         _emit("partial", {"step": "core_seed", "content": core_seed_result[:500] + "..."})
     else:
         logger.info("Step1 already done. Skipping...")
+        save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["core_seed_result"], "核心种子", partial_data["core_seed_result"])
 
     # ── Step 2: 角色动力学 ──
     if "character_dynamics_result" not in partial_data:
         logger.info("Step2: Generating character_dynamics_prompt ...")
-        _emit("progress", {"step": "character", "status": "running", "message": "正在生成角色动力学..."})
+        _emit("progress", {"step": "character", "status": "running", "message": "正在生成角色架构..."})
 
         prompt_character = prompt_definitions.character_dynamics_prompt.format(
             core_seed=partial_data["core_seed_result"].strip(),
@@ -132,12 +147,14 @@ def Novel_architecture_generate(
         character_dynamics_result = invoke_with_cleaning(llm, prompt_character)
         if not character_dynamics_result.strip():
             logger.warning("character_dynamics_prompt generation failed.")
-            _fail("character", _failure_message("角色动力学生成"))
+            _fail("character", _failure_message("角色架构生成"))
         partial_data["character_dynamics_result"] = character_dynamics_result
         save_partial_architecture_data(filepath, partial_data)
-        _emit("progress", {"step": "character", "status": "done", "message": "角色动力学生成完成"})
+        save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["character_dynamics_result"], "角色架构", character_dynamics_result)
+        _emit("progress", {"step": "character", "status": "done", "message": "角色架构生成完成"})
     else:
         logger.info("Step2 already done. Skipping...")
+        save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["character_dynamics_result"], "角色架构", partial_data["character_dynamics_result"])
 
     # ── 生成初始角色状态 ──
     if "character_dynamics_result" in partial_data and "character_state_result" not in partial_data:
@@ -174,9 +191,11 @@ def Novel_architecture_generate(
             _fail("world", _failure_message("世界观生成"))
         partial_data["world_building_result"] = world_building_result
         save_partial_architecture_data(filepath, partial_data)
+        save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["world_building_result"], "世界观", world_building_result)
         _emit("progress", {"step": "world", "status": "done", "message": "世界观生成完成"})
     else:
         logger.info("Step3 already done. Skipping...")
+        save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["world_building_result"], "世界观", partial_data["world_building_result"])
 
     # ── Step 4: 三幕式情节 ──
     if "plot_arch_result" not in partial_data:
@@ -195,9 +214,11 @@ def Novel_architecture_generate(
             _fail("plot", _failure_message("三幕式情节架构生成"))
         partial_data["plot_arch_result"] = plot_arch_result
         save_partial_architecture_data(filepath, partial_data)
+        save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["plot_arch_result"], "三幕式情节架构", plot_arch_result)
         _emit("progress", {"step": "plot", "status": "done", "message": "情节架构生成完成"})
     else:
         logger.info("Step4 already done. Skipping...")
+        save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["plot_arch_result"], "三幕式情节架构", partial_data["plot_arch_result"])
 
     core_seed_result = partial_data["core_seed_result"]
     character_dynamics_result = partial_data["character_dynamics_result"]
@@ -205,16 +226,30 @@ def Novel_architecture_generate(
     plot_arch_result = partial_data["plot_arch_result"]
 
     final_content = (
-        "#=== 0) 小说设定 ===\n"
-        f"主题：{topic}, 类型：{category}, 风格流派：{genre}, 篇幅：约{num_chapters}章（每章{word_number}字）\n\n"
-        "#=== 1) 核心种子 ===\n"
-        f"{core_seed_result}\n\n"
-        "#=== 2) 角色动力学 ===\n"
-        f"{character_dynamics_result}\n\n"
-        "#=== 3) 世界观 ===\n"
-        f"{world_building_result}\n\n"
-        "#=== 4) 三幕式情节架构 ===\n"
-        f"{plot_arch_result}\n"
+        "# 小说创作档案\n\n"
+        "## 0. 项目定位\n"
+        f"- 主题：{topic}\n"
+        f"- 类型：{category}\n"
+        f"- 风格流派：{genre}\n"
+        f"- 篇幅：约{num_chapters}章，每章约{word_number}字\n\n"
+        "## 使用说明\n"
+        "- 写章节目录时，优先遵守「核心种子」和「三幕式情节架构」。\n"
+        "- 写章节正文时，优先遵守「角色架构」中的动机、关系和人设底线。\n"
+        "- 后续新增人物、伏笔或世界规则时，应同步更新角色状态和全局摘要。\n\n"
+        "## 1. 核心种子\n"
+        f"{core_seed_result.strip()}\n\n"
+        "## 2. 角色架构\n"
+        f"{character_dynamics_result.strip()}\n\n"
+        "## 3. 世界观\n"
+        f"{world_building_result.strip()}\n\n"
+        "## 4. 三幕式情节架构\n"
+        f"{plot_arch_result.strip()}\n\n"
+        "## 5. 最终打磨检查清单\n"
+        "- 主角目标是否足够清晰，并能推动每个阶段的行动？\n"
+        "- 反派或阻力是否持续升级，而不是只在结尾出现？\n"
+        "- 角色秘密是否有埋设、误导、揭露和后果？\n"
+        "- 世界观规则是否会反过来限制角色选择？\n"
+        "- 每一幕结尾是否都有足够强的追读钩子？\n"
     )
 
     arch_file = os.path.join(filepath, "Novel_architecture.txt")
