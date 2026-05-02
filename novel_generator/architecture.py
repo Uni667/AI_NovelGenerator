@@ -64,6 +64,17 @@ def Novel_architecture_generate(
         if emitter and hasattr(emitter, "emit"):
             emitter.emit(event_type, data)
 
+    def _failure_message(step_label: str) -> str:
+        last_error = getattr(llm, "last_error", "").strip()
+        if last_error:
+            return f"{step_label}失败：LLM 调用没有返回有效内容。模型错误：{last_error}"
+        return f"{step_label}失败：LLM 调用没有返回有效内容。请检查模型、API Key、Base URL、max_tokens 和超时设置。"
+
+    def _fail(step: str, message: str):
+        _emit("error", {"step": step, "message": message})
+        save_partial_architecture_data(filepath, partial_data)
+        raise RuntimeError(message)
+
     filepath = ctx.filepath
     os.makedirs(filepath, exist_ok=True)
 
@@ -101,9 +112,7 @@ def Novel_architecture_generate(
         core_seed_result = invoke_with_cleaning(llm, prompt_core)
         if not core_seed_result.strip():
             logger.warning("core_seed_prompt generation failed and returned empty.")
-            _emit("error", {"step": "core_seed", "message": "核心种子生成失败"})
-            save_partial_architecture_data(filepath, partial_data)
-            return
+            _fail("core_seed", _failure_message("核心种子生成"))
         partial_data["core_seed_result"] = core_seed_result
         save_partial_architecture_data(filepath, partial_data)
         _emit("progress", {"step": "core_seed", "status": "done", "message": "核心种子生成完成"})
@@ -123,9 +132,7 @@ def Novel_architecture_generate(
         character_dynamics_result = invoke_with_cleaning(llm, prompt_character)
         if not character_dynamics_result.strip():
             logger.warning("character_dynamics_prompt generation failed.")
-            _emit("error", {"step": "character", "message": "角色动力学生成失败"})
-            save_partial_architecture_data(filepath, partial_data)
-            return
+            _fail("character", _failure_message("角色动力学生成"))
         partial_data["character_dynamics_result"] = character_dynamics_result
         save_partial_architecture_data(filepath, partial_data)
         _emit("progress", {"step": "character", "status": "done", "message": "角色动力学生成完成"})
@@ -143,9 +150,7 @@ def Novel_architecture_generate(
         character_state_init = invoke_with_cleaning(llm, prompt_char_state_init)
         if not character_state_init.strip():
             logger.warning("create_character_state_prompt generation failed.")
-            _emit("error", {"step": "character_state", "message": "角色状态生成失败"})
-            save_partial_architecture_data(filepath, partial_data)
-            return
+            _fail("character_state", _failure_message("角色状态生成"))
         partial_data["character_state_result"] = character_state_init
         character_state_file = os.path.join(filepath, "character_state.txt")
         clear_file_content(character_state_file)
@@ -166,9 +171,7 @@ def Novel_architecture_generate(
         world_building_result = invoke_with_cleaning(llm, prompt_world)
         if not world_building_result.strip():
             logger.warning("world_building_prompt generation failed.")
-            _emit("error", {"step": "world", "message": "世界观生成失败"})
-            save_partial_architecture_data(filepath, partial_data)
-            return
+            _fail("world", _failure_message("世界观生成"))
         partial_data["world_building_result"] = world_building_result
         save_partial_architecture_data(filepath, partial_data)
         _emit("progress", {"step": "world", "status": "done", "message": "世界观生成完成"})
@@ -189,9 +192,7 @@ def Novel_architecture_generate(
         plot_arch_result = invoke_with_cleaning(llm, prompt_plot)
         if not plot_arch_result.strip():
             logger.warning("plot_architecture_prompt generation failed.")
-            _emit("error", {"step": "plot", "message": "情节架构生成失败"})
-            save_partial_architecture_data(filepath, partial_data)
-            return
+            _fail("plot", _failure_message("三幕式情节架构生成"))
         partial_data["plot_arch_result"] = plot_arch_result
         save_partial_architecture_data(filepath, partial_data)
         _emit("progress", {"step": "plot", "status": "done", "message": "情节架构生成完成"})

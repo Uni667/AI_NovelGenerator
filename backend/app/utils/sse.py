@@ -41,6 +41,6 @@ async def sse_event_generator(queue: asyncio.Queue, disconnect_check=None):
         if msg is HEARTBEAT:
             yield ": heartbeat\n\n"
             continue
-        event = msg["event"]
+        event = "generation_error" if msg["event"] == "error" else msg["event"]
         data = json.dumps(msg["data"], ensure_ascii=False)
         yield f"event: {event}\ndata: {data}\n\n"

@@ -64,13 +64,13 @@ export function useSSE() {
       addEvent({ type: "partial", data: parseEventData(e.data) })
     })
 
-    es.addEventListener("error", (e) => {
+    es.addEventListener("generation_error", (e) => {
       const data = "data" in e && typeof e.data === "string" ? e.data : ""
-      const parsed = data ? parseEventData(data) : { message: "Connection interrupted" }
+      const parsed = data ? parseEventData(data) : { message: "生成失败，但后端没有返回具体错误" }
       if (typeof parsed === "object" && parsed && "message" in parsed) {
         setError(String(parsed.message))
       } else {
-        setError("Connection interrupted")
+        setError("生成失败")
       }
       addEvent({ type: "error", data: parsed })
     })
@@ -85,7 +85,7 @@ export function useSSE() {
     })
 
     es.onerror = () => {
-      if (!error) {
+      if (sourceRef.current === es && !error) {
         setError("连接中断，可能是网络问题或生成超时，请重试")
       }
       setIsConnected(false)
