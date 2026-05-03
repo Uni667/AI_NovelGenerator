@@ -5,7 +5,17 @@ from fastapi import APIRouter, HTTPException, Request
 from backend.app.database import get_db
 from backend.app.services import project_service
 from backend.app.auth import get_current_user
-from backend.app.models.chapter import CharacterProfileCreate, CharacterProfileUpdate
+from backend.app.models.chapter import (
+    CharacterImportSelection,
+    CharacterProfileCreate,
+    CharacterProfileUpdate,
+)
+from novel_generator.character_import import (
+    build_character_import_preview,
+    merge_character_description,
+    normalize_character_name,
+    preferred_character_status,
+)
 
 router = APIRouter(tags=["角色管理"])
 
@@ -44,6 +54,101 @@ def _check_project(project_id: str, request: Request) -> dict:
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
     return project
+
+
+def _load_existing_characters(project_id: str) -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM character_profile WHERE project_id = ? ORDER BY updated_at DESC",
+            (project_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def _load_character_state_text(project: dict) -> str:
+    state_file = os.path.join(project["filepath"], "character_state.txt")
+    if not os.path.exists(state_file):
+        raise HTTPException(status_code=404, detail="character_state.txt 不存在，请先生成架构")
+    with open(state_file, "r", encoding="utf-8") as file:
+        return file.read()
+
+
+def _upsert_character_from_candidate(
+    conn,
+    project_id: str,
+    candidate: dict,
+    now: str,
+) -> dict:
+    candidate_name = candidate.get("name", "").strip()
+    normalized_name = normalize_character_name(candidate_name)
+    rows = conn.execute(
+        "SELECT * FROM character_profile WHERE project_id = ?",
+        (project_id,),
+    ).fetchall()
+    existing_row = None
+    for row in rows:
+        if normalize_character_name(row["name"]) == normalized_name:
+            existing_row = dict(row)
+            break
+
+    description = candidate.get("description", "").strip() or candidate.get("raw_text", "").strip()
+    if existing_row:
+        merged_description = merge_character_description(existing_row.get("description", ""), description)
+        merged_status = preferred_character_status(existing_row.get("status", ""), candidate.get("status", "planned"))
+        first_appearance = existing_row.get("first_appearance_chapter")
+        candidate_chapter = candidate.get("first_appearance_chapter")
+        if candidate_chapter and (not first_appearance or candidate_chapter < first_appearance):
+            first_appearance = candidate_chapter
+        merged_source = existing_row.get("source") or candidate.get("source", "ai")
+        conn.execute(
+            """UPDATE character_profile
+               SET description = ?, status = ?, source = ?, first_appearance_chapter = ?, updated_at = ?
+               WHERE id = ? AND project_id = ?""",
+            (
+                merged_description[:1000],
+                merged_status,
+                merged_source,
+                first_appearance,
+                now,
+                existing_row["id"],
+                project_id,
+            ),
+        )
+        return {
+            "id": existing_row["id"],
+            "name": existing_row["name"],
+            "description": merged_description[:1000],
+            "status": merged_status,
+            "source": merged_source,
+            "first_appearance_chapter": first_appearance,
+            "updated_at": now,
+            "merged": True,
+        }
+
+    cursor = conn.execute(
+        """INSERT INTO character_profile
+           (project_id, name, description, status, source, first_appearance_chapter, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            project_id,
+            candidate_name,
+            description[:1000],
+            candidate.get("status", "planned"),
+            candidate.get("source", "ai"),
+            candidate.get("first_appearance_chapter"),
+            now,
+        ),
+    )
+    return {
+        "id": cursor.lastrowid,
+        "name": candidate_name,
+        "description": description[:1000],
+        "status": candidate.get("status", "planned"),
+        "source": candidate.get("source", "ai"),
+        "first_appearance_chapter": candidate.get("first_appearance_chapter"),
+        "updated_at": now,
+        "merged": False,
+    }
 
 
 @router.get("/api/v1/projects/{project_id}/characters")
@@ -117,45 +222,86 @@ def delete_character(project_id: str, character_id: int, request: Request):
         return {"message": "角色已删除"}
 
 
-@router.post("/api/v1/projects/{project_id}/characters/import-from-state")
-def import_characters_from_state(project_id: str, request: Request):
-    """从 character_state.txt 解析角色并导入数据库"""
+@router.post("/api/v1/projects/{project_id}/characters/import-from-state/preview")
+def preview_characters_from_state(project_id: str, request: Request):
     project = _check_project(project_id, request)
-    state_file = os.path.join(project["filepath"], "character_state.txt")
-    if not os.path.exists(state_file):
-        raise HTTPException(status_code=404, detail="character_state.txt 不存在，请先生成架构")
+    content = _load_character_state_text(project)
+    existing = _load_existing_characters(project_id)
+    candidates = build_character_import_preview(content, existing)
+    summary = {
+        "total": len(candidates),
+        "keep": sum(1 for item in candidates if item.decision == "keep"),
+        "review": sum(1 for item in candidates if item.decision == "review"),
+        "reject": sum(1 for item in candidates if item.decision == "reject"),
+        "duplicates": sum(1 for item in candidates if item.existing_character_id),
+    }
+    return {
+        "summary": summary,
+        "candidates": [candidate.to_dict() for candidate in candidates],
+    }
 
-    with open(state_file, "r", encoding="utf-8") as f:
-        content = f.read()
 
-    imported = []
+@router.post("/api/v1/projects/{project_id}/characters/import-from-state")
+def import_characters_from_state(
+    project_id: str,
+    request: Request,
+    data: CharacterImportSelection | None = None,
+):
+    """从 character_state.txt 解析角色，支持预览后的定向导入。"""
+    project = _check_project(project_id, request)
+    content = _load_character_state_text(project)
+    existing = _load_existing_characters(project_id)
+    candidates = build_character_import_preview(content, existing)
+    candidate_map = {candidate.candidate_id: candidate for candidate in candidates}
+
+    if data and data.selected_candidate_ids:
+        selected_ids = {candidate_id for candidate_id in data.selected_candidate_ids if candidate_id in candidate_map}
+    else:
+        selected_ids = {candidate.candidate_id for candidate in candidates if candidate.decision == "keep"}
+
+    if not selected_ids:
+        return {
+            "message": "没有可导入的角色候选",
+            "characters": [],
+            "summary": {
+                "total": len(candidates),
+                "selected": 0,
+                "imported": 0,
+                "merged": 0,
+            },
+        }
+
     now = datetime.now().isoformat()
+    imported: list[dict] = []
+    skipped: list[dict] = []
     with get_db() as conn:
-        for line in content.split("\n"):
-            line = line.strip()
-            if not line or line.startswith("#"):
+        for candidate in candidates:
+            if candidate.candidate_id not in selected_ids:
+                skipped.append(
+                    {
+                        "candidate_id": candidate.candidate_id,
+                        "name": candidate.name,
+                        "decision": candidate.decision,
+                        "reason": "未勾选",
+                    }
+                )
                 continue
-            name = line.split("：")[0].split(":")[0].split(" - ")[0].split("–")[0].strip().lstrip("- *>#|")
-            if len(name) < 2 or len(name) > 30:
-                continue
-            description = line[len(name):].lstrip("：:-– ")
-            if not description:
-                description = line
-            existing = conn.execute(
-                "SELECT id FROM character_profile WHERE project_id = ? AND name = ?",
-                (project_id, name)
-            ).fetchone()
-            if existing:
-                continue
-            conn.execute(
-                """INSERT INTO character_profile
-                   (project_id, name, description, status, source, first_appearance_chapter, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (project_id, name, description[:500], "appeared", "ai", None, now)
-            )
-            imported.append(name)
 
-    return {"message": f"已导入 {len(imported)} 个角色", "characters": imported}
+            result = _upsert_character_from_candidate(conn, project_id, candidate.to_dict(), now)
+            imported.append(result)
+
+    merged_count = sum(1 for item in imported if item.get("merged"))
+    return {
+        "message": f"已导入/更新 {len(imported)} 个角色",
+        "characters": imported,
+        "skipped": skipped,
+        "summary": {
+            "total": len(candidates),
+            "selected": len(selected_ids),
+            "imported": len(imported) - merged_count,
+            "merged": merged_count,
+        },
+    }
 
 
 @router.post("/api/v1/projects/{project_id}/characters/suggest")

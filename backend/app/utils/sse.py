@@ -20,7 +20,7 @@ class SSEEmitter:
         if self._queue and self._loop:
             async def _put():
                 await self._queue.put({"event": event, "data": data})
-                if event == "done":
+                if event in {"done", "cancelled"}:
                     await self._queue.put(None)
 
             asyncio.run_coroutine_threadsafe(_put(), self._loop)

@@ -12,6 +12,7 @@ import json
 import logging
 import traceback
 from novel_generator.common import invoke_with_cleaning
+from novel_generator.task_manager import raise_if_cancelled
 from llm_adapters import create_llm_adapter
 import prompt_definitions
 from utils import clear_file_content, save_string_to_txt
@@ -53,12 +54,19 @@ def save_architecture_section(filepath: str, filename: str, title: str, content:
     save_string_to_txt(f"# {title}\n\n{content.strip()}\n", section_file)
 
 
+def save_tracking_file(filepath: str, filename: str, content: str):
+    tracking_file = os.path.join(filepath, filename)
+    clear_file_content(tracking_file)
+    save_string_to_txt(content.strip() + "\n", tracking_file)
+
+
 def Novel_architecture_generate(
     # ---- 新接口：统一上下文 ----
     ctx,         # GenerationContext
     project,     # ProjectConfig
     # ---- 可选 emitter 回调 ----
     emitter=None,
+    task_id: str | None = None,
 ) -> None:
     """
     依次调用:
@@ -77,6 +85,11 @@ def Novel_architecture_generate(
         if emitter and hasattr(emitter, "emit"):
             emitter.emit(event_type, data)
 
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        return False
+
     def _failure_message(step_label: str) -> str:
         last_error = getattr(llm, "last_error", "").strip()
         if last_error:
@@ -92,6 +105,7 @@ def Novel_architecture_generate(
     os.makedirs(filepath, exist_ok=True)
 
     partial_data = load_partial_architecture_data(filepath)
+    _check_cancel()
 
     llm = create_llm_adapter(
         interface_format=ctx.llm.interface_format,
@@ -122,7 +136,7 @@ def Novel_architecture_generate(
             user_guidance=user_guidance,
             knowledge_context=knowledge_context,
         )
-        core_seed_result = invoke_with_cleaning(llm, prompt_core)
+        core_seed_result = invoke_with_cleaning(llm, prompt_core, cancel_check=_check_cancel)
         if not core_seed_result.strip():
             logger.warning("core_seed_prompt generation failed and returned empty.")
             _fail("core_seed", _failure_message("核心种子生成"))
@@ -144,7 +158,7 @@ def Novel_architecture_generate(
             core_seed=partial_data["core_seed_result"].strip(),
             user_guidance=user_guidance
         )
-        character_dynamics_result = invoke_with_cleaning(llm, prompt_character)
+        character_dynamics_result = invoke_with_cleaning(llm, prompt_character, cancel_check=_check_cancel)
         if not character_dynamics_result.strip():
             logger.warning("character_dynamics_prompt generation failed.")
             _fail("character", _failure_message("角色架构生成"))
@@ -164,7 +178,7 @@ def Novel_architecture_generate(
         prompt_char_state_init = prompt_definitions.create_character_state_prompt.format(
             character_dynamics=partial_data["character_dynamics_result"].strip()
         )
-        character_state_init = invoke_with_cleaning(llm, prompt_char_state_init)
+        character_state_init = invoke_with_cleaning(llm, prompt_char_state_init, cancel_check=_check_cancel)
         if not character_state_init.strip():
             logger.warning("create_character_state_prompt generation failed.")
             _fail("character_state", _failure_message("角色状态生成"))
@@ -185,7 +199,7 @@ def Novel_architecture_generate(
             core_seed=partial_data["core_seed_result"].strip(),
             user_guidance=user_guidance
         )
-        world_building_result = invoke_with_cleaning(llm, prompt_world)
+        world_building_result = invoke_with_cleaning(llm, prompt_world, cancel_check=_check_cancel)
         if not world_building_result.strip():
             logger.warning("world_building_prompt generation failed.")
             _fail("world", _failure_message("世界观生成"))
@@ -208,7 +222,7 @@ def Novel_architecture_generate(
             world_building=partial_data["world_building_result"].strip(),
             user_guidance=user_guidance
         )
-        plot_arch_result = invoke_with_cleaning(llm, prompt_plot)
+        plot_arch_result = invoke_with_cleaning(llm, prompt_plot, cancel_check=_check_cancel)
         if not plot_arch_result.strip():
             logger.warning("plot_architecture_prompt generation failed.")
             _fail("plot", _failure_message("三幕式情节架构生成"))
@@ -225,6 +239,62 @@ def Novel_architecture_generate(
     world_building_result = partial_data["world_building_result"]
     plot_arch_result = partial_data["plot_arch_result"]
 
+    # ── Step 5: 初始全局摘要 ──
+    if "global_summary_result" not in partial_data:
+        logger.info("Generating initial global summary ...")
+        _emit("progress", {"step": "global_summary_init", "status": "running", "message": "正在生成初始全局摘要..."})
+
+        prompt_global_summary = prompt_definitions.initial_global_summary_prompt.format(
+            topic=topic,
+            category=category,
+            genre=genre,
+            number_of_chapters=num_chapters,
+            word_number=word_number,
+            user_guidance=user_guidance,
+            core_seed=core_seed_result.strip(),
+            character_dynamics=character_dynamics_result.strip(),
+            world_building=world_building_result.strip(),
+            plot_architecture=plot_arch_result.strip(),
+        )
+        global_summary_result = invoke_with_cleaning(llm, prompt_global_summary, cancel_check=_check_cancel)
+        if not global_summary_result.strip():
+            logger.warning("initial_global_summary_prompt generation failed.")
+            _fail("global_summary_init", _failure_message("初始全局摘要生成"))
+        partial_data["global_summary_result"] = global_summary_result
+        save_partial_architecture_data(filepath, partial_data)
+        save_tracking_file(filepath, "global_summary.txt", global_summary_result)
+        _emit("progress", {"step": "global_summary_init", "status": "done", "message": "初始全局摘要已生成"})
+    else:
+        logger.info("Initial global summary already done. Skipping...")
+        save_tracking_file(filepath, "global_summary.txt", partial_data["global_summary_result"])
+
+    # ── Step 6: 伏笔暗线台账 ──
+    if "plot_arcs_result" not in partial_data:
+        logger.info("Generating initial plot arcs ledger ...")
+        _emit("progress", {"step": "plot_arcs_init", "status": "running", "message": "正在生成伏笔暗线台账..."})
+
+        prompt_plot_arcs = prompt_definitions.initial_plot_arcs_prompt.format(
+            core_seed=core_seed_result.strip(),
+            character_dynamics=character_dynamics_result.strip(),
+            world_building=world_building_result.strip(),
+            plot_architecture=plot_arch_result.strip(),
+        )
+        plot_arcs_result = invoke_with_cleaning(llm, prompt_plot_arcs, cancel_check=_check_cancel)
+        if not plot_arcs_result.strip():
+            logger.warning("initial_plot_arcs_prompt generation failed.")
+            _fail("plot_arcs_init", _failure_message("伏笔暗线台账生成"))
+        partial_data["plot_arcs_result"] = plot_arcs_result
+        save_partial_architecture_data(filepath, partial_data)
+        save_tracking_file(filepath, "plot_arcs.txt", plot_arcs_result)
+        _emit("progress", {"step": "plot_arcs_init", "status": "done", "message": "伏笔暗线台账已生成"})
+    else:
+        logger.info("Initial plot arcs ledger already done. Skipping...")
+        save_tracking_file(filepath, "plot_arcs.txt", partial_data["plot_arcs_result"])
+
+    global_summary_result = partial_data["global_summary_result"]
+    plot_arcs_result = partial_data["plot_arcs_result"]
+    _check_cancel()
+
     final_content = (
         "# 小说创作档案\n\n"
         "## 0. 项目定位\n"
@@ -235,7 +305,7 @@ def Novel_architecture_generate(
         "## 使用说明\n"
         "- 写章节目录时，优先遵守「核心种子」和「三幕式情节架构」。\n"
         "- 写章节正文时，优先遵守「角色架构」中的动机、关系和人设底线。\n"
-        "- 后续新增人物、伏笔或世界规则时，应同步更新角色状态和全局摘要。\n\n"
+        "- 后续新增人物、伏笔或世界规则时，应同步更新角色状态、全局摘要和伏笔暗线台账。\n\n"
         "## 1. 核心种子\n"
         f"{core_seed_result.strip()}\n\n"
         "## 2. 角色架构\n"
@@ -244,7 +314,11 @@ def Novel_architecture_generate(
         f"{world_building_result.strip()}\n\n"
         "## 4. 三幕式情节架构\n"
         f"{plot_arch_result.strip()}\n\n"
-        "## 5. 最终打磨检查清单\n"
+        "## 5. 初始全局摘要\n"
+        f"{global_summary_result.strip()}\n\n"
+        "## 6. 伏笔暗线台账\n"
+        f"{plot_arcs_result.strip()}\n\n"
+        "## 7. 最终打磨检查清单\n"
         "- 主角目标是否足够清晰，并能推动每个阶段的行动？\n"
         "- 反派或阻力是否持续升级，而不是只在结尾出现？\n"
         "- 角色秘密是否有埋设、误导、揭露和后果？\n"

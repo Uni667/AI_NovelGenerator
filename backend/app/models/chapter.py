@@ -64,3 +64,27 @@ class CharacterProfileUpdate(BaseModel):
     status: Optional[str] = None
     source: Optional[str] = None
     first_appearance_chapter: Optional[int] = None
+
+
+class CharacterImportCandidate(BaseModel):
+    candidate_id: str
+    name: str
+    normalized_name: str
+    description: str = ""
+    section: str = ""
+    raw_text: str = ""
+    entity_type: str = "character"
+    confidence: float = 0.0
+    decision: str = "review"
+    reasons: List[str] = Field(default_factory=list)
+    status: str = "planned"
+    source: str = "ai"
+    first_appearance_chapter: Optional[int] = None
+    existing_character_id: Optional[int] = None
+    matched_existing_name: str = ""
+    aliases: List[str] = Field(default_factory=list)
+    selected: bool = False
+
+
+class CharacterImportSelection(BaseModel):
+    selected_candidate_ids: List[str] = Field(default_factory=list)

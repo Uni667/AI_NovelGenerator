@@ -43,7 +43,10 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 def advanced_split_content(content: str, similarity_threshold: float = 0.7, max_length: int = 500) -> list:
     """使用基本分段策略"""
     _ensure_nltk()
-    sentences = _nltk.sent_tokenize(content)
+    try:
+        sentences = _nltk.sent_tokenize(content)
+    except Exception:
+        sentences = [part.strip() for part in re.split(r"\n\s*\n", content) if part.strip()]
     if not sentences:
         return []
 
@@ -78,11 +81,11 @@ def import_knowledge_file(
     logging.info(f"开始导入知识库文件: {file_path}, 接口格式: {embedding_interface_format}, 模型: {embedding_model_name}")
     if not os.path.exists(file_path):
         logging.warning(f"知识库文件不存在: {file_path}")
-        return
+        return {"success": False, "message": f"知识库文件不存在: {file_path}", "paragraph_count": 0, "mode": "missing"}
     content = read_file(file_path)
     if not content.strip():
         logging.warning("知识库文件内容为空。")
-        return
+        return {"success": False, "message": f"知识库文件为空: {file_path}", "paragraph_count": 0, "mode": "empty"}
     paragraphs = advanced_split_content(content)
     from embedding_adapters import create_embedding_adapter
     embedding_adapter = create_embedding_adapter(
@@ -98,14 +101,38 @@ def import_knowledge_file(
         store = _init_vs(embedding_adapter, paragraphs, filepath)
         if store:
             logging.info("知识库文件已成功导入至向量库(新初始化)。")
+            return {
+                "success": True,
+                "message": "知识库文件已成功导入至向量库(新初始化)",
+                "paragraph_count": len(paragraphs),
+                "mode": "init",
+            }
         else:
             logging.warning("知识库导入失败，跳过。")
+            return {
+                "success": False,
+                "message": "知识库导入失败，向量库初始化未成功",
+                "paragraph_count": len(paragraphs),
+                "mode": "failed",
+            }
     else:
         try:
             _ensure_langchain()
             docs = [_Document(page_content=str(p)) for p in paragraphs]
             store.add_documents(docs)
             logging.info("知识库文件已成功导入至向量库(追加模式)。")
+            return {
+                "success": True,
+                "message": "知识库文件已成功导入至向量库(追加模式)",
+                "paragraph_count": len(paragraphs),
+                "mode": "append",
+            }
         except Exception as e:
             logging.warning(f"知识库导入失败: {e}")
             traceback.print_exc()
+            return {
+                "success": False,
+                "message": f"知识库追加导入失败: {e}",
+                "paragraph_count": len(paragraphs),
+                "mode": "failed",
+            }

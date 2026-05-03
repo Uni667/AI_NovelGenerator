@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Play, FileText, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, FileDown, Wand2, BookMarked, Target, Tag, FileEdit, RefreshCw, Copy, Save, BookOpen, MessageSquare, Sparkles, Eye, ListChecks, Gauge, PlusCircle } from "lucide-react"
+import { Play, FileText, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, FileDown, Wand2, BookMarked, Target, Tag, FileEdit, RefreshCw, Copy, Save, BookOpen, MessageSquare, Sparkles, Eye, ListChecks, Gauge, PlusCircle, Ban } from "lucide-react"
 
 const GENERATED_FILES = [
   {
@@ -56,7 +56,7 @@ const GENERATED_FILES = [
   {
     filename: "global_summary.txt",
     label: "全局摘要",
-    description: "当前故事进展摘要",
+    description: "架构初始化版全局摘要，定稿后持续更新",
   },
   {
     filename: "character_state.txt",
@@ -65,8 +65,8 @@ const GENERATED_FILES = [
   },
   {
     filename: "plot_arcs.txt",
-    label: "伏笔与情节线",
-    description: "可选的伏笔记录和情节线",
+    label: "伏笔暗线",
+    description: "架构阶段生成的伏笔台账，章节定稿后持续更新",
   },
 ] as const
 
@@ -91,6 +91,26 @@ const GENERATION_STEP_META: Record<string, { label: string; description: string 
     label: "三幕式情节架构",
     description: "把整本书拆成开局立钩子、中段冲突升级、后段爆发收束三段主线",
   },
+  global_summary_init: {
+    label: "初始全局摘要",
+    description: "在架构完成后生成整本书的初始全局摘要，作为后续写作的连续性底稿",
+  },
+  plot_arcs_init: {
+    label: "伏笔暗线台账",
+    description: "在架构完成后建立伏笔、秘密、道具和反转的初始台账",
+  },
+  summary_update: {
+    label: "全局摘要更新",
+    description: "章节定稿后把新增事件、角色变化和已发生进展同步进摘要",
+  },
+  character_state_update: {
+    label: "角色状态更新",
+    description: "章节定稿后同步更新角色身份、关系、秘密和触发事件",
+  },
+  plot_arcs_update: {
+    label: "伏笔暗线更新",
+    description: "章节定稿后更新伏笔状态、回收计划和新增暗线",
+  },
   all: {
     label: "架构汇总",
     description: "整合核心种子、人物、世界观和三幕式情节架构",
@@ -109,7 +129,7 @@ const GENERATION_STEP_META: Record<string, { label: string; description: string 
   },
   finalize: {
     label: "章节定稿",
-    description: "定稿章节，并更新全局摘要、角色状态和后续上下文",
+    description: "定稿章节，并更新全局摘要、角色状态、伏笔暗线和后续上下文",
   },
   batch: {
     label: "批量章节生成",
@@ -139,6 +159,26 @@ const characterStatusLabel = (status?: string) => {
 
 const characterSourceLabel = (source?: string) => {
   return CHARACTER_SOURCE_OPTIONS.find((item) => item.value === source)?.label || "我设定"
+}
+
+const createClientTaskId = () => {
+  try {
+    return crypto.randomUUID().replace(/-/g, "")
+  } catch {
+    return `${Date.now()}${Math.random().toString(16).slice(2)}`
+  }
+}
+
+const formatFileSize = (size?: number) => {
+  if (!size || size <= 0) return "0 B"
+  const units = ["B", "KB", "MB", "GB"]
+  let value = size
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
 }
 
 export default function ProjectDashboard() {
@@ -195,8 +235,22 @@ export default function ProjectDashboard() {
   const [readerChapterNum, setReaderChapterNum] = useState(1)
   const [chapterHookResult, setChapterHookResult] = useState<any>(null)
   const [sseAction, setSseAction] = useState<"architecture" | "blueprint" | "chapter" | "chapterBatch" | "finalize" | null>(null)
+  const [generationTaskId, setGenerationTaskId] = useState<string | null>(null)
+  const [generationTaskLabel, setGenerationTaskLabel] = useState("")
+  const [generationStopping, setGenerationStopping] = useState(false)
+  const [knowledgeFiles, setKnowledgeFiles] = useState<any[]>([])
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false)
+  const [knowledgeError, setKnowledgeError] = useState("")
+  const [knowledgeDeleteTarget, setKnowledgeDeleteTarget] = useState<any>(null)
+  const [characterImportPreviewOpen, setCharacterImportPreviewOpen] = useState(false)
+  const [characterImportCandidates, setCharacterImportCandidates] = useState<any[]>([])
+  const [characterImportSummary, setCharacterImportSummary] = useState<any>({})
+  const [characterImportSelectedIds, setCharacterImportSelectedIds] = useState<string[]>([])
+  const [characterImportLoading, setCharacterImportLoading] = useState(false)
+  const [characterImportConfirming, setCharacterImportConfirming] = useState(false)
   const outputFileRequestId = useRef(0)
   const autoOpenFilesAfterDoneRef = useRef(false)
+  const handledGenerationTaskIdRef = useRef<string | null>(null)
 
   const usageLabel = (usage: string) => {
     const map: Record<string, string> = { general: "通用", architecture: "架构生成", outline: "章节目录", draft: "章节草稿", finalize: "定稿", review: "一致性审校", platform: "平台工具" }
@@ -226,6 +280,7 @@ export default function ProjectDashboard() {
 
   const lastPartial = events.filter(e => e.type === "partial").pop()
   const lastError = events.filter(e => e.type === "error").pop()
+  const lastCancelled = events.filter(e => e.type === "cancelled").pop()
   const lastDone = events.filter(e => e.type === "done").pop()
   const hasError = Boolean(lastError)
 
@@ -288,9 +343,64 @@ export default function ProjectDashboard() {
   }
 
   const handleImportCharacters = async () => {
-    const result = await api.characters.importFromState(id)
-    toast.success(result.message || "导入完成")
-    loadCharacters()
+    setCharacterImportLoading(true)
+    try {
+      const result = await api.characters.importPreview(id)
+      const candidates = result.candidates || []
+      setCharacterImportSummary(result.summary || {})
+      setCharacterImportCandidates(candidates)
+      setCharacterImportSelectedIds(candidates.filter((candidate: any) => candidate.decision !== "reject").map((candidate: any) => candidate.candidate_id))
+      setCharacterImportPreviewOpen(true)
+    } catch (error: any) {
+      toast.error(error?.message || "角色导入预览失败")
+    } finally {
+      setCharacterImportLoading(false)
+    }
+  }
+
+  const handleConfirmCharacterImport = async () => {
+    if (characterImportSelectedIds.length === 0) {
+      toast.error("请至少选择一个候选角色")
+      return
+    }
+    setCharacterImportConfirming(true)
+    try {
+      const result = await api.characters.importFromState(id, { selected_candidate_ids: characterImportSelectedIds })
+      toast.success(result.message || "导入完成")
+      setCharacterImportPreviewOpen(false)
+      setCharacterImportCandidates([])
+      setCharacterImportSelectedIds([])
+      setCharacterImportSummary({})
+      loadCharacters()
+    } catch (error: any) {
+      toast.error(error?.message || "角色导入失败")
+    } finally {
+      setCharacterImportConfirming(false)
+    }
+  }
+
+  const selectCharacterImportCandidates = (mode: "recommended" | "all" | "none") => {
+    if (mode === "none") {
+      setCharacterImportSelectedIds([])
+      return
+    }
+    if (mode === "all") {
+      setCharacterImportSelectedIds(characterImportCandidates.map((candidate: any) => candidate.candidate_id))
+      return
+    }
+    setCharacterImportSelectedIds(
+      characterImportCandidates
+        .filter((candidate: any) => candidate.decision !== "reject")
+        .map((candidate: any) => candidate.candidate_id),
+    )
+  }
+
+  const toggleCharacterImportCandidate = (candidateId: string) => {
+    setCharacterImportSelectedIds((current) => (
+      current.includes(candidateId)
+        ? current.filter((item) => item !== candidateId)
+        : [...current, candidateId]
+    ))
   }
 
   const handleSuggestCharacters = async () => {
@@ -393,6 +503,70 @@ export default function ProjectDashboard() {
     toast.success("生成控制已更新")
   }
 
+  const buildGenerationStreamUrl = useCallback((path: string, taskId: string) => {
+    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+    const url = new URL(path, base)
+    url.searchParams.set("task_id", taskId)
+    url.searchParams.set("t", `${Date.now()}`)
+    return url.toString()
+  }, [])
+
+  const openGenerationStream = useCallback((
+    kind: "architecture" | "blueprint" | "chapter" | "chapterBatch" | "finalize",
+    label: string,
+    path: string,
+    targetTab: "generation" | "workbench",
+    preferredFile?: (typeof GENERATED_FILES)[number]["filename"],
+  ) => {
+    if (generationTaskId || isConnected || generationStopping) {
+      toast.error("当前已有生成任务正在运行")
+      return false
+    }
+
+    handledGenerationTaskIdRef.current = null
+    const taskId = createClientTaskId()
+    setGenerationTaskId(taskId)
+    setGenerationTaskLabel(label)
+    setGenerationStopping(false)
+    setSseAction(kind)
+    if (kind === "architecture" || kind === "blueprint") {
+      autoOpenFilesAfterDoneRef.current = false
+    }
+    if (preferredFile) {
+      setSelectedOutputFile(preferredFile)
+    }
+    setActiveTab(targetTab)
+    connect(buildGenerationStreamUrl(path, taskId))
+    return true
+  }, [buildGenerationStreamUrl, connect, generationStopping, generationTaskId, isConnected])
+
+  const clearGenerationState = useCallback(() => {
+    handledGenerationTaskIdRef.current = null
+    setGenerationTaskId(null)
+    setGenerationTaskLabel("")
+    setGenerationStopping(false)
+  }, [])
+
+  const refreshKnowledgeFiles = useCallback(async () => {
+    setKnowledgeLoading(true)
+    setKnowledgeError("")
+    try {
+      const files = await api.knowledge.list(id)
+      setKnowledgeFiles(files || [])
+    } catch (error: any) {
+      setKnowledgeFiles([])
+      setKnowledgeError(error?.message || "加载知识库文件失败")
+    } finally {
+      setKnowledgeLoading(false)
+    }
+  }, [id])
+
+  useEffect(() => {
+    if (activeTab === "knowledge") {
+      void refreshKnowledgeFiles()
+    }
+  }, [activeTab, refreshKnowledgeFiles])
+
   const loadWorkbenchChapter = useCallback(async (chapterNumber: number) => {
     setChapterEditorLoading(true)
     try {
@@ -433,26 +607,58 @@ export default function ProjectDashboard() {
   }
 
   const handleGenerateWorkbenchChapter = async () => {
-    await saveGenerationTargets()
-    setSseAction("chapter")
-    setActiveTab("workbench")
-    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
-    connect(`${base}/api/v1/projects/${id}/generate/chapter/${selectedChapterNumber}?t=${Date.now()}`)
+    try {
+      await saveGenerationTargets()
+      openGenerationStream(
+        "chapter",
+        `第 ${selectedChapterNumber} 章草稿`,
+        `/api/v1/projects/${id}/generate/chapter/${selectedChapterNumber}`,
+        "workbench",
+      )
+    } catch (error: any) {
+      toast.error(error?.message || "章节生成启动失败")
+    }
   }
 
   const handleGenerateChapterBatch = async () => {
-    await saveGenerationTargets()
-    setSseAction("chapterBatch")
-    setActiveTab("workbench")
-    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
-    connect(`${base}/api/v1/projects/${id}/generate/chapters?start_chapter=${selectedChapterNumber}&count=${batchChapterCount}&t=${Date.now()}`)
+    try {
+      await saveGenerationTargets()
+      openGenerationStream(
+        "chapterBatch",
+        `批量生成 ${batchChapterCount} 章`,
+        `/api/v1/projects/${id}/generate/chapters?start_chapter=${selectedChapterNumber}&count=${batchChapterCount}`,
+        "workbench",
+      )
+    } catch (error: any) {
+      toast.error(error?.message || "批量生成启动失败")
+    }
   }
 
   const handleFinalizeWorkbenchChapter = () => {
-    setSseAction("finalize")
-    setActiveTab("workbench")
-    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
-    connect(`${base}/api/v1/projects/${id}/generate/finalize/${selectedChapterNumber}?t=${Date.now()}`)
+    if (!chapterEditorContent.trim()) {
+      toast.error("章节内容不能为空")
+      return
+    }
+    if (generationTaskId || isConnected || generationStopping) {
+      toast.error("当前已有生成任务正在运行")
+      return
+    }
+    api.chapters.update(id, selectedChapterNumber, { content: chapterEditorContent })
+      .then((result) => {
+        setChapterEditorMeta(result.meta)
+        return queryClient.invalidateQueries({ queryKey: ["chapters", id] })
+      })
+      .then(() => {
+        openGenerationStream(
+          "finalize",
+          `第 ${selectedChapterNumber} 章定稿`,
+          `/api/v1/projects/${id}/generate/finalize/${selectedChapterNumber}`,
+          "workbench",
+        )
+      })
+      .catch((error: any) => {
+        toast.error(error?.message || "定稿前保存失败")
+      })
   }
 
   const handleWorkbenchOpeningHook = () => withLoading("workbenchOpening", async () => {
@@ -508,13 +714,28 @@ export default function ProjectDashboard() {
   }, [activeTab, selectedOutputFile, loadOutputFile])
 
   useEffect(() => {
-    if (!lastDone || lastDone.data?.status !== "done") return
+    const terminalEvent = lastCancelled || lastDone || lastError
+    const taskId = terminalEvent?.data?.task_id
+    if (!terminalEvent || !taskId) return
+    if (handledGenerationTaskIdRef.current === taskId) return
+    if (generationTaskId && taskId !== generationTaskId) return
 
-    if (
-      activeTab === "generation" &&
-      (sseAction === "architecture" || sseAction === "blueprint") &&
-      !autoOpenFilesAfterDoneRef.current
-    ) {
+    handledGenerationTaskIdRef.current = taskId
+    setGenerationStopping(false)
+    setGenerationTaskId(null)
+    setGenerationTaskLabel("")
+
+    if (lastCancelled?.data?.task_id === taskId) {
+      toast.info(lastCancelled?.data?.message || "生成任务已取消")
+      return
+    }
+
+    if (lastError?.data?.task_id === taskId) {
+      toast.error(lastError?.data?.message || "生成任务失败")
+      return
+    }
+
+    if (activeTab === "generation" && (sseAction === "architecture" || sseAction === "blueprint") && !autoOpenFilesAfterDoneRef.current) {
       autoOpenFilesAfterDoneRef.current = true
       setActiveTab("files")
     }
@@ -523,7 +744,7 @@ export default function ProjectDashboard() {
       loadWorkbenchChapter(selectedChapterNumber)
       queryClient.invalidateQueries({ queryKey: ["chapters", id] })
     }
-  }, [activeTab, id, lastDone, loadWorkbenchChapter, queryClient, selectedChapterNumber, sseAction])
+  }, [activeTab, generationTaskId, id, lastCancelled, lastDone, lastError, loadWorkbenchChapter, queryClient, selectedChapterNumber, sseAction])
 
   const handleCopyOutput = async () => {
     if (!outputFileContent) return
@@ -571,36 +792,92 @@ export default function ProjectDashboard() {
   }
 
   const handleGenerateArchitecture = async () => {
-    await saveGenerationTargets()
-    setSseAction("architecture")
-    autoOpenFilesAfterDoneRef.current = false
-    setSelectedOutputFile("Novel_architecture.txt")
-    setActiveTab("generation")
-    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
-    connect(`${base}/api/v1/projects/${id}/generate/architecture?t=${Date.now()}`)
+    try {
+      await saveGenerationTargets()
+      openGenerationStream(
+        "architecture",
+        "生成架构",
+        `/api/v1/projects/${id}/generate/architecture`,
+        "generation",
+        "Novel_architecture.txt",
+      )
+    } catch (error: any) {
+      toast.error(error?.message || "架构生成启动失败")
+    }
   }
 
   const handleGenerateBlueprint = async () => {
-    await saveGenerationTargets()
-    setSseAction("blueprint")
-    autoOpenFilesAfterDoneRef.current = false
-    setSelectedOutputFile("Novel_directory.txt")
-    setActiveTab("generation")
-    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
-    connect(`${base}/api/v1/projects/${id}/generate/blueprint?t=${Date.now()}`)
+    try {
+      await saveGenerationTargets()
+      openGenerationStream(
+        "blueprint",
+        "生成章节目录",
+        `/api/v1/projects/${id}/generate/blueprint`,
+        "generation",
+        "Novel_directory.txt",
+      )
+    } catch (error: any) {
+      toast.error(error?.message || "目录生成启动失败")
+    }
   }
 
   const handleUploadKnowledge = async () => {
     if (!knowledgeFile) return
-    const result = await api.knowledge.upload(id, knowledgeFile)
-    toast.success(result.message || "上传成功")
-    setKnowledgeFile(null)
+    setKnowledgeLoading(true)
+    try {
+      const result = await api.knowledge.upload(id, knowledgeFile)
+      toast.success(result.message || "上传成功")
+      setKnowledgeFile(null)
+      await refreshKnowledgeFiles()
+    } catch (error: any) {
+      toast.error(error?.message || "知识库上传失败")
+    } finally {
+      setKnowledgeLoading(false)
+    }
   }
 
   const handleClearVector = async () => {
-    await api.knowledge.clearVector(id)
-    toast.success("向量库已清空")
-    setClearDialogOpen(false)
+    try {
+      await api.knowledge.clearVector(id)
+      toast.success("向量库已清空")
+      setClearDialogOpen(false)
+      await refreshKnowledgeFiles()
+    } catch (error: any) {
+      toast.error(error?.message || "清空向量库失败")
+    }
+  }
+
+  const handleStopGeneration = async () => {
+    if (!generationTaskId) return
+    setGenerationStopping(true)
+    try {
+      const result = await api.generate.cancelTask(id, generationTaskId)
+      toast.info(result.message || "已请求中断")
+    } catch (error: any) {
+      setGenerationStopping(false)
+      toast.error(error?.message || "中断请求失败")
+    }
+  }
+
+  const handleDeleteKnowledgeFile = async (file: any) => {
+    try {
+      await api.knowledge.delete(id, file.id)
+      toast.success(`已删除 ${file.filename}`)
+      setKnowledgeDeleteTarget(null)
+      await refreshKnowledgeFiles()
+    } catch (error: any) {
+      toast.error(error?.message || "删除知识库文件失败")
+    }
+  }
+
+  const handleReimportKnowledgeFile = async (file: any) => {
+    try {
+      const result = await api.knowledge.reimport(id, file.id)
+      toast.success(result.message || `已重新导入 ${file.filename}`)
+      await refreshKnowledgeFiles()
+    } catch (error: any) {
+      toast.error(error?.message || "重新导入失败")
+    }
   }
 
   const completedChapters = chapters?.filter((chapter: any) => chapter.status === "final").length || 0
@@ -697,10 +974,10 @@ export default function ProjectDashboard() {
           <Card>
             <CardHeader><CardTitle>快速操作</CardTitle></CardHeader>
             <CardContent className="flex flex-wrap gap-3">
-              <Button onClick={handleGenerateArchitecture} disabled={isConnected}>
+              <Button onClick={handleGenerateArchitecture} disabled={isConnected || Boolean(generationTaskId) || generationStopping}>
                 <Play className="h-4 w-4 mr-2" />生成架构
               </Button>
-              <Button onClick={handleGenerateBlueprint} disabled={isConnected} variant="outline">
+              <Button onClick={handleGenerateBlueprint} disabled={isConnected || Boolean(generationTaskId) || generationStopping} variant="outline">
                 <FileText className="h-4 w-4 mr-2" />生成章节目录
               </Button>
               <Separator orientation="vertical" className="h-8" />
@@ -812,18 +1089,24 @@ export default function ProjectDashboard() {
                     {updateConfig.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                     保存控制
                   </Button>
-                  <Button onClick={handleGenerateArchitecture} disabled={isConnected}>
+                  <Button onClick={handleGenerateArchitecture} disabled={isConnected || Boolean(generationTaskId) || generationStopping}>
                     <Wand2 className="h-4 w-4 mr-2" />生成架构
                   </Button>
-                  <Button onClick={handleGenerateBlueprint} disabled={isConnected} variant="outline">
+                  <Button onClick={handleGenerateBlueprint} disabled={isConnected || Boolean(generationTaskId) || generationStopping} variant="outline">
                     <ListChecks className="h-4 w-4 mr-2" />生成目录
                   </Button>
-                  <Button onClick={handleGenerateWorkbenchChapter} disabled={isConnected} variant="outline">
+                  <Button onClick={handleGenerateWorkbenchChapter} disabled={isConnected || Boolean(generationTaskId) || generationStopping} variant="outline">
                     <Play className="h-4 w-4 mr-2" />生成本章
                   </Button>
-                  <Button onClick={handleGenerateChapterBatch} disabled={isConnected} variant="outline">
+                  <Button onClick={handleGenerateChapterBatch} disabled={isConnected || Boolean(generationTaskId) || generationStopping} variant="outline">
                     <RefreshCw className="h-4 w-4 mr-2" />批量生成
                   </Button>
+                  {generationTaskId && (
+                    <Button variant="destructive" onClick={handleStopGeneration} disabled={generationStopping || !isConnected}>
+                      {generationStopping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Ban className="h-4 w-4 mr-2" />}
+                      中断生成
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -929,12 +1212,18 @@ export default function ProjectDashboard() {
                     {chapterEditorSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                     保存草稿
                   </Button>
-                  <Button variant="outline" onClick={handleGenerateWorkbenchChapter} disabled={isConnected}>
+                  <Button variant="outline" onClick={handleGenerateWorkbenchChapter} disabled={isConnected || Boolean(generationTaskId) || generationStopping}>
                     <Play className="h-4 w-4 mr-2" />AI 生成本章
                   </Button>
-                  <Button variant="secondary" onClick={handleFinalizeWorkbenchChapter} disabled={isConnected || !chapterEditorContent.trim()}>
+                  <Button variant="secondary" onClick={handleFinalizeWorkbenchChapter} disabled={isConnected || Boolean(generationTaskId) || generationStopping || !chapterEditorContent.trim()}>
                     <CheckCircle className="h-4 w-4 mr-2" />定稿
                   </Button>
+                  {generationTaskId && (
+                    <Button variant="destructive" onClick={handleStopGeneration} disabled={generationStopping || !isConnected}>
+                      {generationStopping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Ban className="h-4 w-4 mr-2" />}
+                      中断生成
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1012,6 +1301,28 @@ export default function ProjectDashboard() {
               <CardDescription>实时显示生成状态</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {(generationTaskId || generationTaskLabel) && (
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{generationTaskLabel || "当前生成任务"}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        任务 ID: {generationTaskId || "待分配"}
+                      </p>
+                    </div>
+                    <Badge variant={generationStopping ? "secondary" : "outline"}>
+                      {generationStopping ? "停止中" : isConnected ? "进行中" : "待完成"}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="destructive" onClick={handleStopGeneration} disabled={!generationTaskId || generationStopping || !isConnected}>
+                      {generationStopping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Ban className="h-4 w-4 mr-2" />}
+                      中断生成
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {events.length === 0 && !isConnected && (
                 <div className="text-center py-8 text-muted-foreground">
                   <Play className="h-12 w-12 mx-auto mb-3 opacity-50" />
@@ -1145,12 +1456,12 @@ export default function ProjectDashboard() {
                 </div>
               </div>
               <p className="mt-4 text-xs text-muted-foreground">
-                架构生成后会写入 <code>Novel_architecture.txt</code>，章节目录、摘要和角色状态也会分别保存在对应文件中。
+                架构生成后会写入 <code>Novel_architecture.txt</code>、<code>global_summary.txt</code> 和 <code>plot_arcs.txt</code>，章节目录、角色状态也会分别保存在对应文件中。
               </p>
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="knowledge">
+        <TabsContent value="knowledge" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>知识库管理</CardTitle>
@@ -1159,14 +1470,74 @@ export default function ProjectDashboard() {
             <CardContent className="space-y-4">
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 <Input type="file" accept=".txt,.md" onChange={e => setKnowledgeFile(e.target.files?.[0] || null)} className="flex-1" />
-                <Button onClick={handleUploadKnowledge} disabled={!knowledgeFile}>
-                  <Upload className="h-4 w-4 mr-2" />上传并导入
+                <Button onClick={handleUploadKnowledge} disabled={!knowledgeFile || knowledgeLoading}>
+                  {knowledgeLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+                  上传并导入
                 </Button>
               </div>
               <Separator />
-              <Button variant="destructive" onClick={() => setClearDialogOpen(true)}>
+              <Button variant="destructive" onClick={() => setClearDialogOpen(true)} disabled={knowledgeLoading}>
                 <Trash2 className="h-4 w-4 mr-2" />清空向量库
               </Button>
+              {knowledgeError && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                  {knowledgeError}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">知识库文件列表</CardTitle>
+                  <CardDescription>可查看、重导入或删除单个知识文件</CardDescription>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => void refreshKnowledgeFiles()} disabled={knowledgeLoading}>
+                  {knowledgeLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  刷新
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {knowledgeLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-16 w-full" />
+                </div>
+              ) : knowledgeFiles.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  暂无知识库文件
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {knowledgeFiles.map((file: any) => (
+                    <div key={file.id} className="rounded-lg border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{file.filename}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatFileSize(file.file_size)} · {file.imported ? "已导入向量库" : "未导入"}
+                            {file.created_at ? ` · ${file.created_at.slice(0, 19).replace("T", " ")}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant={file.imported ? "default" : "outline"}>{file.imported ? "已导入" : "待导入"}</Badge>
+                          <Button variant="outline" size="sm" onClick={() => handleReimportKnowledgeFile(file)} disabled={knowledgeLoading}>
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            重导入
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => setKnowledgeDeleteTarget(file)} disabled={knowledgeLoading}>
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            删除
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1180,8 +1551,9 @@ export default function ProjectDashboard() {
                   <CardDescription>区分已出现人物、计划登场人物和 AI 建议人物</CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" onClick={handleImportCharacters}>
-                    <Upload className="h-4 w-4 mr-2" />从角色状态导入
+                  <Button variant="outline" size="sm" onClick={handleImportCharacters} disabled={characterImportLoading}>
+                    {characterImportLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+                    预览导入
                   </Button>
                   <Button variant="outline" size="sm" onClick={handleSuggestCharacters} disabled={characterLoading === "suggest"}>
                     {characterLoading === "suggest" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
@@ -1695,6 +2067,23 @@ export default function ProjectDashboard() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!knowledgeDeleteTarget} onOpenChange={(open) => { if (!open) setKnowledgeDeleteTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除知识文件</DialogTitle>
+            <DialogDescription>
+              将删除 {knowledgeDeleteTarget?.filename || "该文件"}，并同步重建知识库向量。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setKnowledgeDeleteTarget(null)}>取消</Button>
+            <Button variant="destructive" onClick={() => knowledgeDeleteTarget && handleDeleteKnowledgeFile(knowledgeDeleteTarget)}>
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={deleteOutputDialogOpen} onOpenChange={setDeleteOutputDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -1775,6 +2164,109 @@ export default function ProjectDashboard() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteCharTarget(null)}>取消</Button>
             <Button variant="destructive" onClick={handleDeleteCharacter}>确认删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={characterImportPreviewOpen} onOpenChange={(open) => { if (!open) setCharacterImportPreviewOpen(false) }}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>导入角色预览</DialogTitle>
+            <DialogDescription>
+              先筛选候选项，再确认写入角色库。推荐项已默认勾选，拒绝项不会自动导入。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Card className="border-dashed">
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">总候选</p>
+                <p className="mt-1 text-2xl font-semibold">{characterImportSummary?.total ?? characterImportCandidates.length}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-dashed">
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">保留</p>
+                <p className="mt-1 text-2xl font-semibold">{characterImportSummary?.keep ?? 0}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-dashed">
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">复核</p>
+                <p className="mt-1 text-2xl font-semibold">{characterImportSummary?.review ?? 0}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-dashed">
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">已选中</p>
+                <p className="mt-1 text-2xl font-semibold">{characterImportSelectedIds.length}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => selectCharacterImportCandidates("recommended")}>选推荐项</Button>
+            <Button variant="outline" size="sm" onClick={() => selectCharacterImportCandidates("all")}>全选</Button>
+            <Button variant="ghost" size="sm" onClick={() => selectCharacterImportCandidates("none")}>清空</Button>
+          </div>
+
+          <ScrollArea className="h-[56vh] rounded-lg border">
+            <div className="space-y-3 p-4">
+              {characterImportCandidates.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                  没有可导入的角色候选项
+                </div>
+              ) : (
+                characterImportCandidates.map((candidate: any) => {
+                  const selected = characterImportSelectedIds.includes(candidate.candidate_id)
+                  return (
+                    <div
+                      key={candidate.candidate_id}
+                      className={`rounded-lg border p-3 transition ${selected ? "border-primary bg-primary/5" : ""}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300"
+                          checked={selected}
+                          onChange={() => toggleCharacterImportCandidate(candidate.candidate_id)}
+                        />
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium">{candidate.name}</p>
+                            <Badge variant={candidate.decision === "keep" ? "default" : candidate.decision === "review" ? "outline" : "destructive"}>
+                              {candidate.decision === "keep" ? "推荐导入" : candidate.decision === "review" ? "建议复核" : "建议排除"}
+                            </Badge>
+                            <Badge variant="outline">{candidate.entity_type || "character"}</Badge>
+                            {candidate.existing_character_id && <Badge variant="secondary">已存在</Badge>}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            置信度 {Math.round((candidate.confidence || 0) * 100)}% · {candidate.section || "未识别分区"}
+                            {candidate.first_appearance_chapter ? ` · 首次登场第 ${candidate.first_appearance_chapter} 章` : ""}
+                          </p>
+                          {candidate.description && <p className="text-sm text-muted-foreground">{candidate.description}</p>}
+                          {candidate.reasons?.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {candidate.reasons.slice(0, 4).map((reason: string, index: number) => (
+                                <Badge key={index} variant="outline" className="text-xs">{reason}</Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </ScrollArea>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCharacterImportPreviewOpen(false)}>取消</Button>
+            <Button onClick={handleConfirmCharacterImport} disabled={characterImportConfirming || characterImportSelectedIds.length === 0}>
+              {characterImportConfirming ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+              确认导入
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

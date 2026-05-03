@@ -10,6 +10,7 @@ import os
 import re
 import logging
 from novel_generator.common import invoke_with_cleaning
+from novel_generator.task_manager import raise_if_cancelled, TaskCancelledError
 from llm_adapters import create_llm_adapter
 import prompt_definitions
 from utils import read_file, clear_file_content, save_string_to_txt
@@ -44,6 +45,7 @@ def Chapter_blueprint_generate(
     ctx,           # GenerationContext
     project,       # ProjectConfig
     emitter=None,  # 可选 SSE emitter
+    task_id: str | None = None,
 ) -> None:
     """
     若 Novel_directory.txt 已存在且内容非空，则从下一个章节继续分块生成；
@@ -56,21 +58,26 @@ def Chapter_blueprint_generate(
         if emitter and hasattr(emitter, "emit"):
             emitter.emit(event_type, data)
 
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+
     filepath = ctx.filepath
     number_of_chapters = project.num_chapters
     user_guidance = project.user_guidance
 
+    _check_cancel()
     arch_file = os.path.join(filepath, "Novel_architecture.txt")
     if not os.path.exists(arch_file):
         logger.warning("Novel_architecture.txt not found. Please generate architecture first.")
         _emit("error", {"step": "blueprint", "message": "未找到小说架构文件，请先生成架构"})
-        return
+        raise RuntimeError("未找到小说架构文件，请先生成架构")
 
     architecture_text = read_file(arch_file).strip()
     if not architecture_text:
         logger.warning("Novel_architecture.txt is empty.")
         _emit("error", {"step": "blueprint", "message": "小说架构文件为空"})
-        return
+        raise RuntimeError("小说架构文件为空")
 
     llm = create_llm_adapter(
         interface_format=ctx.llm.interface_format,
@@ -94,6 +101,7 @@ def Chapter_blueprint_generate(
 
     if existing_blueprint:
         logger.info("Detected existing blueprint content. Will resume chunked generation from that point.")
+        _check_cancel()
         pattern = r"第\s*(\d+)\s*章"
         existing_chapter_numbers = re.findall(pattern, existing_blueprint)
         existing_chapter_numbers = [int(x) for x in existing_chapter_numbers if x.isdigit()]
@@ -112,15 +120,16 @@ def Chapter_blueprint_generate(
                 user_guidance=user_guidance
             )
             logger.info(f"Generating chapters [{current_start}..{current_end}] in a chunk...")
+            _check_cancel()
             _emit("progress", {"step": "blueprint", "status": "running",
                                "message": f"正在生成第{current_start}-{current_end}章蓝图..."})
-            chunk_result = invoke_with_cleaning(llm, chunk_prompt)
+            chunk_result = invoke_with_cleaning(llm, chunk_prompt, cancel_check=_check_cancel)
             if not chunk_result.strip():
                 logger.warning(f"Chunk generation for chapters [{current_start}..{current_end}] is empty.")
                 clear_file_content(filename_dir)
                 save_string_to_txt(final_blueprint.strip(), filename_dir)
                 _emit("error", {"step": "blueprint", "message": f"第{current_start}-{current_end}章生成失败"})
-                return
+                raise RuntimeError(f"第{current_start}-{current_end}章生成失败")
             final_blueprint += "\n\n" + chunk_result.strip()
             clear_file_content(filename_dir)
             save_string_to_txt(final_blueprint.strip(), filename_dir)
@@ -136,11 +145,12 @@ def Chapter_blueprint_generate(
             number_of_chapters=number_of_chapters,
             user_guidance=user_guidance
         )
-        blueprint_text = invoke_with_cleaning(llm, prompt)
+        _check_cancel()
+        blueprint_text = invoke_with_cleaning(llm, prompt, cancel_check=_check_cancel)
         if not blueprint_text.strip():
             logger.warning("Chapter blueprint generation result is empty.")
             _emit("error", {"step": "blueprint", "message": "章节目录生成为空"})
-            return
+            raise RuntimeError("章节目录生成为空")
         clear_file_content(filename_dir)
         save_string_to_txt(blueprint_text, filename_dir)
         _emit("progress", {"step": "blueprint", "status": "done", "message": "章节目录生成完成"})
@@ -161,15 +171,16 @@ def Chapter_blueprint_generate(
             user_guidance=user_guidance
         )
         logger.info(f"Generating chapters [{current_start}..{current_end}] in a chunk...")
+        _check_cancel()
         _emit("progress", {"step": "blueprint", "status": "running",
                            "message": f"正在生成第{current_start}-{current_end}章蓝图..."})
-        chunk_result = invoke_with_cleaning(llm, chunk_prompt)
+        chunk_result = invoke_with_cleaning(llm, chunk_prompt, cancel_check=_check_cancel)
         if not chunk_result.strip():
             logger.warning(f"Chunk generation for chapters [{current_start}..{current_end}] is empty.")
             clear_file_content(filename_dir)
             save_string_to_txt(final_blueprint.strip(), filename_dir)
             _emit("error", {"step": "blueprint", "message": f"第{current_start}-{current_end}章生成失败"})
-            return
+            raise RuntimeError(f"第{current_start}-{current_end}章生成失败")
         if final_blueprint.strip():
             final_blueprint += "\n\n" + chunk_result.strip()
         else:

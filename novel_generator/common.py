@@ -1,29 +1,25 @@
-#novel_generator/common.py
 # -*- coding: utf-8 -*-
-"""
-通用重试、清洗、日志工具
-"""
+"""Shared retry, cleaning, and logging helpers."""
+
+from __future__ import annotations
+
 import logging
 import re
 import time
 import traceback
 
+from novel_generator.task_manager import TaskCancelledError
+
 logger = logging.getLogger(__name__)
+
+
 def call_with_retry(func, max_retries=3, sleep_time=2, fallback_return=None, **kwargs):
-    """
-    通用的重试机制封装。
-    :param func: 要执行的函数
-    :param max_retries: 最大重试次数
-    :param sleep_time: 重试前的等待秒数
-    :param fallback_return: 如果多次重试仍失败时的返回值
-    :param kwargs: 传给func的命名参数
-    :return: func的结果，若失败则返回 fallback_return
-    """
+    """Call a function with retries and a fallback return value."""
     for attempt in range(1, max_retries + 1):
         try:
             return func(**kwargs)
-        except Exception as e:
-            logging.warning(f"[call_with_retry] Attempt {attempt} failed with error: {e}")
+        except Exception as exc:
+            logging.warning("[call_with_retry] Attempt %s failed with error: %s", attempt, exc)
             traceback.print_exc()
             if attempt < max_retries:
                 time.sleep(sleep_time)
@@ -31,48 +27,68 @@ def call_with_retry(func, max_retries=3, sleep_time=2, fallback_return=None, **k
                 logging.error("Max retries reached, returning fallback_return.")
                 return fallback_return
 
+
 def remove_think_tags(text: str) -> str:
-    """移除 <think>...</think> 包裹的内容"""
-    return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    """Remove <think>...</think> blocks from model output."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+
 
 def debug_log(prompt: str, response_content: str):
     logging.info(
-        f"\n[#########################################  Prompt  #########################################]\n{prompt}\n"
+        "\n[#########################################  Prompt  #########################################]\n%s\n",
+        prompt,
     )
     logging.info(
-        f"\n[######################################### Response #########################################]\n{response_content}\n"
+        "\n[######################################### Response #########################################]\n%s\n",
+        response_content,
     )
 
-def invoke_with_cleaning(llm_adapter, prompt: str, max_retries: int = 3) -> str:
-    """调用 LLM 并清理返回结果"""
-    print("\n" + "="*50)
+
+def invoke_with_cleaning(llm_adapter, prompt: str, max_retries: int = 3, cancel_check=None) -> str:
+    """Invoke an LLM and normalize the returned text.
+
+    cancel_check: optional no-arg callback; if it returns True, the task is cancelled.
+    """
+    if cancel_check and cancel_check():
+        raise TaskCancelledError("任务已取消")
+
+    print("\n" + "=" * 50)
     print("发送到 LLM 的提示词:")
-    print("-"*50)
+    print("-" * 50)
     print(prompt)
-    print("="*50 + "\n")
-    
+    print("=" * 50 + "\n")
+
     result = ""
     retry_count = 0
-    
+
     while retry_count < max_retries:
         try:
+            if cancel_check and cancel_check():
+                raise TaskCancelledError("任务已取消")
             result = llm_adapter.invoke(prompt)
-            print("\n" + "="*50)
+            if cancel_check and cancel_check():
+                raise TaskCancelledError("任务已取消")
+
+            print("\n" + "=" * 50)
             print("LLM 返回的内容:")
-            print("-"*50)
+            print("-" * 50)
             print(result)
-            print("="*50 + "\n")
-            
-            # 清理结果中的特殊格式标记
+            print("=" * 50 + "\n")
+
             result = result.replace("```", "").strip()
             if result:
                 return result
+
             retry_count += 1
-        except Exception as e:
-            print(f"调用失败 ({retry_count + 1}/{max_retries}): {str(e)}")
+        except TaskCancelledError:
+            raise
+        except Exception as exc:
+            if cancel_check and cancel_check():
+                raise TaskCancelledError("任务已取消") from exc
+            print(f"调用失败 ({retry_count + 1}/{max_retries}): {str(exc)}")
             retry_count += 1
             if retry_count >= max_retries:
-                raise e
-    
+                raise
+
     return result
 

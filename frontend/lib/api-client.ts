@@ -54,10 +54,16 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return (await res.text()) as unknown as T
 }
 
-function sseUrl(path: string): string {
+function sseUrl(path: string, taskId?: string): string {
+  const url = new URL(`${BASE_URL}${path}`)
   const token = getToken()
-  const sep = path.includes("?") ? "&" : "?"
-  return `${BASE_URL}${path}${sep}token=${encodeURIComponent(token || "")}`
+  if (taskId) {
+    url.searchParams.set("task_id", taskId)
+  }
+  if (token) {
+    url.searchParams.set("token", token)
+  }
+  return url.toString()
 }
 
 export const api = {
@@ -95,23 +101,46 @@ export const api = {
     upload: (projectId: string, file: File) => {
       const formData = new FormData()
       formData.append("file", file)
-      return fetch(`${BASE_URL}/api/v1/projects/${projectId}/knowledge/upload`, { method: "POST", body: formData, headers: authHeaders() }).then(r => r.json())
+      return fetch(`${BASE_URL}/api/v1/projects/${projectId}/knowledge/upload`, {
+        method: "POST",
+        body: formData,
+        headers: authHeaders(),
+      }).then(async (res) => {
+        if (!res.ok) {
+          let message = res.statusText
+          try {
+            const body = await res.json()
+            message = formatErrorDetail(body.detail) || body.message || message
+          } catch {
+            const text = await res.text()
+            if (text) message = text
+          }
+          throw new Error(`知识库上传失败: ${message}`)
+        }
+        return res.json()
+      })
     },
+    list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/knowledge/files`),
+    delete: (projectId: string, fileId: number) => request<any>(`/api/v1/projects/${projectId}/knowledge/files/${fileId}`, { method: "DELETE" }),
+    reimport: (projectId: string, fileId: number) => request<any>(`/api/v1/projects/${projectId}/knowledge/files/${fileId}/reimport`, { method: "POST" }),
     clearVector: (projectId: string) => request<void>(`/api/v1/projects/${projectId}/knowledge/clear-vector`, { method: "DELETE" }),
   },
   generate: {
-    architecture: (projectId: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/architecture`)),
-    blueprint: (projectId: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/blueprint`)),
-    chapter: (projectId: string, num: number) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/chapter/${num}`)),
-    chapterBatch: (projectId: string, startChapter: number, count: number) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/chapters?start_chapter=${startChapter}&count=${count}`)),
-    finalize: (projectId: string, num: number) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/finalize/${num}`)),
+    architecture: (projectId: string, taskId?: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/architecture`, taskId)),
+    blueprint: (projectId: string, taskId?: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/blueprint`, taskId)),
+    chapter: (projectId: string, num: number, taskId?: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/chapter/${num}`, taskId)),
+    chapterBatch: (projectId: string, startChapter: number, count: number, taskId?: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/chapters?start_chapter=${startChapter}&count=${count}`, taskId)),
+    finalize: (projectId: string, num: number, taskId?: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/finalize/${num}`, taskId)),
+    taskStatus: (projectId: string, taskId: string) => request<any>(`/api/v1/projects/${projectId}/generate/tasks/${taskId}`),
+    cancelTask: (projectId: string, taskId: string) => request<any>(`/api/v1/projects/${projectId}/generate/tasks/${taskId}/cancel`, { method: "POST" }),
   },
   characters: {
     list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/characters`),
     create: (projectId: string, data: { name: string; description?: string; status?: string; source?: string; first_appearance_chapter?: number | null }) => request<any>(`/api/v1/projects/${projectId}/characters`, { method: "POST", body: JSON.stringify(data) }),
     update: (projectId: string, charId: number, data: any) => request<any>(`/api/v1/projects/${projectId}/characters/${charId}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (projectId: string, charId: number) => request<void>(`/api/v1/projects/${projectId}/characters/${charId}`, { method: "DELETE" }),
-    importFromState: (projectId: string) => request<any>(`/api/v1/projects/${projectId}/characters/import-from-state`, { method: "POST" }),
+    importPreview: (projectId: string) => request<{ summary: any; candidates: any[] }>(`/api/v1/projects/${projectId}/characters/import-from-state/preview`, { method: "POST" }),
+    importFromState: (projectId: string, data?: { selected_candidate_ids: string[] }) => request<any>(`/api/v1/projects/${projectId}/characters/import-from-state`, { method: "POST", body: JSON.stringify(data || {}) }),
     suggest: (projectId: string) => request<{ characters: any[] }>(`/api/v1/projects/${projectId}/characters/suggest`, { method: "POST" }),
   },
   export: {

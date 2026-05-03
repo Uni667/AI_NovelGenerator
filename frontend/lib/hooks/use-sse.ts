@@ -84,6 +84,15 @@ export function useSSE() {
       if (sourceRef.current === es) sourceRef.current = null
     })
 
+    es.addEventListener("cancelled", (e) => {
+      setIsConnected(false)
+      const data = "data" in e && typeof e.data === "string" ? e.data : ""
+      const parsed = data ? parseEventData(data) : { message: "任务已取消", status: "cancelled" }
+      addEvent({ type: "cancelled", data: parsed })
+      es.close()
+      if (sourceRef.current === es) sourceRef.current = null
+    })
+
     es.onerror = () => {
       if (sourceRef.current === es && !error) {
         setError("连接中断，可能是网络问题或生成超时，请重试")

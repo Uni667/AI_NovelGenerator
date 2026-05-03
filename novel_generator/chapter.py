@@ -14,6 +14,7 @@ from llm_adapters import create_llm_adapter
 import prompt_definitions
 from chapter_directory_parser import get_chapter_info_from_blueprint
 from novel_generator.common import invoke_with_cleaning
+from novel_generator.task_manager import TaskCancelledError, raise_if_cancelled
 from utils import read_file, clear_file_content, save_string_to_txt
 from novel_generator.vectorstore_utils import (
     get_relevant_context_from_vector_store,
@@ -44,8 +45,15 @@ def summarize_recent_chapters(
     chapters_text_list: list,
     chapter_info: dict,
     next_chapter_info: dict,
+    task_id: str | None = None,
 ) -> str:
     try:
+        def _check_cancel():
+            if task_id:
+                raise_if_cancelled(task_id)
+            return False
+
+        _check_cancel()
         combined_text = "\n".join(chapters_text_list).strip()
         if not combined_text:
             return ""
@@ -87,12 +95,14 @@ def summarize_recent_chapters(
             next_chapter_plot_twist_level=next_chapter_info.get("plot_twist_level", "★☆☆☆☆"),
         )
 
-        response_text = invoke_with_cleaning(llm, prompt)
+        response_text = invoke_with_cleaning(llm, prompt, cancel_check=_check_cancel)
         summary = extract_summary_from_response(response_text)
         if not summary:
             logger.warning("Failed to extract summary, using full response")
             return response_text[:2000]
         return summary[:2000]
+    except TaskCancelledError:
+        raise
     except Exception:
         logger.error("Error in summarize_recent_chapters", exc_info=True)
         return ""
@@ -163,11 +173,18 @@ def get_filtered_knowledge_context(
     ctx,                # GenerationContext
     chapter_info: dict,
     retrieved_texts: list,
+    task_id: str | None = None,
 ) -> str:
     if not retrieved_texts:
         return "（无相关知识库内容）"
 
     try:
+        def _check_cancel():
+            if task_id:
+                raise_if_cancelled(task_id)
+            return False
+
+        _check_cancel()
         processed_texts = apply_knowledge_rules(retrieved_texts, chapter_info.get('chapter_number', 0))
 
         llm = create_llm_adapter(
@@ -200,8 +217,10 @@ def get_filtered_knowledge_context(
             retrieved_texts="\n\n".join(formatted_texts) if formatted_texts else "（无检索结果）"
         )
 
-        filtered_content = invoke_with_cleaning(llm, prompt)
+        filtered_content = invoke_with_cleaning(llm, prompt, cancel_check=_check_cancel)
         return filtered_content if filtered_content else "（知识内容过滤失败）"
+    except TaskCancelledError:
+        raise
     except Exception:
         logger.error("Error in knowledge filtering", exc_info=True)
         return "（内容过滤过程出错）"
@@ -212,20 +231,28 @@ def get_filtered_knowledge_context(
 def build_chapter_prompt(
     ctx,      # GenerationContext
     params,   # ChapterParams
+    task_id: str | None = None,
 ) -> str:
     """
     构造当前章节的请求提示词。
     ctx   : GenerationContext (llm + embedding + filepath)
     params: ChapterParams (章节号、标题、角色、道具、场景等)
     """
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        return False
+
     filepath = ctx.filepath
     novel_number = params.chapter_number
 
     # 读取基础文件
-    arch_text = read_file(os.path.join(filepath, "Novel_architecture.txt"))
-    blueprint_text = read_file(os.path.join(filepath, "Novel_directory.txt"))
-    global_summary_text = read_file(os.path.join(filepath, "global_summary.txt"))
-    character_state_text = read_file(os.path.join(filepath, "character_state.txt"))
+    _check_cancel()
+    arch_text = read_file(os.path.join(filepath, "Novel_architecture.txt")).strip() or "（尚未生成小说架构）"
+    blueprint_text = read_file(os.path.join(filepath, "Novel_directory.txt")).strip() or "（尚未生成章节目录）"
+    global_summary_text = read_file(os.path.join(filepath, "global_summary.txt")).strip() or "（尚未生成全局摘要）"
+    character_state_text = read_file(os.path.join(filepath, "character_state.txt")).strip() or "（尚未生成角色状态）"
+    plot_arcs_text = read_file(os.path.join(filepath, "plot_arcs.txt")).strip() or "（尚未生成伏笔暗线台账）"
 
     # 从蓝图解析章节信息
     chapter_info = get_chapter_info_from_blueprint(blueprint_text, novel_number)
@@ -236,6 +263,7 @@ def build_chapter_prompt(
 
     # 第一章特殊处理
     if novel_number == 1:
+        _check_cancel()
         return prompt_definitions.first_chapter_draft_prompt.format(
             novel_number=novel_number,
             word_number=params.word_number,
@@ -252,13 +280,14 @@ def build_chapter_prompt(
             time_constraint=params.time_constraint,
             user_guidance=params.user_guidance,
             novel_setting=arch_text,
+            plot_arcs=plot_arcs_text or "（尚未生成伏笔暗线台账，请优先遵守章节目录中的伏笔操作）",
         )
 
     # 获取前文摘要
     recent_texts = get_last_n_chapters_text(chapters_dir, novel_number, n=3)
     try:
         short_summary = summarize_recent_chapters(
-            ctx, recent_texts, chapter_info, next_chapter_info
+            ctx, recent_texts, chapter_info, next_chapter_info, task_id=task_id
         )
     except Exception:
         logger.error("Error in summarize_recent_chapters", exc_info=True)
@@ -273,6 +302,7 @@ def build_chapter_prompt(
 
     # ── 知识库检索 ──
     try:
+        _check_cancel()
         llm = create_llm_adapter(
             interface_format=ctx.llm.interface_format,
             base_url=ctx.llm.base_url,
@@ -294,7 +324,7 @@ def build_chapter_prompt(
             user_guidance=params.user_guidance,
             time_constraint=params.time_constraint,
         )
-        search_response = invoke_with_cleaning(llm, search_prompt)
+        search_response = invoke_with_cleaning(llm, search_prompt, cancel_check=_check_cancel)
         keyword_groups = parse_search_keywords(search_response)
 
         filtered_context = "（知识库处理失败）"
@@ -312,6 +342,7 @@ def build_chapter_prompt(
                 actual_k = min(ctx.embedding.retrieval_k, max(1, collection_size))
                 all_contexts = []
                 for group in keyword_groups:
+                    _check_cancel()
                     context = get_relevant_context_from_vector_store(emb, group, filepath, k=actual_k)
                     if context:
                         if any(kw in group.lower() for kw in ["技法", "手法", "模板"]):
@@ -336,16 +367,20 @@ def build_chapter_prompt(
                     "chapter_summary": chapter_info["chapter_summary"],
                     "time_constraint": params.time_constraint,
                 }
-                filtered_context = get_filtered_knowledge_context(ctx, chapter_info_for_filter, processed)
+                filtered_context = get_filtered_knowledge_context(ctx, chapter_info_for_filter, processed, task_id=task_id)
+    except TaskCancelledError:
+        raise
     except Exception:
         logger.error("知识处理流程异常", exc_info=True)
         filtered_context = "（知识库处理失败）"
 
+    _check_cancel()
     return prompt_definitions.next_chapter_draft_prompt.format(
         user_guidance=params.user_guidance or "无特殊指导",
         global_summary=global_summary_text,
         previous_chapter_excerpt=previous_excerpt,
         character_state=character_state_text,
+        plot_arcs=plot_arcs_text or "（尚未生成伏笔暗线台账，请优先遵守章节目录中的伏笔操作）",
         short_summary=short_summary,
         novel_number=novel_number,
         chapter_title=chapter_info["chapter_title"],
@@ -378,6 +413,7 @@ def generate_chapter_draft(
     ctx,                  # GenerationContext
     params,               # ChapterParams
     custom_prompt_text: str = None,
+    task_id: str | None = None,
 ) -> str:
     """
     生成章节草稿，支持自定义提示词。
@@ -386,10 +422,12 @@ def generate_chapter_draft(
     params : ChapterParams (章节参数)
     """
     if custom_prompt_text is None:
-        prompt_text = build_chapter_prompt(ctx, params)
+        prompt_text = build_chapter_prompt(ctx, params, task_id=task_id)
     else:
         prompt_text = custom_prompt_text
 
+    if task_id:
+        raise_if_cancelled(task_id)
     chapters_dir = os.path.join(ctx.filepath, "chapters")
     os.makedirs(chapters_dir, exist_ok=True)
 
@@ -403,9 +441,17 @@ def generate_chapter_draft(
         timeout=ctx.llm.timeout,
     )
 
-    chapter_content = invoke_with_cleaning(llm, prompt_text)
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        return False
+
+    chapter_content = invoke_with_cleaning(llm, prompt_text, cancel_check=_check_cancel)
+    if task_id:
+        raise_if_cancelled(task_id)
     if not chapter_content.strip():
         logger.warning("Generated chapter draft is empty.")
+        raise RuntimeError("章节草稿生成为空")
 
     chapter_file = os.path.join(chapters_dir, f"chapter_{params.chapter_number}.txt")
     clear_file_content(chapter_file)

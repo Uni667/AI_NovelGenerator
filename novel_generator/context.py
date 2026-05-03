@@ -88,6 +88,7 @@ class GenerationContext:
     llm: LLMConfig = field(default_factory=LLMConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     filepath: str = ""
+    project_id: str = ""
 
     @property
     def is_english(self) -> bool:
@@ -99,9 +100,11 @@ class GenerationContext:
         llm_dict: dict,
         emb_dict: Optional[dict] = None,
         filepath: str = "",
+        project_id: str = "",
     ) -> "GenerationContext":
         return cls(
             llm=LLMConfig.from_dict(llm_dict),
             embedding=EmbeddingConfig.from_dict(emb_dict or {}),
             filepath=filepath,
+            project_id=project_id,
         )
