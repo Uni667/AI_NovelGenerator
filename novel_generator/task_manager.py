@@ -31,6 +31,7 @@ class TaskState:
 
 
 _TASKS: dict[str, TaskState] = {}
+_CANCEL_TOKENS: dict[str, object] = {}  # task_id → CancelToken
 _LOCK = threading.RLock()
 
 
@@ -112,6 +113,17 @@ def update_task(task_id: str, **changes: Any) -> Optional[TaskState]:
         return state
 
 
+def bind_cancel_token(task_id: str, cancel_token) -> None:
+    """Associate a CancelToken with a task for transport-level abort."""
+    with _LOCK:
+        _CANCEL_TOKENS[task_id] = cancel_token
+
+
+def unbind_cancel_token(task_id: str) -> None:
+    with _LOCK:
+        _CANCEL_TOKENS.pop(task_id, None)
+
+
 def request_cancel(task_id: str) -> Optional[TaskState]:
     with _LOCK:
         state = _TASKS.get(task_id)
@@ -123,6 +135,15 @@ def request_cancel(task_id: str) -> Optional[TaskState]:
         state.status = "cancelling"
         state.message = state.message or "用户请求中断"
         state.updated_at = time.time()
+
+        # ── 触发 HTTP 传输层 abort ──
+        token = _CANCEL_TOKENS.get(task_id)
+        if token is not None:
+            try:
+                token.cancel()
+            except Exception:
+                pass
+
         return state
 
 

@@ -10,6 +10,8 @@ from backend.app.dependencies import get_user_llm_config, get_user_embedding_con
 from backend.app.auth import get_current_user
 from novel_generator.task_manager import (
     TaskCancelledError,
+    bind_cancel_token,
+    unbind_cancel_token,
     finish_task,
     get_active_task,
     get_task,
@@ -18,6 +20,7 @@ from novel_generator.task_manager import (
     raise_if_cancelled,
     task_payload,
 )
+from novel_generator.cancel_token import CancelToken
 
 from novel_generator.context import GenerationContext, ChapterParams, ProjectConfig
 from utils import read_file
@@ -59,12 +62,14 @@ def _resolve_emb(user_id: str, preferred: str) -> dict:
     return conf or {}
 
 
-def _make_ctx(llm_conf: dict, emb_conf: dict, filepath: str, project_id: str = "") -> GenerationContext:
+def _make_ctx(llm_conf: dict, emb_conf: dict, filepath: str, project_id: str = "",
+               cancel_token: CancelToken | None = None) -> GenerationContext:
     return GenerationContext.from_dicts(
         llm_dict=llm_conf,
         emb_dict=emb_conf,
         filepath=filepath,
         project_id=project_id,
+        cancel_token=cancel_token,
     )
 
 
@@ -229,14 +234,22 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict, user_id
     """复用 novel_generator.Novel_architecture_generate，消除重复逻辑"""
     from novel_generator.architecture import Novel_architecture_generate
 
+    cancel_token = CancelToken()
+    if task_id:
+        bind_cancel_token(task_id, cancel_token)
+
     llm_conf = _resolve_llm(user_id, pconfig.get("architecture_llm", ""))
     emb_conf = _resolve_emb(user_id, pconfig.get("embedding_config", ""))
 
-    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"])
+    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], cancel_token=cancel_token)
     proj_cfg = _make_project_cfg(pconfig)
 
-    Novel_architecture_generate(ctx, proj_cfg, emitter=emitter, task_id=task_id)
-    project_service.update_project(project["id"], {"status": "ready"}, user_id)
+    try:
+        Novel_architecture_generate(ctx, proj_cfg, emitter=emitter, task_id=task_id)
+        project_service.update_project(project["id"], {"status": "ready"}, user_id)
+    finally:
+        if task_id:
+            unbind_cancel_token(task_id)
 
 
 # ── 蓝本章节目录生成 ──
@@ -261,15 +274,23 @@ def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: s
     """复用 novel_generator.Chapter_blueprint_generate"""
     from novel_generator.blueprint import Chapter_blueprint_generate
 
+    cancel_token = CancelToken()
+    if task_id:
+        bind_cancel_token(task_id, cancel_token)
+
     _require_project_file(project["filepath"], "Novel_architecture.txt", "小说架构")
     llm_conf = _resolve_llm(user_id, pconfig.get("chapter_outline_llm", ""))
-    ctx = _make_ctx(llm_conf, {}, project["filepath"], project_id=project["id"])
+    ctx = _make_ctx(llm_conf, {}, project["filepath"], project_id=project["id"], cancel_token=cancel_token)
     proj_cfg = _make_project_cfg(pconfig)
 
-    Chapter_blueprint_generate(ctx, proj_cfg, emitter=emitter, task_id=task_id)
-    if task_id:
-        raise_if_cancelled(task_id)
-    chapter_service.sync_chapters_from_directory(project["id"], project["filepath"])
+    try:
+        Chapter_blueprint_generate(ctx, proj_cfg, emitter=emitter, task_id=task_id)
+        if task_id:
+            raise_if_cancelled(task_id)
+        chapter_service.sync_chapters_from_directory(project["id"], project["filepath"])
+    finally:
+        if task_id:
+            unbind_cancel_token(task_id)
 
 
 # ── 章节草稿生成 ──
@@ -319,50 +340,71 @@ def _run_chapter_batch_generation(
     user_id: str,
     task_id: str | None = None,
 ):
-    for offset in range(count):
-        chapter_number = start_chapter + offset
-        emitter.emit("progress", {
-            "step": "batch",
-            "status": "running",
-            "message": f"开始生成第{chapter_number}章（{offset + 1}/{count}）",
-        })
-        _run_chapter_generation(emitter, project, pconfig, chapter_number, user_id, task_id=task_id)
+    cancel_token = CancelToken()
+    if task_id:
+        bind_cancel_token(task_id, cancel_token)
+    try:
+        for offset in range(count):
+            chapter_number = start_chapter + offset
+            emitter.emit("progress", {
+                "step": "batch",
+                "status": "running",
+                "message": f"开始生成第{chapter_number}章（{offset + 1}/{count}）",
+            })
+            _run_chapter_generation(emitter, project, pconfig, chapter_number, user_id,
+                                    task_id=task_id, cancel_token=cancel_token)
+    finally:
+        if task_id:
+            unbind_cancel_token(task_id)
 
 
-def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int, user_id: str, task_id: str | None = None):
+def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int,
+                            user_id: str, task_id: str | None = None, cancel_token: CancelToken | None = None):
     """复用 novel_generator.build_chapter_prompt + generate_chapter_draft"""
     from novel_generator.chapter import build_chapter_prompt, generate_chapter_draft
 
-    _require_project_file(project["filepath"], "Novel_architecture.txt", "小说架构")
-    _require_project_file(project["filepath"], "Novel_directory.txt", "章节目录")
-    llm_conf = _resolve_llm(user_id, pconfig.get("prompt_draft_llm", ""))
-    emb_conf = _resolve_emb(user_id, pconfig.get("embedding_config", ""))
-
-    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"])
-    params = _make_chapter_params(pconfig, chapter_number)
-
-    emitter.emit("progress", {"step": "build_prompt", "status": "running",
-                               "message": f"正在构建第{chapter_number}章提示词..."})
-
-    prompt_text = build_chapter_prompt(ctx, params, task_id=task_id)
-    emitter.emit("progress", {"step": "build_prompt", "status": "done", "message": "提示词构建完成"})
-
-    emitter.emit("progress", {"step": "draft", "status": "running",
-                               "message": f"正在生成第{chapter_number}章草稿..."})
-
-    draft_text = generate_chapter_draft(ctx, params, custom_prompt_text=prompt_text, task_id=task_id)
-
-    if draft_text:
+    if cancel_token is None:
+        cancel_token = CancelToken()
         if task_id:
-            raise_if_cancelled(task_id)
-        from utils import get_word_count
-        wc = get_word_count(draft_text)
-        chapter_service.mark_chapter_draft(project["id"], chapter_number, wc)
-        emitter.emit("progress", {"step": "draft", "status": "done",
-                                   "message": f"第{chapter_number}章草稿生成完成"})
-        emitter.emit("partial", {"step": "draft", "content": draft_text[:500] + "..."})
+            bind_cancel_token(task_id, cancel_token)
+        own_token = True
     else:
-        emitter.emit("error", {"step": "draft", "message": "草稿生成返回空内容"})
+        own_token = False
+
+    try:
+        _require_project_file(project["filepath"], "Novel_architecture.txt", "小说架构")
+        _require_project_file(project["filepath"], "Novel_directory.txt", "章节目录")
+        llm_conf = _resolve_llm(user_id, pconfig.get("prompt_draft_llm", ""))
+        emb_conf = _resolve_emb(user_id, pconfig.get("embedding_config", ""))
+
+        ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], cancel_token=cancel_token)
+        params = _make_chapter_params(pconfig, chapter_number)
+
+        emitter.emit("progress", {"step": "build_prompt", "status": "running",
+                                   "message": f"正在构建第{chapter_number}章提示词..."})
+
+        prompt_text = build_chapter_prompt(ctx, params, task_id=task_id)
+        emitter.emit("progress", {"step": "build_prompt", "status": "done", "message": "提示词构建完成"})
+
+        emitter.emit("progress", {"step": "draft", "status": "running",
+                                   "message": f"正在生成第{chapter_number}章草稿..."})
+
+        draft_text = generate_chapter_draft(ctx, params, custom_prompt_text=prompt_text, task_id=task_id)
+
+        if draft_text:
+            if task_id:
+                raise_if_cancelled(task_id)
+            from utils import get_word_count
+            wc = get_word_count(draft_text)
+            chapter_service.mark_chapter_draft(project["id"], chapter_number, wc)
+            emitter.emit("progress", {"step": "draft", "status": "done",
+                                       "message": f"第{chapter_number}章草稿生成完成"})
+            emitter.emit("partial", {"step": "draft", "content": draft_text[:500] + "..."})
+        else:
+            emitter.emit("error", {"step": "draft", "message": "草稿生成返回空内容"})
+    finally:
+        if own_token and task_id:
+            unbind_cancel_token(task_id)
 
 
 # ── 定稿 ──
@@ -387,25 +429,33 @@ def _run_finalize(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_num
     """复用 novel_generator.finalize_chapter"""
     from novel_generator.finalization import finalize_chapter
 
-    chapter_filename = os.path.join("chapters", f"chapter_{chapter_number}.txt")
-    _require_project_file(project["filepath"], chapter_filename, f"第{chapter_number}章草稿")
-    llm_conf = _resolve_llm(user_id, pconfig.get("final_chapter_llm", ""))
-    emb_conf = _resolve_emb(user_id, pconfig.get("embedding_config", ""))
-
-    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"])
-    params = _make_chapter_params(pconfig, chapter_number)
-
-    emitter.emit("progress", {"step": "finalize", "status": "running",
-                               "message": f"正在定稿第{chapter_number}章..."})
-
-    finalize_chapter(ctx, params, emitter=emitter, task_id=task_id)
+    cancel_token = CancelToken()
     if task_id:
-        raise_if_cancelled(task_id)
+        bind_cancel_token(task_id, cancel_token)
 
-    from utils import get_word_count
-    chapter_text = read_file(os.path.join(project["filepath"], "chapters", f"chapter_{chapter_number}.txt"))
-    wc = get_word_count(chapter_text)
-    chapter_service.mark_chapter_final(project["id"], chapter_number, wc)
+    try:
+        chapter_filename = os.path.join("chapters", f"chapter_{chapter_number}.txt")
+        _require_project_file(project["filepath"], chapter_filename, f"第{chapter_number}章草稿")
+        llm_conf = _resolve_llm(user_id, pconfig.get("final_chapter_llm", ""))
+        emb_conf = _resolve_emb(user_id, pconfig.get("embedding_config", ""))
 
-    emitter.emit("progress", {"step": "finalize", "status": "done",
-                               "message": f"第{chapter_number}章定稿完成"})
+        ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], cancel_token=cancel_token)
+        params = _make_chapter_params(pconfig, chapter_number)
+
+        emitter.emit("progress", {"step": "finalize", "status": "running",
+                                   "message": f"正在定稿第{chapter_number}章..."})
+
+        finalize_chapter(ctx, params, emitter=emitter, task_id=task_id)
+        if task_id:
+            raise_if_cancelled(task_id)
+
+        from utils import get_word_count
+        chapter_text = read_file(os.path.join(project["filepath"], "chapters", f"chapter_{chapter_number}.txt"))
+        wc = get_word_count(chapter_text)
+        chapter_service.mark_chapter_final(project["id"], chapter_number, wc)
+
+        emitter.emit("progress", {"step": "finalize", "status": "done",
+                                   "message": f"第{chapter_number}章定稿完成"})
+    finally:
+        if task_id:
+            unbind_cancel_token(task_id)

@@ -70,6 +70,7 @@ def summarize_recent_chapters(
             temperature=ctx.llm.temperature,
             max_tokens=ctx.llm.max_tokens,
             timeout=ctx.llm.timeout,
+            cancel_token=ctx.cancel_token,
         )
 
         chapter_info = chapter_info or {}
@@ -439,6 +440,7 @@ def generate_chapter_draft(
         temperature=ctx.llm.temperature,
         max_tokens=ctx.llm.max_tokens,
         timeout=ctx.llm.timeout,
+        cancel_token=ctx.cancel_token,
     )
 
     def _check_cancel():

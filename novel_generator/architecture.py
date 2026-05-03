@@ -115,6 +115,7 @@ def Novel_architecture_generate(
         temperature=ctx.llm.temperature,
         max_tokens=ctx.llm.max_tokens,
         timeout=ctx.llm.timeout,
+        cancel_token=ctx.cancel_token,
     )
 
     topic = project.topic

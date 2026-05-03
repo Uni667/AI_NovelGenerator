@@ -89,6 +89,7 @@ class GenerationContext:
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     filepath: str = ""
     project_id: str = ""
+    cancel_token: object = None  # CancelToken for HTTP-level abort
 
     @property
     def is_english(self) -> bool:
@@ -101,10 +102,12 @@ class GenerationContext:
         emb_dict: Optional[dict] = None,
         filepath: str = "",
         project_id: str = "",
+        cancel_token: object = None,
     ) -> "GenerationContext":
         return cls(
             llm=LLMConfig.from_dict(llm_dict),
             embedding=EmbeddingConfig.from_dict(emb_dict or {}),
             filepath=filepath,
             project_id=project_id,
+            cancel_token=cancel_token,
         )

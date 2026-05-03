@@ -44,13 +44,22 @@ def debug_log(prompt: str, response_content: str):
     )
 
 
-def invoke_with_cleaning(llm_adapter, prompt: str, max_retries: int = 3, cancel_check=None) -> str:
+def invoke_with_cleaning(llm_adapter, prompt: str, max_retries: int = 3,
+                         cancel_check=None, cancel_token=None) -> str:
     """Invoke an LLM and normalize the returned text.
 
     cancel_check: optional no-arg callback; if it returns True, the task is cancelled.
+    cancel_token:  optional CancelToken for transport-level HTTP abort.
+
+    The cancel_token is bound to the adapter so that transport-level abort
+    (httpx client close) works alongside cooperative cancel_check.
     """
     if cancel_check and cancel_check():
         raise TaskCancelledError("任务已取消")
+
+    # Bind cancel_token to adapter so adapter.cancel() can close connections
+    if cancel_token is not None and hasattr(llm_adapter, '_cancel_token'):
+        llm_adapter._cancel_token = cancel_token
 
     print("\n" + "=" * 50)
     print("发送到 LLM 的提示词:")
@@ -65,9 +74,14 @@ def invoke_with_cleaning(llm_adapter, prompt: str, max_retries: int = 3, cancel_
         try:
             if cancel_check and cancel_check():
                 raise TaskCancelledError("任务已取消")
+            # Check cancel_token before invoking
+            if cancel_token is not None:
+                cancel_token.raise_if_set()
             result = llm_adapter.invoke(prompt)
             if cancel_check and cancel_check():
                 raise TaskCancelledError("任务已取消")
+            if cancel_token is not None:
+                cancel_token.raise_if_set()
 
             print("\n" + "=" * 50)
             print("LLM 返回的内容:")
@@ -84,6 +98,8 @@ def invoke_with_cleaning(llm_adapter, prompt: str, max_retries: int = 3, cancel_
             raise
         except Exception as exc:
             if cancel_check and cancel_check():
+                raise TaskCancelledError("任务已取消") from exc
+            if cancel_token is not None and cancel_token.is_set():
                 raise TaskCancelledError("任务已取消") from exc
             print(f"调用失败 ({retry_count + 1}/{max_retries}): {str(exc)}")
             retry_count += 1

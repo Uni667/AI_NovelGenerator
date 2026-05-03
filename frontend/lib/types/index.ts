@@ -124,3 +124,108 @@ export interface SSEPartial {
   step: string
   content: string
 }
+
+// ── 角色相关 ──
+
+export interface CharacterProfile {
+  id: number
+  project_id: string
+  name: string
+  description: string
+  status: "appeared" | "planned" | "suggested"
+  source: "user" | "ai"
+  first_appearance_chapter: number | null
+  updated_at: string
+}
+
+export interface CharacterRelationship {
+  id: number
+  project_id: string
+  character_id_a: number
+  character_id_b: number
+  name_a: string
+  name_b: string
+  rel_type: string
+  description: string
+  strength: number
+  direction: string
+  start_chapter: number | null
+  status: string
+  updated_at: string
+}
+
+export interface CharacterConflict {
+  id: number
+  project_id: string
+  title: string
+  description: string
+  conflict_type: string
+  intensity: number
+  start_chapter: number | null
+  resolved_chapter: number | null
+  resolution: string
+  status: string
+  updated_at: string
+  participants: ConflictParticipant[]
+}
+
+export interface ConflictParticipant {
+  pid: number
+  character_id: number
+  role: string
+  name: string
+  char_status: string
+}
+
+export interface CharacterAppearance {
+  id: number
+  project_id: string
+  character_id: number
+  chapter_number: number
+  character_name: string
+  character_status: string
+  appearance_type: string
+  role_in_chapter: string
+  summary: string
+  updated_at: string
+}
+
+export interface RelationshipGraph {
+  nodes: { id: number; name: string; status: string }[]
+  edges: {
+    id: number
+    source: number
+    target: number
+    sourceName: string
+    targetName: string
+    type: string
+    strength: number
+    direction: string
+    status: string
+  }[]
+}
+
+export interface TimelineEntry {
+  chapter_number: number
+  character_count: number
+  characters: string[]
+  entries: CharacterAppearance[]
+}
+
+export const RELATIONSHIP_TYPE_LABELS: Record<string, string> = {
+  family: "亲属", ally: "盟友", enemy: "敌对", mentor: "师徒",
+  lover: "爱慕/情感", interest: "利益绑定", hidden: "隐性关系",
+  evolving: "阶段性变化", rival: "竞争/对手", other: "其他",
+}
+
+export const CONFLICT_TYPE_LABELS: Record<string, string> = {
+  position: "立场冲突", interest: "利益冲突", emotion: "情感冲突",
+  power: "权力冲突", misunderstanding: "误会", life_death: "生死冲突",
+  ideology: "理念冲突", class: "阶层冲突", betrayal: "背叛", other: "其他",
+}
+
+export const APPEARANCE_TYPE_LABELS: Record<string, string> = {
+  present: "登场", mentioned: "被提及", flashback: "闪回",
+  implied: "暗示/伏笔", exit: "退场", return: "回归",
+  transformation: "重大转变",
+}

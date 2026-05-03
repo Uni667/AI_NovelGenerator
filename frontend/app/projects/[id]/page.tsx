@@ -20,7 +20,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Play, FileText, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, FileDown, Wand2, BookMarked, Target, Tag, FileEdit, RefreshCw, Copy, Save, BookOpen, MessageSquare, Sparkles, Eye, ListChecks, Gauge, PlusCircle, Ban } from "lucide-react"
+import { Play, FileText, Upload, Trash2, CheckCircle, AlertCircle, Loader2, Users, UserPlus, FileDown, Wand2, BookMarked, Target, Tag, FileEdit, RefreshCw, Copy, Save, BookOpen, MessageSquare, Sparkles, Eye, ListChecks, Gauge, PlusCircle, Ban, GitBranch, Swords, Clock } from "lucide-react"
+import RelationshipManager from "@/components/character/RelationshipManager"
+import ConflictManager from "@/components/character/ConflictManager"
+import AppearanceTimeline from "@/components/character/AppearanceTimeline"
 
 const GENERATED_FILES = [
   {
@@ -1543,12 +1546,13 @@ export default function ProjectDashboard() {
         </TabsContent>
 
         <TabsContent value="characters" className="space-y-6">
+          <div className="space-y-4">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />人物规划</CardTitle>
-                  <CardDescription>区分已出现人物、计划登场人物和 AI 建议人物</CardDescription>
+                  <CardDescription>角色资料 · 关系图 · 冲突网 · 登场时间线</CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button variant="outline" size="sm" onClick={handleImportCharacters} disabled={characterImportLoading}>
@@ -1567,77 +1571,102 @@ export default function ProjectDashboard() {
             </CardHeader>
           </Card>
 
-          {characterSuggestions.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">本次 AI 建议</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {characterSuggestions.map((suggestion: any) => (
-                  <div key={suggestion.name} className="rounded-lg border p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-medium">{suggestion.name}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{suggestion.description}</p>
-                      </div>
-                      <Badge variant="outline">AI 建议</Badge>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-2">
-                      <span className="text-xs text-muted-foreground">
-                        {suggestion.first_appearance_chapter ? `预计第${suggestion.first_appearance_chapter}章` : "登场待定"}
-                      </span>
-                      <Button size="sm" variant="outline" onClick={() => handleAcceptCharacterSuggestion(suggestion)}>
-                        <PlusCircle className="h-4 w-4 mr-2" />加入计划
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          {/* 角色管理子标签 */}
+          <Tabs defaultValue="roster">
+            <TabsList className="mb-4 flex-wrap">
+              <TabsTrigger value="roster"><Users className="h-4 w-4 mr-1" />人物列表</TabsTrigger>
+              <TabsTrigger value="relationships"><GitBranch className="h-4 w-4 mr-1" />关系图</TabsTrigger>
+              <TabsTrigger value="conflicts"><Swords className="h-4 w-4 mr-1" />冲突网</TabsTrigger>
+              <TabsTrigger value="timeline"><Clock className="h-4 w-4 mr-1" />登场时间线</TabsTrigger>
+            </TabsList>
 
-          <div className="grid gap-6 lg:grid-cols-3">
-            {[
-              { title: "已出现人物", items: appearedCharacters, empty: "从角色状态导入后会出现在这里" },
-              { title: "计划登场人物", items: plannedCharacters, empty: "你准备安排的人物会出现在这里" },
-              { title: "AI 建议人物", items: suggestedCharacters, empty: "AI 生成但尚未采纳的人物会出现在这里" },
-            ].map((group) => (
-              <Card key={group.title}>
-                <CardHeader>
-                  <CardTitle className="text-base">{group.title}</CardTitle>
-                  <CardDescription>{group.items.length} 个</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {group.items.length === 0 ? (
-                    <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">{group.empty}</div>
-                  ) : (
-                    <div className="space-y-3">
-                      {group.items.map((char: any) => (
-                        <div key={char.id} className="rounded-lg border p-3 hover:bg-accent">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1 cursor-pointer" onClick={() => openEditDialog(char)}>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-medium">{char.name}</p>
-                                <Badge variant="outline">{characterSourceLabel(char.source)}</Badge>
-                              </div>
-                              {char.description && <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{char.description}</p>}
-                              <p className="mt-2 text-xs text-muted-foreground">
-                                {characterStatusLabel(char.status)}
-                                {char.first_appearance_chapter ? ` · 第${char.first_appearance_chapter}章登场` : ""}
-                              </p>
-                            </div>
-                            <Button variant="ghost" size="icon" onClick={() => setDeleteCharTarget(char.id)}>
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+            <TabsContent value="roster">
+              {characterSuggestions.length > 0 && (
+                <Card className="mb-4">
+                  <CardHeader>
+                    <CardTitle className="text-base">本次 AI 建议</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {characterSuggestions.map((suggestion: any) => (
+                      <div key={suggestion.name} className="rounded-lg border p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{suggestion.name}</p>
+                            <p className="mt-1 text-sm text-muted-foreground">{suggestion.description}</p>
                           </div>
+                          <Badge variant="outline">AI 建议</Badge>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {suggestion.first_appearance_chapter ? `预计第${suggestion.first_appearance_chapter}章` : "登场待定"}
+                          </span>
+                          <Button size="sm" variant="outline" onClick={() => handleAcceptCharacterSuggestion(suggestion)}>
+                            <PlusCircle className="h-4 w-4 mr-2" />加入计划
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              <div className="grid gap-6 lg:grid-cols-3">
+                {[
+                  { title: "已出现人物", items: appearedCharacters, empty: "从角色状态导入后会出现在这里" },
+                  { title: "计划登场人物", items: plannedCharacters, empty: "你准备安排的人物会出现在这里" },
+                  { title: "AI 建议人物", items: suggestedCharacters, empty: "AI 生成但尚未采纳的人物会出现在这里" },
+                ].map((group) => (
+                  <Card key={group.title}>
+                    <CardHeader>
+                      <CardTitle className="text-base">{group.title}</CardTitle>
+                      <CardDescription>{group.items.length} 个</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {group.items.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">{group.empty}</div>
+                      ) : (
+                        <div className="space-y-3">
+                          {group.items.map((char: any) => (
+                            <div key={char.id} className="rounded-lg border p-3 hover:bg-accent">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => openEditDialog(char)}>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="font-medium">{char.name}</p>
+                                    <Badge variant="outline">{characterSourceLabel(char.source)}</Badge>
+                                  </div>
+                                  {char.description && <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{char.description}</p>}
+                                  <p className="mt-2 text-xs text-muted-foreground">
+                                    {characterStatusLabel(char.status)}
+                                    {char.first_appearance_chapter ? ` · 第${char.first_appearance_chapter}章登场` : ""}
+                                  </p>
+                                </div>
+                                <Button variant="ghost" size="icon" onClick={() => setDeleteCharTarget(char.id)}>
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="relationships">
+              <RelationshipManager projectId={id} characters={characters} />
+            </TabsContent>
+
+            <TabsContent value="conflicts">
+              <ConflictManager projectId={id} characters={characters} />
+            </TabsContent>
+
+            <TabsContent value="timeline">
+              <AppearanceTimeline projectId={id} characters={characters} />
+            </TabsContent>
+          </Tabs>
+        </div>
         </TabsContent>
 
         <TabsContent value="reader" className="space-y-6">

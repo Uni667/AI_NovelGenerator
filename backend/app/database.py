@@ -137,6 +137,65 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_chapter_project ON chapter(project_id, chapter_number);
             CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge_file(project_id);
             CREATE INDEX IF NOT EXISTS idx_character_project ON character_profile(project_id);
+
+            -- 角色关系图
+            CREATE TABLE IF NOT EXISTS character_relationship (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+                character_id_a INTEGER NOT NULL REFERENCES character_profile(id) ON DELETE CASCADE,
+                character_id_b INTEGER NOT NULL REFERENCES character_profile(id) ON DELETE CASCADE,
+                rel_type TEXT NOT NULL DEFAULT '',
+                description TEXT DEFAULT '',
+                strength REAL DEFAULT 0.5,
+                direction TEXT DEFAULT 'bidirectional',
+                start_chapter INTEGER,
+                status TEXT DEFAULT 'active',
+                updated_at TEXT NOT NULL
+            );
+
+            -- 冲突网
+            CREATE TABLE IF NOT EXISTS character_conflict (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                conflict_type TEXT DEFAULT '',
+                intensity REAL DEFAULT 0.5,
+                start_chapter INTEGER,
+                resolved_chapter INTEGER,
+                resolution TEXT DEFAULT '',
+                status TEXT DEFAULT 'active',
+                updated_at TEXT NOT NULL
+            );
+
+            -- 冲突参与方
+            CREATE TABLE IF NOT EXISTS character_conflict_participant (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conflict_id INTEGER NOT NULL REFERENCES character_conflict(id) ON DELETE CASCADE,
+                character_id INTEGER NOT NULL REFERENCES character_profile(id) ON DELETE CASCADE,
+                role TEXT DEFAULT 'participant',
+                UNIQUE(conflict_id, character_id)
+            );
+
+            -- 登场时间线
+            CREATE TABLE IF NOT EXISTS character_appearance (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+                character_id INTEGER NOT NULL REFERENCES character_profile(id) ON DELETE CASCADE,
+                chapter_number INTEGER NOT NULL,
+                appearance_type TEXT DEFAULT 'present',
+                role_in_chapter TEXT DEFAULT '',
+                summary TEXT DEFAULT '',
+                updated_at TEXT NOT NULL,
+                UNIQUE(character_id, chapter_number)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_rel_project ON character_relationship(project_id);
+            CREATE INDEX IF NOT EXISTS idx_rel_chars ON character_relationship(character_id_a, character_id_b);
+            CREATE INDEX IF NOT EXISTS idx_conflict_project ON character_conflict(project_id);
+            CREATE INDEX IF NOT EXISTS idx_conflict_participant ON character_conflict_participant(conflict_id);
+            CREATE INDEX IF NOT EXISTS idx_appearance_project ON character_appearance(project_id);
+            CREATE INDEX IF NOT EXISTS idx_appearance_char ON character_appearance(character_id, chapter_number);
         """)
 
         # 迁移：新增 platform 和 category 列（如果不存在则忽略）

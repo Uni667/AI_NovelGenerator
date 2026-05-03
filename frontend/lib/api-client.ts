@@ -143,6 +143,34 @@ export const api = {
     importFromState: (projectId: string, data?: { selected_candidate_ids: string[] }) => request<any>(`/api/v1/projects/${projectId}/characters/import-from-state`, { method: "POST", body: JSON.stringify(data || {}) }),
     suggest: (projectId: string) => request<{ characters: any[] }>(`/api/v1/projects/${projectId}/characters/suggest`, { method: "POST" }),
   },
+  characterRelationships: {
+    list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/character-relationships`),
+    create: (projectId: string, data: any) => request<any>(`/api/v1/projects/${projectId}/character-relationships`, { method: "POST", body: JSON.stringify(data) }),
+    update: (projectId: string, relId: number, data: any) => request<any>(`/api/v1/projects/${projectId}/character-relationships/${relId}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (projectId: string, relId: number) => request<void>(`/api/v1/projects/${projectId}/character-relationships/${relId}`, { method: "DELETE" }),
+    graph: (projectId: string) => request<any>(`/api/v1/projects/${projectId}/character-relationships/graph`),
+    types: () => request<{ types: any[]; statuses: string[] }>(`/api/v1/character-relationship-types`),
+  },
+  characterConflicts: {
+    list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/character-conflicts`),
+    create: (projectId: string, data: any) => request<any>(`/api/v1/projects/${projectId}/character-conflicts`, { method: "POST", body: JSON.stringify(data) }),
+    update: (projectId: string, conflictId: number, data: any) => request<any>(`/api/v1/projects/${projectId}/character-conflicts/${conflictId}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (projectId: string, conflictId: number) => request<void>(`/api/v1/projects/${projectId}/character-conflicts/${conflictId}`, { method: "DELETE" }),
+    types: () => request<any>(`/api/v1/character-conflict-types`),
+  },
+  characterAppearances: {
+    list: (projectId: string, params?: { character_id?: number; chapter_number?: number }) => {
+      let url = `/api/v1/projects/${projectId}/character-appearances`
+      if (params?.character_id) url += `?character_id=${params.character_id}`
+      else if (params?.chapter_number) url += `?chapter_number=${params.chapter_number}`
+      return request<any[]>(url)
+    },
+    create: (projectId: string, data: any) => request<any>(`/api/v1/projects/${projectId}/character-appearances`, { method: "POST", body: JSON.stringify(data) }),
+    update: (projectId: string, appearanceId: number, data: any) => request<any>(`/api/v1/projects/${projectId}/character-appearances/${appearanceId}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (projectId: string, appearanceId: number) => request<void>(`/api/v1/projects/${projectId}/character-appearances/${appearanceId}`, { method: "DELETE" }),
+    timeline: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/character-appearances/timeline`),
+    types: () => request<any>(`/api/v1/character-appearance-types`),
+  },
   export: {
     download: (projectId: string, format: "txt" | "html" = "txt") => {
       window.open(sseUrl(`/api/v1/projects/${projectId}/export?format=${format}`), "_blank")

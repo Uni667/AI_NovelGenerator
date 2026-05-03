@@ -62,6 +62,7 @@ def finalize_chapter(
         temperature=ctx.llm.temperature,
         max_tokens=ctx.llm.max_tokens,
         timeout=ctx.llm.timeout,
+        cancel_token=ctx.cancel_token,
     )
 
     _emit("progress", {"step": "summary_update", "status": "running", "message": "正在更新全局摘要..."})
@@ -137,6 +138,7 @@ def enrich_chapter_text(
         temperature=ctx.llm.temperature,
         max_tokens=ctx.llm.max_tokens,
         timeout=ctx.llm.timeout,
+        cancel_token=ctx.cancel_token,
     )
     prompt = prompt_definitions.enrich_prompt.format(word_number=word_number, chapter_text=chapter_text)
     enriched_text = invoke_with_cleaning(llm, prompt, cancel_check=_check_cancel)

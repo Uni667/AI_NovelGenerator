@@ -88,3 +88,107 @@ class CharacterImportCandidate(BaseModel):
 
 class CharacterImportSelection(BaseModel):
     selected_candidate_ids: List[str] = Field(default_factory=list)
+
+
+# ── 角色关系图 ──
+
+class CharacterRelationshipResponse(BaseModel):
+    id: int
+    project_id: str
+    character_id_a: int
+    character_id_b: int
+    rel_type: str = ""
+    description: str = ""
+    strength: float = 0.5
+    direction: str = "bidirectional"
+    start_chapter: Optional[int] = None
+    status: str = "active"
+    updated_at: str
+
+
+class CharacterRelationshipCreate(BaseModel):
+    character_id_a: int
+    character_id_b: int
+    rel_type: str = ""
+    description: str = ""
+    strength: float = 0.5
+    direction: str = "bidirectional"
+    start_chapter: Optional[int] = None
+    status: str = "active"
+
+
+class CharacterRelationshipUpdate(BaseModel):
+    rel_type: Optional[str] = None
+    description: Optional[str] = None
+    strength: Optional[float] = None
+    direction: Optional[str] = None
+    start_chapter: Optional[int] = None
+    status: Optional[str] = None
+
+
+# ── 冲突网 ──
+
+class CharacterConflictResponse(BaseModel):
+    id: int
+    project_id: str
+    title: str
+    description: str = ""
+    conflict_type: str = ""
+    intensity: float = 0.5
+    start_chapter: Optional[int] = None
+    resolved_chapter: Optional[int] = None
+    resolution: str = ""
+    status: str = "active"
+    updated_at: str
+    participants: List[dict] = Field(default_factory=list)
+
+
+class CharacterConflictCreate(BaseModel):
+    title: str = Field(..., min_length=1)
+    description: str = ""
+    conflict_type: str = ""
+    intensity: float = 0.5
+    start_chapter: Optional[int] = None
+    resolved_chapter: Optional[int] = None
+    resolution: str = ""
+    status: str = "active"
+    participant_ids: List[int] = Field(default_factory=list)
+
+
+class CharacterConflictUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    conflict_type: Optional[str] = None
+    intensity: Optional[float] = None
+    start_chapter: Optional[int] = None
+    resolved_chapter: Optional[int] = None
+    resolution: Optional[str] = None
+    status: Optional[str] = None
+    participant_ids: Optional[List[int]] = None
+
+
+# ── 登场时间线 ──
+
+class CharacterAppearanceResponse(BaseModel):
+    id: int
+    project_id: str
+    character_id: int
+    chapter_number: int
+    appearance_type: str = "present"
+    role_in_chapter: str = ""
+    summary: str = ""
+    updated_at: str
+
+
+class CharacterAppearanceCreate(BaseModel):
+    character_id: int
+    chapter_number: int
+    appearance_type: str = "present"
+    role_in_chapter: str = ""
+    summary: str = ""
+
+
+class CharacterAppearanceUpdate(BaseModel):
+    appearance_type: Optional[str] = None
+    role_in_chapter: Optional[str] = None
+    summary: Optional[str] = None
