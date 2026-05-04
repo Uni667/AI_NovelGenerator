@@ -31,23 +31,48 @@ export default function SettingsPage() {
 
 // ── ModelProfile 管理 ──
 
+const PURPOSE_OPTIONS = [
+  { value: "general", label: "通用" },
+  { value: "architecture", label: "架构" },
+  { value: "worldbuilding", label: "世界观" },
+  { value: "character", label: "角色" },
+  { value: "outline", label: "目录" },
+  { value: "draft", label: "草稿" },
+  { value: "polish", label: "润色" },
+  { value: "review", label: "审核" },
+  { value: "summary", label: "摘要" },
+  { value: "feedback", label: "反馈" },
+  { value: "embedding", label: "向量化" },
+  { value: "rerank", label: "重排" },
+]
+
 function ModelProfilesSection() {
   const [profiles, setProfiles] = useState<any[]>([])
+  const [credentials, setCredentials] = useState<any[]>([])
   const [loaded, setLoaded] = useState(false)
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ name: "", type: "chat", provider: "openai", base_url: "", model: "" })
+  const [form, setForm] = useState({ name: "", type: "chat", purpose: "general", provider: "openai", base_url: "", model: "", api_credential_id: "" })
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
-    try { setProfiles(await api.config.listProfiles()); setLoaded(true) } catch {}
+    try {
+      const [p, c] = await Promise.all([api.config.listProfiles(), api.config.listCredentials()])
+      setProfiles(p); setCredentials(c); setLoaded(true)
+    } catch {}
   }, [])
 
   useEffect(() => { if (open) load() }, [open, load])
 
   const handleCreate = async () => {
     if (!form.name.trim() || !form.model.trim()) { toast.error("名称和模型不能为空"); return }
+    if (!form.api_credential_id) { toast.error("请选择要绑定的 API 凭证"); return }
     setSaving(true)
-    try { await api.config.createProfile(form); toast.success("已创建"); setForm({ name: "", type: "chat", provider: "openai", base_url: "", model: "" }); load() }
+    try {
+      await api.config.createProfile(form)
+      toast.success("已创建")
+      setForm({ name: "", type: "chat", purpose: "general", provider: "openai", base_url: "", model: "", api_credential_id: "" })
+      load()
+    }
     catch (e: any) { toast.error(e.message) }
     finally { setSaving(false) }
   }
@@ -63,6 +88,11 @@ function ModelProfilesSection() {
     catch (e: any) { toast.error(e.message) }
   }
 
+  const credLabel = (credId: string) => {
+    const c = credentials.find(x => x.id === credId)
+    return c ? `${c.name} (${c.provider})` : "未绑定"
+  }
+
   if (!open) {
     return <Button variant="ghost" size="sm" className="text-muted-foreground mt-4" onClick={() => setOpen(true)}>管理模型配置（ModelProfile）</Button>
   }
@@ -74,40 +104,61 @@ function ModelProfilesSection() {
           <CardTitle className="text-base">模型配置（ModelProfile）</CardTitle>
           <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>收起</Button>
         </div>
-        <CardDescription>不保存 API Key，仅定义模型名和用途。API Key 统一来自上方配置。</CardDescription>
+        <CardDescription>不保存 API Key，仅定义模型名和用途。必须绑定一个 API 凭证才能调用模型。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex gap-2 flex-wrap">
-          <Input className="w-32" placeholder="名称" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-          <Select value={form.type} onValueChange={v => v && setForm({ ...form, type: v })}>
+        {/* 创建表单 */}
+        <div className="flex gap-2 flex-wrap items-center">
+          <Input className="w-28" placeholder="名称" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+          <Select value={form.type} onValueChange={v => v && setForm({ ...form, type: v, purpose: v === "embedding" ? "embedding" : form.purpose })}>
             <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="chat">Chat</SelectItem><SelectItem value="embedding">Embedding</SelectItem></SelectContent>
           </Select>
+          <Select value={form.purpose} onValueChange={v => v && setForm({ ...form, purpose: v })}>
+            <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+            <SelectContent>{PURPOSE_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+          </Select>
           <Select value={form.provider} onValueChange={v => v && setForm({ ...form, provider: v })}>
-            <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="openai">OpenAI</SelectItem><SelectItem value="deepseek">DeepSeek</SelectItem>
               <SelectItem value="qwen">Qwen</SelectItem><SelectItem value="anthropic">Anthropic</SelectItem>
-              <SelectItem value="custom">自定义</SelectItem>
+              <SelectItem value="custom">自定义</SelectItem><SelectItem value="local">本地</SelectItem>
             </SelectContent>
           </Select>
-          <Input className="w-40" placeholder="模型名" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} />
-          <Input className="w-40" placeholder="Base URL（可选）" value={form.base_url} onChange={e => setForm({ ...form, base_url: e.target.value })} />
+          <Select value={form.api_credential_id} onValueChange={v => v && setForm({ ...form, api_credential_id: v })}>
+            <SelectTrigger className="w-36"><SelectValue placeholder="绑定凭证" /></SelectTrigger>
+            <SelectContent>
+              {credentials.filter(c => c.status === "active" || c.status === "untested").map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.name} ({c.provider})</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input className="w-36" placeholder="模型名" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} />
+          <Input className="w-36" placeholder="Base URL（可选）" value={form.base_url} onChange={e => setForm({ ...form, base_url: e.target.value })} />
           <Button size="sm" onClick={handleCreate} disabled={saving}>添加</Button>
         </div>
+        {credentials.length === 0 && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">请先在上方创建一个 API 凭证，再在此绑定。</p>
+        )}
 
+        {/* 列表 */}
         {!loaded ? <p className="text-xs text-muted-foreground">加载中...</p> :
           profiles.length === 0 ? <p className="text-xs text-muted-foreground">暂无模型配置</p> :
             <div className="space-y-1">{
               profiles.map(p => (
                 <div key={p.id} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant={p.type === "chat" ? "default" : "secondary"}>{p.type}</Badge>
                     <span className="font-medium">{p.name}</span>
                     <span className="text-muted-foreground">{p.model}</span>
-                    {p.is_active ? null : <Badge variant="outline" className="text-xs">已停用</Badge>}
+                    <Badge variant="outline" className="text-xs">{credLabel(p.api_credential_id)}</Badge>
+                    {p.purpose && <span className="text-xs text-muted-foreground">用途:{p.purpose}</span>}
+                    {p.health_status && p.health_status !== "untested" && (
+                      <Badge variant={p.health_status === "active" ? "default" : "destructive"} className="text-xs">{p.health_status}</Badge>
+                    )}
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 shrink-0">
                     <Button size="sm" variant="ghost" onClick={() => handleTest(p.id)}>测试</Button>
                     <Button size="sm" variant="ghost" onClick={() => handleDelete(p.id)}>删除</Button>
                   </div>
