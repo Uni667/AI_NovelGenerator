@@ -458,13 +458,7 @@ def init_db():
         except Exception:
             pass
 
-        # ── 迁移：旧 user_api_config → 新 api_credential ──
-        try:
-            _migrate_user_api_config_to_credential(conn)
-        except Exception:
-            pass
-
-        # ── 迁移：model_profile 新增字段 ──
+        # ── 迁移：model_profile 新增字段（必须在 _migrate_user_api_config_to_credential 之前）──
         for col, defn in [
             ("purpose", "TEXT DEFAULT 'general'"),
             ("api_credential_id", "TEXT REFERENCES api_credential(id) ON DELETE SET NULL"),
@@ -483,6 +477,12 @@ def init_db():
                 conn.execute(f"ALTER TABLE model_profile ADD COLUMN {col} {defn}")
             except Exception:
                 pass
+
+        # ── 迁移：旧 user_api_config → 新 api_credential ──
+        try:
+            _migrate_user_api_config_to_credential(conn)
+        except Exception:
+            pass
 
         # ── 迁移：project_model_assignment 新增阶段字段 ──
         for col in ["worldbuilding_profile_id", "character_profile_id", "summary_profile_id",
