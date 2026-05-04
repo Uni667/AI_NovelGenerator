@@ -16,6 +16,19 @@ from backend.app.services.api_credential_service import (
     test_credential,
     update_credential,
 )
+from backend.app.errors import (
+    API_CREDENTIAL_IN_USE,
+    API_KEY_INVALID,
+    MODEL_CONFIG_INVALID,
+    api_error,
+)
+from backend.app.services.model_runtime import (
+    get_chat_model_status,
+    normalize_base_url,
+    repair_user_model_settings,
+    reset_user_model_settings,
+    test_chat_connection,
+)
 from backend.app.utils.crypto import decrypt_api_key, encrypt_api_key, hash_api_key, last4
 
 router = APIRouter(tags=["model-settings"])
@@ -37,7 +50,6 @@ ASSIGNMENT_FIELDS = {
     "embedding_profile_id": "embedding",
     "rerank_profile_id": "rerank",
 }
-REMOVED_LEGACY_MARKERS = ("uni656", "flah", "bge-m3", "bge_m3", "bge m3")
 
 
 class CredentialReq(BaseModel):
@@ -151,11 +163,6 @@ def _validate_profile_payload(data: dict) -> None:
         raise HTTPException(status_code=400, detail="Chat 模型不能用于 embedding 或 rerank。")
 
 
-def _is_removed_legacy_config(row: dict) -> bool:
-    haystack = " ".join(str(row.get(key, "")) for key in ("name", "provider", "model", "credential_name")).lower()
-    return any(marker in haystack for marker in REMOVED_LEGACY_MARKERS)
-
-
 @router.get("/api/user/api-credentials")
 def list_api_credentials(request: Request):
     return list_credentials(get_current_user(request))
@@ -191,16 +198,27 @@ def delete_api_credential(cred_id: str, request: Request, cascade: bool = False)
     user_id = get_current_user(request)
     try:
         delete_credential(cred_id, user_id, cascade=cascade)
+        return {"success": True, "message": "模型服务账号已删除。"}
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return {"message": "已删除"}
+        text = str(exc)
+        if text.startswith("API_CREDENTIAL_IN_USE:"):
+            count = int(text.split(":", 1)[1] or "0")
+            raise api_error(
+                400,
+                API_CREDENTIAL_IN_USE,
+                "该模型服务账号正在被模型配置使用。你可以选择同时删除关联模型配置。",
+                {"count": count},
+            )
+        if "不存在" in text:
+            raise HTTPException(status_code=404, detail="API 凭证不存在。")
+        raise HTTPException(status_code=400, detail="删除失败，请稍后重试。")
 
 
 @router.post("/api/user/api-credentials/{cred_id}/test")
 def test_api_credential(cred_id: str, request: Request):
     result = test_credential(cred_id, get_current_user(request))
     if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("message", "测试失败"))
+        raise api_error(400, result.get("code") or API_KEY_INVALID, result.get("message") or "测试失败，请检查 API Key 和服务商是否匹配。")
     return result
 
 
@@ -226,7 +244,7 @@ def list_model_profiles(request: Request):
                ORDER BY mp.created_at DESC""",
             (user_id,),
         ).fetchall()
-    return [item for row in rows if not _is_removed_legacy_config(item := _bools(row))]
+    return [_bools(row) for row in rows]
 
 
 @router.post("/api/user/model-profiles")
@@ -301,7 +319,11 @@ def test_model_profile(profile_id: str, request: Request):
             ok = bool(vector)
             if ok:
                 with get_db() as conn:
-                    conn.execute("UPDATE model_profile SET health_status='active', last_error='', last_tested_at=?, updated_at=? WHERE id=? AND user_id=?", (datetime.datetime.now().isoformat(), datetime.datetime.now().isoformat(), profile_id, user_id))
+                    now = datetime.datetime.now().isoformat()
+                    conn.execute("UPDATE model_profile SET health_status='active', last_error='', last_tested_at=?, updated_at=? WHERE id=? AND user_id=?", (now, now, profile_id, user_id))
+                    conn.execute("UPDATE api_credential SET status='active', last_error='', last_tested_at=?, updated_at=? WHERE id=? AND user_id=?", (now, now, cfg.api_credential_id, user_id))
+            if ok:
+                return {"success": True, "message": "测试成功"}
             return {"success": ok, "message": f"测试成功，向量维度 {len(vector)}" if ok else "Embedding 返回空向量"}
         if cfg.type == "rerank":
             raise HTTPException(status_code=400, detail="Rerank 测试接口尚未实现。")
@@ -311,6 +333,9 @@ def test_model_profile(profile_id: str, request: Request):
             with get_db() as conn:
                 now = datetime.datetime.now().isoformat()
                 conn.execute("UPDATE model_profile SET health_status='active', last_error='', last_tested_at=?, updated_at=? WHERE id=? AND user_id=?", (now, now, profile_id, user_id))
+                conn.execute("UPDATE api_credential SET status='active', last_error='', last_tested_at=?, updated_at=? WHERE id=? AND user_id=?", (now, now, cfg.api_credential_id, user_id))
+            if ok:
+                return {"success": True, "message": "测试成功"}
         return {"success": ok, "message": f"测试成功: {text[:200]}" if ok else "模型返回空内容"}
     except ConfigError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -436,7 +461,7 @@ def fetch_provider_models(cred_id: str, request: Request):
     try:
         api_key = decrypt_api_key(cred["api_key_encrypted"]) if cred.get("api_key_encrypted") else ""
     except Exception:
-        raise HTTPException(status_code=400, detail="API 凭证解密失败，请重新填写 API Key。")
+        raise api_error(400, API_KEY_INVALID, "测试失败，请检查 API Key 和服务商是否匹配。")
 
     if not api_key:
         raise HTTPException(status_code=400, detail="API 凭证缺少 Key。")
@@ -508,7 +533,7 @@ QUICK_SETUP_CHAT = {
 ASSIGNMENT_CHAT_FIELDS = [
     "architecture_profile_id", "worldbuilding_profile_id", "character_profile_id",
     "outline_profile_id", "draft_profile_id", "polish_profile_id",
-    "review_profile_id", "summary_profile_id", "feedback_profile_id",
+    "review_profile_id", "summary_profile_id",
 ]
 
 
@@ -521,49 +546,35 @@ class QuickSetupReq(BaseModel):
 @router.post("/api/user/model-quick-setup")
 def model_quick_setup(data: QuickSetupReq, request: Request):
     """一键配置文本生成模型：选择服务商 + 填 Key → 测试 → 保存。不自动创建 Embedding。"""
-    from llm_adapters import create_llm_adapter
-    from backend.app.services.model_runtime import _provider_to_interface
-
     user_id = get_current_user(request)
     provider = data.provider.strip()
     api_key = data.api_key.strip()
     project_id = (data.project_id or "").strip()
 
     if provider not in PROVIDER_DEFAULTS:
-        raise HTTPException(status_code=400, detail=f"不支持的服务商: {provider}")
+        raise api_error(400, MODEL_CONFIG_INVALID, "当前模型配置不完整，建议清空后重新配置。")
     if provider not in QUICK_SETUP_CHAT:
-        raise HTTPException(status_code=400, detail=f"服务商 {provider} 暂不支持一键配置，请在高级设置中手动创建。")
+        raise api_error(400, MODEL_CONFIG_INVALID, "当前模型配置不完整，建议清空后重新配置。")
     if not api_key:
-        raise HTTPException(status_code=400, detail="API Key 不能为空。")
+        raise api_error(400, API_KEY_INVALID, "测试失败，请检查 API Key 和服务商是否匹配。")
 
-    base_url = PROVIDER_DEFAULTS[provider]
+    base_url = normalize_base_url(provider, PROVIDER_DEFAULTS[provider])
     chat_cfg = QUICK_SETUP_CHAT[provider]
     default_model = chat_cfg["model"]
 
     # 1. 先测试 API Key（不写入数据库）
-    try:
-        adapter = create_llm_adapter(
-            interface_format=_provider_to_interface(provider),
-            base_url=base_url,
-            model_name=default_model,
-            api_key=api_key,
-            temperature=0.7,
-            max_tokens=32,
-            timeout=25,
-        )
-        response = adapter.invoke("Reply exactly: OK")
-        if not response:
-            err = getattr(adapter, "last_error", "") or "无响应"
-            raise HTTPException(
-                status_code=400,
-                detail="测试失败，请检查 API Key 和服务商是否匹配。",
-            )
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail="测试失败，请检查 API Key 和服务商是否匹配。",
+    test_result = test_chat_connection(
+        provider=provider,
+        base_url=base_url,
+        model_name=default_model,
+        api_key=api_key,
+        timeout=25,
+    )
+    if not test_result.get("success"):
+        raise api_error(
+            400,
+            test_result.get("code") or API_KEY_INVALID,
+            test_result.get("message") or "测试失败，请检查 API Key 和服务商是否匹配。",
         )
 
     # 2. 测试通过，创建或更新 ApiCredential
@@ -581,10 +592,10 @@ def model_quick_setup(data: QuickSetupReq, request: Request):
             cred_id = existing[0]
             conn.execute(
                 """UPDATE api_credential SET api_key_encrypted=?, api_key_last4=?, api_key_hash=?,
-                   base_url=?, status='active', is_default=1, updated_at=?
+                   base_url=?, status='active', is_default=1, last_tested_at=?, last_error='', updated_at=?
                    WHERE id=? AND user_id=?""",
                 (encrypted_key, last4(api_key), hash_api_key(api_key),
-                 base_url, now, cred_id, user_id),
+                 base_url, now, now, cred_id, user_id),
             )
             # 取消该 provider 其他凭证的默认标记
             conn.execute(
@@ -613,10 +624,10 @@ def model_quick_setup(data: QuickSetupReq, request: Request):
         if existing_chat:
             chat_profile_id = existing_chat[0]
             conn.execute(
-                """UPDATE model_profile SET model=?, api_credential_id=?, health_status='active',
-                   is_default=1, is_active=1, updated_at=?
+                """UPDATE model_profile SET provider=?, base_url=?, model=?, api_credential_id=?, health_status='active',
+                   is_default=1, is_active=1, last_tested_at=?, last_error='', updated_at=?
                    WHERE id=? AND user_id=?""",
-                (default_model, cred_id, now, chat_profile_id, user_id),
+                (provider, base_url, default_model, cred_id, now, now, chat_profile_id, user_id),
             )
             # 取消该用户其他 chat 的默认标记
             conn.execute(
@@ -628,39 +639,36 @@ def model_quick_setup(data: QuickSetupReq, request: Request):
             chat_profile_id = uuid.uuid4().hex
             conn.execute(
                 """INSERT INTO model_profile
-                   (id, user_id, name, type, purpose, provider, model, api_credential_id,
-                    temperature, max_tokens, is_default, is_active, health_status, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   (id, user_id, name, type, purpose, provider, base_url, model, api_credential_id,
+                    temperature, max_tokens, is_default, is_active, health_status, last_tested_at, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (chat_profile_id, user_id, f"{display_name} 文本模型",
-                 "chat", "general", provider, default_model, cred_id,
-                 0.7, 8192, 1, 1, "active", now, now),
+                 "chat", "general", provider, base_url, default_model, cred_id,
+                 0.7, 8192, 1, 1, "active", now, now, now),
             )
 
     # 4. 如果有项目，只绑定 Chat 相关阶段（不处理 embeddingProfileId）
     if project_id:
-        try:
-            _require_project(user_id, project_id)
-            with get_db() as conn:
-                existing_pma = conn.execute(
-                    "SELECT id FROM project_model_assignment WHERE project_id=? AND user_id=?",
-                    (project_id, user_id),
-                ).fetchone()
-                if existing_pma:
-                    set_clauses = [f"{f}=?" for f in ASSIGNMENT_CHAT_FIELDS] + ["updated_at=?"]
-                    params = [chat_profile_id] * len(ASSIGNMENT_CHAT_FIELDS) + [now, project_id, user_id]
-                    conn.execute(
-                        f"UPDATE project_model_assignment SET {', '.join(set_clauses)} WHERE project_id=? AND user_id=?",
-                        params,
-                    )
-                else:
-                    all_fields = ["id", "user_id", "project_id"] + ASSIGNMENT_CHAT_FIELDS + ["created_at", "updated_at"]
-                    values = [uuid.uuid4().hex, user_id, project_id] + [chat_profile_id] * len(ASSIGNMENT_CHAT_FIELDS) + [now, now]
-                    conn.execute(
-                        f"INSERT INTO project_model_assignment ({', '.join(all_fields)}) VALUES ({', '.join(['?'] * len(all_fields))})",
-                        values,
-                    )
-        except HTTPException:
-            pass
+        _require_project(user_id, project_id)
+        with get_db() as conn:
+            existing_pma = conn.execute(
+                "SELECT id FROM project_model_assignment WHERE project_id=? AND user_id=?",
+                (project_id, user_id),
+            ).fetchone()
+            if existing_pma:
+                set_clauses = [f"{f}=?" for f in ASSIGNMENT_CHAT_FIELDS] + ["updated_at=?"]
+                params = [chat_profile_id] * len(ASSIGNMENT_CHAT_FIELDS) + [now, project_id, user_id]
+                conn.execute(
+                    f"UPDATE project_model_assignment SET {', '.join(set_clauses)} WHERE project_id=? AND user_id=?",
+                    params,
+                )
+            else:
+                all_fields = ["id", "user_id", "project_id"] + ASSIGNMENT_CHAT_FIELDS + ["created_at", "updated_at"]
+                values = [uuid.uuid4().hex, user_id, project_id] + [chat_profile_id] * len(ASSIGNMENT_CHAT_FIELDS) + [now, now]
+                conn.execute(
+                    f"INSERT INTO project_model_assignment ({', '.join(all_fields)}) VALUES ({', '.join(['?'] * len(all_fields))})",
+                    values,
+                )
 
     return {
         "success": True,
@@ -681,72 +689,7 @@ def model_quick_setup(data: QuickSetupReq, request: Request):
 def get_model_system_status(request: Request):
     """返回当前用户模型系统的真实可用状态。"""
     user_id = get_current_user(request)
-
-    with get_db() as conn:
-        # 查找可用的 Chat ModelProfile
-        chat_profile = conn.execute(
-            """SELECT mp.*, ac.status AS cred_status, ac.base_url AS cred_base_url,
-                      ac.provider AS cred_provider
-               FROM model_profile mp
-               JOIN api_credential ac ON ac.id = mp.api_credential_id AND ac.user_id = mp.user_id
-               WHERE mp.user_id=? AND mp.type='chat' AND mp.is_active=1
-                 AND mp.health_status='active' AND ac.status='active'
-               ORDER BY mp.is_default DESC, mp.last_tested_at DESC
-               LIMIT 1""",
-            (user_id,),
-        ).fetchone()
-
-        chat_ready = False
-        chat_model = ""
-        chat_provider = ""
-        chat_errors = []
-
-        if chat_profile:
-            profile = dict(chat_profile)
-            model = (profile.get("model") or "").strip()
-            base_url = (profile.get("cred_base_url") or "").strip()
-            provider = (profile.get("cred_provider") or "").strip()
-
-            if model.startswith(("http://", "https://")):
-                chat_errors.append("模型名被错误设置为 URL，请修复。")
-            elif not model:
-                chat_errors.append("模型名未设置。")
-            elif not base_url.startswith(("http://", "https://")):
-                chat_errors.append("Base URL 配置异常。")
-            elif base_url.endswith("/embeddings") or base_url.endswith("/chat/completions"):
-                chat_errors.append("Base URL 被错误拼接了接口路径，请修复。")
-            else:
-                chat_ready = True
-                chat_model = model
-                chat_provider = provider
-
-        # Embedding 状态（不影响 core status）
-        emb_profile = conn.execute(
-            """SELECT 1 FROM model_profile mp
-               JOIN api_credential ac ON ac.id = mp.api_credential_id AND ac.user_id = mp.user_id
-               WHERE mp.user_id=? AND mp.type='embedding' AND mp.is_active=1
-                 AND mp.health_status='active' AND ac.status='active'
-               LIMIT 1""",
-            (user_id,),
-        ).fetchone()
-        embedding_ready = emb_profile is not None
-
-        # Credential 数量
-        cred_count = conn.execute(
-            "SELECT COUNT(*) FROM api_credential WHERE user_id=? AND status='active'",
-            (user_id,),
-        ).fetchone()[0]
-
-    return {
-        "chatReady": chat_ready,
-        "embeddingReady": embedding_ready,
-        "chatModel": chat_model,
-        "chatProvider": chat_provider,
-        "chatErrors": chat_errors,
-        "activeCredentials": cred_count,
-        "coreReady": chat_ready,
-        "message": "文本生成可用" if chat_ready else ("配置异常" if chat_errors else "未完成配置"),
-    }
+    return get_chat_model_status(user_id)
 
 
 # ── 清空当前模型配置 ──
@@ -755,40 +698,7 @@ def get_model_system_status(request: Request):
 def reset_model_settings(request: Request):
     """清空当前用户所有模型配置（ApiCredential + ModelProfile），但保留项目和数据。"""
     user_id = get_current_user(request)
-    now = datetime.datetime.now().isoformat()
-
-    with get_db() as conn:
-        # 1. 清空 ProjectModelAssignment 中该用户所有 profileId 字段
-        conn.execute(
-            """UPDATE project_model_assignment SET
-               architecture_profile_id=NULL, worldbuilding_profile_id=NULL,
-               character_profile_id=NULL, outline_profile_id=NULL,
-               draft_profile_id=NULL, polish_profile_id=NULL,
-               review_profile_id=NULL, summary_profile_id=NULL,
-               feedback_profile_id=NULL, embedding_profile_id=NULL,
-               rerank_profile_id=NULL, updated_at=?
-               WHERE user_id=?""",
-            (now, user_id),
-        )
-
-        # 2. 删除该用户所有 ModelProfile
-        deleted_profiles = conn.execute(
-            "DELETE FROM model_profile WHERE user_id=?", (user_id,)
-        ).rowcount
-
-        # 3. 删除该用户所有 ApiCredential
-        deleted_creds = conn.execute(
-            "DELETE FROM api_credential WHERE user_id=?", (user_id,)
-        ).rowcount
-
-    return {
-        "success": True,
-        "message": "模型配置已清空，可以重新配置。",
-        "details": {
-            "deletedProfiles": deleted_profiles,
-            "deletedCredentials": deleted_creds,
-        },
-    }
+    return reset_user_model_settings(user_id)
 
 
 # ── 修复旧配置 ──
@@ -797,6 +707,7 @@ def reset_model_settings(request: Request):
 def repair_model_settings(request: Request):
     """修复当前用户的脏数据：provider、baseUrl、model URL、孤儿 ModelProfile。"""
     user_id = get_current_user(request)
+    return repair_user_model_settings(user_id)
     fixes = []
     now = datetime.datetime.now().isoformat()
 

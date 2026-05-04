@@ -14,7 +14,7 @@ import traceback
 from llm_errors import LLMInvocationError, build_empty_response_error
 from novel_generator.common import invoke_with_cleaning
 from novel_generator.task_manager import raise_if_cancelled
-from llm_adapters import create_llm_adapter
+from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter
 import prompt_definitions
 from utils import clear_file_content, save_string_to_txt
 

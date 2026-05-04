@@ -35,9 +35,6 @@ PROVIDER_DEFAULT_TEST_MODELS = {
     "custom": "",
     "local": "",
 }
-REMOVED_LEGACY_MARKERS = ("uni656", "flah", "bge-m3", "bge_m3", "bge m3")
-
-
 def _validate_model_not_url(model: str) -> None:
     """模型名不能是 URL——通常是 base_url 和 model 字段传反了。"""
     if model and (model.startswith("http://") or model.startswith("https://")):
@@ -59,9 +56,6 @@ def list_credentials(user_id: str) -> list[dict]:
         r.pop("api_key_hash", None)
         r.pop("headers_encrypted", None)
         r["is_default"] = bool(r.get("is_default"))
-        haystack = f"{r.get('name', '')} {r.get('provider', '')}".lower()
-        if any(marker in haystack for marker in REMOVED_LEGACY_MARKERS):
-            continue
         result.append(r)
     return result
 
@@ -82,14 +76,14 @@ def get_credential(cred_id: str, user_id: str) -> dict | None:
 
 
 def create_credential(user_id: str, data: dict) -> dict:
+    from backend.app.services.model_runtime import infer_provider, normalize_base_url
+
     name = (data.get("name") or "").strip()
     if not name:
         raise ValueError("凭证名称不能为空")
-    provider = data.get("provider", "openai")
+    provider = infer_provider(data.get("provider", "openai"), data.get("base_url", ""))
     api_key = (data.get("api_key") or "").strip()
-    base_url = (data.get("base_url") or "").strip()
-    if not base_url:
-        base_url = PROVIDER_DEFAULTS.get(provider, "")
+    base_url = normalize_base_url(provider, (data.get("base_url") or "").strip())
     is_local = provider == "local"
     if not is_local and not api_key:
         raise ValueError("API Key 不能为空（本地模型除外）")
@@ -134,6 +128,8 @@ def create_credential(user_id: str, data: dict) -> dict:
 
 
 def update_credential(cred_id: str, user_id: str, data: dict) -> dict:
+    from backend.app.services.model_runtime import infer_provider, normalize_base_url
+
     existing = get_credential(cred_id, user_id)
     if not existing:
         raise ValueError("凭证不存在")
@@ -141,6 +137,12 @@ def update_credential(cred_id: str, user_id: str, data: dict) -> dict:
     sets = []
     params = []
     now = datetime.datetime.now().isoformat()
+
+    if "provider" in data or "base_url" in data:
+        next_provider = infer_provider(data.get("provider", existing.get("provider", "openai")), data.get("base_url", existing.get("base_url", "")))
+        next_base_url = normalize_base_url(next_provider, data.get("base_url", existing.get("base_url", "")))
+        data["provider"] = next_provider
+        data["base_url"] = next_base_url
 
     for field in ["name", "provider", "base_url", "status"]:
         if field in data and data[field] is not None:
@@ -197,9 +199,7 @@ def delete_credential(cred_id: str, user_id: str, cascade: bool = False) -> None
 
         if linked and not cascade:
             count = len(linked)
-            raise ValueError(
-                f"该凭证被 {count} 个模型配置引用，请先删除或更换这些模型配置的绑定"
-            )
+            raise ValueError(f"API_CREDENTIAL_IN_USE:{count}")
 
         if linked and cascade:
             # 清空 ProjectModelAssignment 中引用这些 ModelProfile 的字段
@@ -257,45 +257,65 @@ def test_credential(cred_id: str, user_id: str) -> dict:
 
 
 def _test_chat(cred: dict, api_key: str) -> dict:
-    from llm_adapters import create_llm_adapter
-    from backend.app.services.model_runtime import _provider_to_interface
+    from backend.app.services.model_runtime import (
+        infer_provider,
+        test_chat_connection,
+    )
 
     now = datetime.datetime.now().isoformat()
     masked = mask_api_key(api_key)
-    provider = cred["provider"]
-    base_url = cred["base_url"] or PROVIDER_DEFAULTS.get(provider, "")
+    provider_source = cred["provider"]
+    raw_base_url = (cred.get("base_url") or "").strip()
+    provider = infer_provider(provider_source, raw_base_url)
+    base_url = raw_base_url or PROVIDER_DEFAULTS.get(provider, "")
     test_model = PROVIDER_DEFAULT_TEST_MODELS.get(provider, "") or "gpt-4o-mini"
     if not base_url.startswith(("http://", "https://")):
-        return {"success": False, "message": "服务地址配置异常，请清空后重新配置。"}
+        return {
+            "success": False,
+            "code": "BASE_URL_INVALID",
+            "message": "服务地址配置异常，请点击修复旧配置或清空后重配。",
+        }
     if provider in {"custom", "local"} and not PROVIDER_DEFAULT_TEST_MODELS.get(provider):
-        return {"success": False, "message": "自定义凭证测试需要先创建模型配置并填写测试模型。"}
-
-    _validate_model_not_url(test_model)
+        return {
+            "success": False,
+            "code": "MODEL_CONFIG_INVALID",
+            "message": "当前模型配置不完整，建议清空后重新配置。",
+        }
 
     try:
-        adapter = create_llm_adapter(
-            interface_format=_provider_to_interface(provider),
-            base_url=base_url,
-            model_name=test_model,
-            api_key=api_key,
-            temperature=0.7,
-            max_tokens=32,
-            timeout=25,
-        )
-    except Exception:
-        _set_cred_health(cred["id"], "invalid", "模型初始化失败", now)
-        return {"success": False, "message": "测试失败，请检查 API Key 和服务商是否匹配。"}
+        _validate_model_not_url(test_model)
+    except ValueError:
+        return {
+            "success": False,
+            "code": "MODEL_NAME_INVALID",
+            "message": "模型名配置异常，请清空后重新配置。",
+        }
 
-    response = adapter.invoke("Reply exactly: OK")
-    if response:
+    result = test_chat_connection(
+        provider=provider,
+        base_url=base_url,
+        model_name=test_model,
+        api_key=api_key,
+        timeout=25,
+    )
+    if result.get("success"):
         _set_cred_health(cred["id"], "active", "", now)
         logger.info("Credential %s test PASSED (provider=%s key=%s)", cred["id"], provider, masked)
         return {"success": True, "message": "测试成功"}
 
-    err = getattr(adapter, "last_error", "") or "无响应"
-    _set_cred_health(cred["id"], "invalid", err[:500], now)
-    logger.warning("Credential %s test FAILED (provider=%s key=%s): %s", cred["id"], provider, masked, err)
-    return {"success": False, "message": "测试失败，请检查 API Key 和服务商是否匹配。"}
+    _set_cred_health(cred["id"], "invalid", result.get("message", ""), now)
+    logger.warning(
+        "Credential %s test FAILED (provider=%s key=%s code=%s)",
+        cred["id"],
+        provider,
+        masked,
+        result.get("code", "API_KEY_INVALID"),
+    )
+    return {
+        "success": False,
+        "code": result.get("code") or "API_KEY_INVALID",
+        "message": result.get("message") or "测试失败，请检查 API Key 和服务商是否匹配。",
+    }
 
 
 def _test_local(cred: dict, api_key: str) -> dict:
@@ -311,7 +331,7 @@ def _test_local(cred: dict, api_key: str) -> dict:
     except Exception as e:
         now = datetime.datetime.now().isoformat()
         _set_cred_health(cred["id"], "invalid", str(e)[:500], now)
-        return {"success": False, "message": f"本地服务不可达: {e}"}
+        return {"success": False, "message": "本地服务不可达，请检查服务是否已启动。"}
 
 
 def _set_cred_health(cred_id: str, status: str, error: str, now: str) -> None:

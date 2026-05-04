@@ -7,8 +7,10 @@
 """
 import os
 import logging
-from llm_adapters import create_llm_adapter
-from embedding_adapters import create_embedding_adapter
+from backend.app.services.model_runtime import (
+    create_chat_adapter_from_config as create_llm_adapter,
+    create_embedding_adapter_from_config,
+)
 import prompt_definitions
 from novel_generator.common import invoke_with_cleaning
 from novel_generator.task_manager import raise_if_cancelled
@@ -110,11 +112,11 @@ def finalize_chapter(
 
     _check_cancel()
     if ctx.embedding.api_key:
-        emb = create_embedding_adapter(
-            ctx.embedding.interface_format,
-            ctx.embedding.api_key,
-            ctx.embedding.base_url,
-            ctx.embedding.model_name,
+        emb = create_embedding_adapter_from_config(
+            interface_format=ctx.embedding.interface_format,
+            api_key=ctx.embedding.api_key,
+            base_url=ctx.embedding.base_url,
+            model_name=ctx.embedding.model_name,
         )
         update_vector_store(emb, chapter_text, filepath)
 

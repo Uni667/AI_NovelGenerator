@@ -28,7 +28,7 @@ def create_project_file(
     file_size = len(content.encode("utf-8"))
 
     if is_current:
-        _clear_current_for_type(project_id, type, now)
+        _clear_current_for_type(project_id, user_id, type, now)
 
     with get_db() as conn:
         conn.execute(
@@ -84,7 +84,7 @@ def set_current_file(file_id: str, user_id: str) -> dict | None:
     if not record:
         return None
     now = datetime.datetime.now().isoformat()
-    _clear_current_for_type(record["project_id"], record["type"], now)
+    _clear_current_for_type(record["project_id"], user_id, record["type"], now)
     with get_db() as conn:
         conn.execute(
             "UPDATE project_file SET is_current=1, updated_at=? WHERE id=? AND user_id=?",
@@ -103,11 +103,11 @@ def delete_project_file(file_id: str, user_id: str) -> bool:
     return True
 
 
-def _clear_current_for_type(project_id: str, file_type: str, now: str) -> None:
+def _clear_current_for_type(project_id: str, user_id: str, file_type: str, now: str) -> None:
     with get_db() as conn:
         conn.execute(
-            "UPDATE project_file SET is_current=0, updated_at=? WHERE project_id=? AND type=? AND is_current=1",
-            (now, project_id, file_type),
+            "UPDATE project_file SET is_current=0, updated_at=? WHERE project_id=? AND user_id=? AND type=? AND is_current=1",
+            (now, project_id, user_id, file_type),
         )
 
 

@@ -26,8 +26,8 @@ def _resolve_embedding_config(user_id: str, project_id: str) -> dict:
 
     try:
         rt = get_runtime_config(user_id, "embedding", project_id)
-    except ConfigError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ConfigError:
+        return {}
 
     return {
         "api_key": rt.api_key,

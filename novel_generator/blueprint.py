@@ -11,7 +11,7 @@ import re
 import logging
 from novel_generator.common import invoke_with_cleaning
 from novel_generator.task_manager import raise_if_cancelled, TaskCancelledError
-from llm_adapters import create_llm_adapter
+from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter
 import prompt_definitions
 from utils import read_file, clear_file_content, save_string_to_txt
 

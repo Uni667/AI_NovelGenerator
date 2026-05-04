@@ -10,7 +10,7 @@ import os
 import json
 import logging
 import re
-from llm_adapters import create_llm_adapter
+from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter
 import prompt_definitions
 from chapter_directory_parser import get_chapter_info_from_blueprint
 from novel_generator.common import invoke_with_cleaning
@@ -334,12 +334,12 @@ def build_chapter_prompt(
 
         filtered_context = "（知识库处理失败）"
         if ctx.embedding.api_key:
-            from embedding_adapters import create_embedding_adapter
-            emb = create_embedding_adapter(
-                ctx.embedding.interface_format,
-                ctx.embedding.api_key,
-                ctx.embedding.base_url,
-                ctx.embedding.model_name,
+            from backend.app.services.model_runtime import create_embedding_adapter_from_config
+            emb = create_embedding_adapter_from_config(
+                interface_format=ctx.embedding.interface_format,
+                api_key=ctx.embedding.api_key,
+                base_url=ctx.embedding.base_url,
+                model_name=ctx.embedding.model_name,
             )
             store = load_vector_store(emb, filepath)
             if store:

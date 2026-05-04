@@ -227,6 +227,7 @@ export default function ProjectDashboard() {
   const [modelProfiles, setModelProfiles] = useState<any[]>([])
   const [modelAssignment, setModelAssignment] = useState<Record<string, string | null>>({})
   const [modelAssignmentSaving, setModelAssignmentSaving] = useState(false)
+  const [showProjectModelAdvanced, setShowProjectModelAdvanced] = useState(false)
   const [selectedOutputFile, setSelectedOutputFile] = useState<(typeof GENERATED_FILES)[number]["filename"]>(GENERATED_FILES[0].filename)
   const [outputFileContent, setOutputFileContent] = useState("")
   const [outputFileLoading, setOutputFileLoading] = useState(false)
@@ -305,18 +306,31 @@ export default function ProjectDashboard() {
     try {
       const status = await api.config.modelStatus()
       if (status.chatReady) return true
+      const message =
+        status.state === "empty" || (!status.hasCredential && !status.hasChatProfile)
+          ? "你还没有配置文本生成模型，请先完成模型设置。"
+          : "模型配置异常，请先重新测试或清空后重配。"
       toast.error(
         <div className="flex flex-col gap-1">
-          <span>{status.chatErrors?.length ? "模型配置异常，请先重新测试或清空后重配。" : "你还没有配置文本生成模型，请先完成模型设置。"}</span>
+          <span>{message}</span>
           <Button variant="link" size="sm" className="h-auto p-0 justify-start text-white underline" onClick={() => router.push("/settings")}>
             去模型设置
           </Button>
-        </div> as any,
+        </div>,
         { duration: 8000 },
       )
       return false
     } catch {
-      return true // 如果检查接口挂了，让用户尝试生成，后端会报具体错误
+      toast.error(
+        <div className="flex flex-col gap-1">
+          <span>模型配置状态暂时无法确认，请先到模型设置检查。</span>
+          <Button variant="link" size="sm" className="h-auto p-0 justify-start text-white underline" onClick={() => router.push("/settings")}>
+            去模型设置
+          </Button>
+        </div>,
+        { duration: 8000 },
+      )
+      return false
     }
   }
 
@@ -723,7 +737,7 @@ export default function ProjectDashboard() {
     }
   }
 
-  const handleFinalizeWorkbenchChapter = () => {
+  const handleFinalizeWorkbenchChapter = async () => {
     if (!chapterEditorContent.trim()) {
       toast.error("章节内容不能为空")
       return
@@ -732,6 +746,8 @@ export default function ProjectDashboard() {
       toast.error("当前已有生成任务正在运行")
       return
     }
+    const modelOk = await checkModelReady()
+    if (!modelOk) return
     api.chapters.update(id, selectedChapterNumber, { content: chapterEditorContent })
       .then((result) => {
         setChapterEditorMeta(result.meta)
@@ -2185,29 +2201,58 @@ export default function ProjectDashboard() {
 
           <Card>
             <CardHeader>
-              <CardTitle>模型分配</CardTitle>
-              <CardDescription>为每个生成阶段选择使用的模型配置，留空则使用默认模型。</CardDescription>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle>高级模型分配</CardTitle>
+                  <CardDescription>仅用于排查问题，普通用户不需要修改。</CardDescription>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setShowProjectModelAdvanced((value) => !value)}>
+                  {showProjectModelAdvanced ? "收起高级设置" : "展开高级设置"}
+                </Button>
+              </div>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {([
-                  { field: "architecture_profile_id", label: "架构生成" },
-                  { field: "outline_profile_id", label: "章节目录" },
-                  { field: "draft_profile_id", label: "章节草稿" },
-                  { field: "polish_profile_id", label: "章节定稿" },
-                  { field: "review_profile_id", label: "一致性审校" },
-                ] as const).map(({ field, label }) => (
-                  <div key={field}>
-                    <Label>{label}</Label>
+            {showProjectModelAdvanced && (
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {([
+                    { field: "architecture_profile_id", label: "架构生成" },
+                    { field: "outline_profile_id", label: "章节目录" },
+                    { field: "draft_profile_id", label: "章节草稿" },
+                    { field: "polish_profile_id", label: "章节定稿" },
+                    { field: "review_profile_id", label: "一致性审校" },
+                  ] as const).map(({ field, label }) => (
+                    <div key={field}>
+                      <Label>{label}</Label>
+                      <Select
+                        value={modelAssignment[field] || ""}
+                        onValueChange={(v) => setModelAssignment(prev => ({ ...prev, [field]: v || null }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="默认文本模型" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">默认文本模型</SelectItem>
+                          {modelProfiles
+                            .filter(p => p.type === "chat" && p.is_active)
+                            .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                            .map(p => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.name} ({p.provider}/{p.model})
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                  <div>
+                    <Label>知识库向量化</Label>
                     <Select
-                      value={modelAssignment[field] || ""}
-                      onValueChange={(v) => setModelAssignment(prev => ({ ...prev, [field]: v || null }))}
+                      value={modelAssignment["embedding_profile_id"] || ""}
+                      onValueChange={(v) => setModelAssignment(prev => ({ ...prev, embedding_profile_id: v || null }))}
                     >
-                      <SelectTrigger><SelectValue placeholder="默认模型" /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="不使用" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">默认模型</SelectItem>
+                        <SelectItem value="">不使用</SelectItem>
                         {modelProfiles
-                          .filter(p => p.type === "chat" && p.is_active)
+                          .filter(p => p.type === "embedding" && p.is_active)
                           .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
                           .map(p => (
                             <SelectItem key={p.id} value={p.id}>
@@ -2217,35 +2262,15 @@ export default function ProjectDashboard() {
                       </SelectContent>
                     </Select>
                   </div>
-                ))}
-                <div>
-                  <Label>Embedding 向量化</Label>
-                  <Select
-                    value={modelAssignment["embedding_profile_id"] || ""}
-                    onValueChange={(v) => setModelAssignment(prev => ({ ...prev, embedding_profile_id: v || null }))}
-                  >
-                    <SelectTrigger><SelectValue placeholder="不使用" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">不使用</SelectItem>
-                      {modelProfiles
-                        .filter(p => p.type === "embedding" && p.is_active)
-                        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
-                        .map(p => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name} ({p.provider}/{p.model})
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
                 </div>
-              </div>
-              <div className="mt-4 flex justify-end">
-                <Button onClick={handleSaveModelAssignment} disabled={modelAssignmentSaving}>
-                  {modelAssignmentSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                  保存分配
-                </Button>
-              </div>
-            </CardContent>
+                <div className="mt-4 flex justify-end">
+                  <Button onClick={handleSaveModelAssignment} disabled={modelAssignmentSaving}>
+                    {modelAssignmentSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                    保存分配
+                  </Button>
+                </div>
+              </CardContent>
+            )}
           </Card>
         </TabsContent>
       </Tabs>

@@ -87,12 +87,12 @@ def import_knowledge_file(
         logging.warning("知识库文件内容为空。")
         return {"success": False, "message": f"知识库文件为空: {file_path}", "paragraph_count": 0, "mode": "empty"}
     paragraphs = advanced_split_content(content)
-    from embedding_adapters import create_embedding_adapter
-    embedding_adapter = create_embedding_adapter(
-        embedding_interface_format,
-        embedding_api_key,
-        embedding_url if embedding_url else "http://localhost:11434/api",
-        embedding_model_name
+    from backend.app.services.model_runtime import create_embedding_adapter_from_config
+    embedding_adapter = create_embedding_adapter_from_config(
+        interface_format=embedding_interface_format,
+        api_key=embedding_api_key,
+        base_url=embedding_url if embedding_url else "http://localhost:11434/api",
+        model_name=embedding_model_name,
     )
     _ensure_vectorstore()
     store = _load_vs(embedding_adapter, filepath)

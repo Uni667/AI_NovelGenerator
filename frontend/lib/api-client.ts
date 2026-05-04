@@ -2,38 +2,80 @@ import { getToken } from "./auth"
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 
+const KNOWN_ERROR_MESSAGES: Record<string, string> = {
+  AUTH_REQUIRED: "请先登录。",
+  PROJECT_NOT_FOUND: "项目不存在或你没有权限访问。",
+  PROJECT_FORBIDDEN: "项目不存在或你没有权限访问。",
+  API_CREDENTIAL_IN_USE: "这个模型服务账号正在被模型配置使用。你可以选择同时删除关联模型配置。",
+  API_CREDENTIAL_DISABLED: "API Key 尚未通过测试。",
+  API_KEY_DECRYPT_FAILED: "API Key 读取失败，请重新填写后再试。",
+  API_KEY_INVALID: "测试失败，请检查 API Key 和服务商是否匹配。",
+  BASE_URL_INVALID: "服务地址配置异常，请点击修复旧配置或清空后重配。",
+  MODEL_NAME_INVALID: "模型名配置异常，请清空后重新配置。",
+  MODEL_CONFIG_INVALID: "当前模型配置不完整，建议清空后重新配置。",
+  MODEL_CONFIG_INCOMPLETE: "当前模型配置不完整，建议清空后重新配置。",
+  MODEL_PROFILE_NOT_FOUND: "你还没有配置文本生成模型，请先完成模型设置。",
+  MODEL_TYPE_MISMATCH: "当前阶段选择的模型类型不匹配。",
+  SERVER_INTERFACE_NOT_FOUND: "服务器接口未找到，请重新部署后再试。",
+}
+
+class ApiError extends Error {
+  code?: string
+  details?: Record<string, unknown>
+  status?: number
+
+  constructor(message: string, code?: string, details?: Record<string, unknown>, status?: number) {
+    super(message)
+    this.name = "ApiError"
+    this.code = code
+    this.details = details
+    this.status = status
+  }
+}
+
 function authHeaders(): Record<string, string> {
   const token = getToken()
   if (!token) return {}
   return { Authorization: `Bearer ${token}` }
 }
 
-function formatErrorDetail(detail: unknown): string {
+function sanitizeMessage(message: string, status?: number): string {
+  const text = (message || "").trim()
+  if (status === 404) return "服务器接口未找到，请重新部署后再试。"
+  if (!text) return "请求失败，请稍后重试。"
+  if (text.startsWith("<") || text.includes("Traceback") || text.includes("stack") || text.length > 180) {
+    return "请求失败，请稍后重试。"
+  }
+  if (text.includes("API Key") && (text.includes("sk-") || text.length > 80)) {
+    return "测试失败，请检查 API Key 和服务商是否匹配。"
+  }
+  if (text.includes("模型名") && text.includes("URL")) return "模型名配置异常，请清空后重新配置。"
+  if (text.includes("Base URL") || text.includes("baseUrl")) return "服务地址配置异常，请点击修复旧配置或清空后重配。"
+  if (text.includes("被") && text.includes("模型配置") && text.includes("引用")) {
+    return "这个模型服务账号正在被模型配置使用。你可以选择同时删除关联模型配置。"
+  }
+  return text
+}
+
+function formatErrorDetail(detail: unknown, status?: number): { message: string; code?: string; details?: Record<string, unknown> } {
   if (Array.isArray(detail)) {
-    return detail
+    const message = detail
       .map((item: any) => {
         const loc = Array.isArray(item?.loc) ? item.loc.join(".") : ""
-        const msg = item?.msg || JSON.stringify(item)
+        const msg = item?.msg || "参数格式不正确。"
         return loc ? `${loc}: ${msg}` : msg
       })
       .join("; ")
+    return { message: sanitizeMessage(message, status) }
   }
   if (detail && typeof detail === "object") {
-    const value = detail as { message?: string; error?: { message?: string; code?: string }; code?: string }
+    const value = detail as { message?: string; error?: { message?: string; code?: string; details?: Record<string, unknown> }; code?: string; details?: Record<string, unknown> }
     const code = value.error?.code || value.code
-    const known: Record<string, string> = {
-      AUTH_REQUIRED: "请先登录。",
-      PROJECT_NOT_FOUND: "项目不存在或你没有权限访问。",
-      PROJECT_FORBIDDEN: "项目不存在或你没有权限访问。",
-      MODEL_PROFILE_NOT_FOUND: "当前阶段没有配置模型，请先到项目参数中选择模型。",
-      MODEL_TYPE_MISMATCH: "当前阶段选择的模型类型不匹配。",
-      API_CREDENTIAL_DISABLED: "API 凭证不可用，请检查后重新启用。",
-      API_KEY_DECRYPT_FAILED: "API Key 解密失败，请重新填写 API Key。",
-    }
-    if (code && known[code]) return known[code]
-    return value.error?.message || value.message || "请求失败，请稍后重试。"
+    const details = value.error?.details || value.details
+    if (code && KNOWN_ERROR_MESSAGES[code]) return { message: KNOWN_ERROR_MESSAGES[code], code, details }
+    return { message: sanitizeMessage(value.error?.message || value.message || "请求失败，请稍后重试。", status), code, details }
   }
-  return typeof detail === "string" ? detail : ""
+  return { message: typeof detail === "string" ? sanitizeMessage(detail, status) : "" }
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -44,19 +86,23 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     let message = res.statusText
+    let code: string | undefined
+    let details: Record<string, unknown> | undefined
     try {
       const body = await res.json()
-      message = formatErrorDetail(body.detail) || body.message || message
+      const formatted = formatErrorDetail(body.detail, res.status)
+      message = formatted.message || sanitizeMessage(body.message || message, res.status)
+      code = formatted.code
+      details = formatted.details
     } catch {
-      const text = await res.text()
-      if (text) message = text
+      message = sanitizeMessage("", res.status)
     }
     if (res.status === 401 && typeof window !== "undefined") {
       const { clearToken } = await import("./auth")
       clearToken()
       // 不在此处硬刷新，由 AuthGuard 统一处理路由跳转，避免刷新循环
     }
-    throw new Error(message || `请求失败：${method} ${url} (${res.status})`)
+    throw new ApiError(message || `请求失败：${method} ${url} (${res.status})`, code, details, res.status)
   }
   const contentType = res.headers.get("content-type") || ""
   if (contentType.includes("application/json")) {
@@ -118,7 +164,7 @@ export const api = {
     modelQuickSetup: (data: { provider: string; api_key: string; project_id?: string }) =>
       request<{ success: boolean; data: { message: string; provider: string; chatReady: boolean; embeddingReady: boolean; chatModel: string; embeddingMessage: string } }>("/api/user/model-quick-setup", { method: "POST", body: JSON.stringify(data) }),
     modelStatus: () =>
-      request<{ chatReady: boolean; embeddingReady: boolean; chatModel: string; chatProvider: string; chatErrors: string[]; activeCredentials: number; coreReady: boolean; message: string }>("/api/user/model-settings/status"),
+      request<{ chatReady: boolean; coreReady: boolean; embeddingReady: boolean; embeddingMessage?: string; state?: "empty" | "invalid" | "ready"; title?: string; description?: string; message?: string; provider?: string; providerLabel?: string; chatProvider?: string; chatModel?: string; lastTestedAt?: string; recentTestedAt?: string; chatErrors?: string[]; activeCredentials?: number; hasCredential?: boolean; hasChatProfile?: boolean }>("/api/user/model-settings/status"),
     modelReset: () =>
       request<{ success: boolean; message: string }>("/api/user/model-settings/reset", { method: "POST" }),
     modelRepair: () =>
@@ -160,10 +206,10 @@ export const api = {
           let message = res.statusText
           try {
             const body = await res.json()
-            message = formatErrorDetail(body.detail) || body.message || message
+            const formatted = formatErrorDetail(body.detail, res.status)
+            message = formatted.message || sanitizeMessage(body.message || message, res.status)
           } catch {
-            const text = await res.text()
-            if (text) message = text
+            message = sanitizeMessage("", res.status)
           }
           throw new Error(`知识库上传失败: ${message}`)
         }
@@ -247,10 +293,10 @@ export const api = {
           let message = res.statusText
           try {
             const body = await res.json()
-            message = formatErrorDetail(body.detail) || body.message || message
+            const formatted = formatErrorDetail(body.detail, res.status)
+            message = formatted.message || sanitizeMessage(body.message || message, res.status)
           } catch {
-            const text = await res.text()
-            if (text) message = text
+            message = sanitizeMessage("", res.status)
           }
           throw new Error(`导入失败: ${message}`)
         }
