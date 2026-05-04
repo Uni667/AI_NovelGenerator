@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -29,6 +29,7 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectId: string
+  defaultFileType?: "architecture" | "outline"
   onImportSuccess: () => void
 }
 
@@ -36,14 +37,19 @@ export function FileImportDialog({
   open,
   onOpenChange,
   projectId,
+  defaultFileType = "architecture",
   onImportSuccess,
 }: Props) {
   const [file, setFile] = useState<File | null>(null)
-  const [fileType, setFileType] = useState<string>("architecture")
+  const [fileType, setFileType] = useState<string>(defaultFileType)
   const [setCurrent, setSetCurrent] = useState(true)
   const [importing, setImporting] = useState(false)
   const [preview, setPreview] = useState("")
   const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setFileType(defaultFileType)
+  }, [defaultFileType])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]

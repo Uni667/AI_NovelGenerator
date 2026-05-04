@@ -15,7 +15,7 @@ function parseEventData(data: string) {
   try {
     return JSON.parse(data) as unknown
   } catch {
-    return { message: "连接被中断，未能解析服务端返回。" }
+    return { message: "连接已中断，未能解析服务端返回。" }
   }
 }
 
@@ -28,7 +28,7 @@ function formatTerminalError(payload: any): string {
     case "config_missing":
       return "模型配置缺失或无效，请检查模型名称、Base URL 和 API Key。"
     case "auth_failed":
-      return "模型服务认证失败，请检查 API Key 或账号权限。"
+      return "模型服务认证失败，请检查 API Key 或账户权限。"
     case "network_error":
       return "无法连接到模型服务，请检查网络、Base URL 或代理设置。"
     case "timeout":
@@ -46,6 +46,11 @@ function formatTerminalError(payload: any): string {
   }
 }
 
+interface ConnectOptions {
+  preserveEvents?: boolean
+  isReconnect?: boolean
+}
+
 export function useSSE() {
   const [events, setEvents] = useState<SSEEvent[]>([])
   const [isConnected, setIsConnected] = useState(false)
@@ -54,6 +59,10 @@ export function useSSE() {
   const connectionSeqRef = useRef(0)
   const errorRef = useRef<string | null>(null)
   const doneReceivedRef = useRef(false)
+  const urlRef = useRef<string | null>(null)
+  const reconnectAttemptsRef = useRef(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const manualDisconnectRef = useRef(false)
 
   const addEvent = useCallback((event: SSEEvent) => {
     setEvents((prev) => {
@@ -62,21 +71,49 @@ export function useSSE() {
     })
   }, [])
 
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+  }, [])
+
   const disconnect = useCallback(() => {
+    manualDisconnectRef.current = true
+    clearReconnectTimer()
     if (sourceRef.current) {
       sourceRef.current.close()
       sourceRef.current = null
     }
     setIsConnected(false)
-  }, [])
+  }, [clearReconnectTimer])
+
+  const connectRef = useRef<(url: string, options?: ConnectOptions) => void>(() => {})
 
   const connect = useCallback(
-    (url: string) => {
-      disconnect()
-      setEvents([])
-      setError(null)
-      errorRef.current = null
+    (url: string, options?: ConnectOptions) => {
+      const preserveEvents = options?.preserveEvents ?? false
+      const isReconnect = options?.isReconnect ?? false
+
+      clearReconnectTimer()
+      if (sourceRef.current) {
+        sourceRef.current.close()
+        sourceRef.current = null
+      }
+
+      if (!preserveEvents) {
+        setEvents([])
+      }
+
+      if (!isReconnect) {
+        setError(null)
+        errorRef.current = null
+        reconnectAttemptsRef.current = 0
+      }
+
+      manualDisconnectRef.current = false
       doneReceivedRef.current = false
+      urlRef.current = url
       connectionSeqRef.current += 1
       const connectionId = connectionSeqRef.current
 
@@ -95,7 +132,9 @@ export function useSSE() {
 
       es.onopen = () => {
         if (!isActiveConnection()) return
+        reconnectAttemptsRef.current = 0
         setIsConnected(true)
+        setError(null)
       }
 
       es.addEventListener("progress", (e) => {
@@ -128,6 +167,8 @@ export function useSSE() {
           typeof parsed === "object" &&
           (parsed as Record<string, unknown>).terminal
         ) {
+          doneReceivedRef.current = true
+          clearReconnectTimer()
           setIsConnected(false)
           es.close()
           if (sourceRef.current === es) sourceRef.current = null
@@ -137,6 +178,7 @@ export function useSSE() {
       es.addEventListener("done", (e) => {
         if (!isActiveConnection()) return
         doneReceivedRef.current = true
+        clearReconnectTimer()
         setIsConnected(false)
         const parsed =
           "data" in e && typeof e.data === "string"
@@ -150,6 +192,7 @@ export function useSSE() {
       es.addEventListener("cancelled", (e) => {
         if (!isActiveConnection()) return
         doneReceivedRef.current = true
+        clearReconnectTimer()
         setIsConnected(false)
         const parsed =
           "data" in e && typeof e.data === "string"
@@ -162,29 +205,39 @@ export function useSSE() {
 
       es.onerror = () => {
         if (!isActiveConnection()) return
-        // 如果已经收到 done/cancelled 事件, onerror 是正常的连接关闭,不报错
-        if (doneReceivedRef.current) {
+        if (doneReceivedRef.current || manualDisconnectRef.current) {
+          clearReconnectTimer()
           setIsConnected(false)
           es.close()
           if (sourceRef.current === es) sourceRef.current = null
           return
         }
+
         const message =
           errorRef.current ||
           "生成连接已中断，请检查后端服务或模型服务连通性。"
         setError(message)
         errorRef.current = message
-        addEvent({
-          type: "error",
-          data: { message, status: "failed", terminal: true },
-        })
         setIsConnected(false)
         es.close()
         if (sourceRef.current === es) sourceRef.current = null
+
+        if (!urlRef.current) return
+        reconnectAttemptsRef.current += 1
+        const delay = Math.min(5000, reconnectAttemptsRef.current * 1000)
+        clearReconnectTimer()
+        reconnectTimerRef.current = setTimeout(() => {
+          if (!urlRef.current || manualDisconnectRef.current || doneReceivedRef.current) return
+          connectRef.current(urlRef.current, { preserveEvents: true, isReconnect: true })
+        }, delay)
       }
     },
-    [addEvent, disconnect],
+    [addEvent, clearReconnectTimer],
   )
+
+  useEffect(() => {
+    connectRef.current = connect
+  }, [connect])
 
   useEffect(() => {
     return () => disconnect()

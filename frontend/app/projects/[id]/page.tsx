@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation"
 import { useProject, useProjectConfig, useChapters, useUpdateProjectConfig } from "@/lib/hooks/use-projects"
 import { useSSE } from "@/lib/hooks/use-sse"
 import { api } from "@/lib/api-client"
-import { PLATFORM_CONFIG, PLATFORMS, ProjectFile, TASK_STATUS_LABELS, TASK_TYPE_LABELS } from "@/lib/types"
+import { PLATFORM_CONFIG, PLATFORMS, ProjectFile } from "@/lib/types"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -175,6 +175,22 @@ const createClientTaskId = () => {
   }
 }
 
+const TASK_KIND_TO_ACTION = {
+  architecture: "architecture",
+  blueprint: "blueprint",
+  chapter: "chapter",
+  chapter_batch: "chapterBatch",
+  finalize: "finalize",
+} as const
+
+const TASK_KIND_TO_LABEL = {
+  architecture: "生成架构",
+  blueprint: "生成章节目录",
+  chapter: "生成章节草稿",
+  chapter_batch: "批量生成章节",
+  finalize: "章节定稿",
+} as const
+
 const formatFileSize = (size?: number) => {
   if (!size || size <= 0) return "0 B"
   const units = ["B", "KB", "MB", "GB"]
@@ -247,6 +263,7 @@ export default function ProjectDashboard() {
   const [generationTaskId, setGenerationTaskId] = useState<string | null>(null)
   const [generationTaskLabel, setGenerationTaskLabel] = useState("")
   const [generationStopping, setGenerationStopping] = useState(false)
+  const [generationRecovering, setGenerationRecovering] = useState(false)
   const [knowledgeFiles, setKnowledgeFiles] = useState<any[]>([])
   const [knowledgeLoading, setKnowledgeLoading] = useState(false)
   const [knowledgeError, setKnowledgeError] = useState("")
@@ -337,11 +354,42 @@ export default function ProjectDashboard() {
   const outputFileRequestId = useRef(0)
   const autoOpenFilesAfterDoneRef = useRef(false)
   const handledGenerationTaskIdRef = useRef<string | null>(null)
+  const generationRecoveryNoticeRef = useRef<string | null>(null)
 
   useEffect(() => {
     api.config.listProfiles().then(setModelProfiles).catch(() => {})
     api.modelAssignment.get(id).then(setModelAssignment).catch(() => {})
   }, [id])
+
+  useEffect(() => {
+    if (!id) return
+    if (generationTaskId) return
+
+    let cancelled = false
+
+    const restoreActiveTask = async () => {
+      try {
+        const tasks = await api.generate.listTasks(id)
+        if (cancelled || generationTaskId) return
+        const activeTask = (tasks || []).find((task: any) => task?.status === "running" || task?.status === "cancelling")
+        if (!activeTask?.task_id) return
+
+        const restoredAction = TASK_KIND_TO_ACTION[activeTask.kind as keyof typeof TASK_KIND_TO_ACTION] || null
+        setGenerationTaskId(activeTask.task_id)
+        setGenerationTaskLabel(TASK_KIND_TO_LABEL[activeTask.kind as keyof typeof TASK_KIND_TO_LABEL] || activeTask.message || "当前生成任务")
+        setSseAction(restoredAction)
+        setGenerationRecovering(true)
+        setGenerationStopping(activeTask.status === "cancelling")
+      } catch {
+        // Ignore restore failures; users can still start tasks manually.
+      }
+    }
+
+    void restoreActiveTask()
+    return () => {
+      cancelled = true
+    }
+  }, [generationTaskId, id])
 
   useEffect(() => {
     if (!config) return
@@ -642,6 +690,8 @@ export default function ProjectDashboard() {
     setGenerationTaskId(null)
     setGenerationTaskLabel("")
     setGenerationStopping(false)
+    setGenerationRecovering(false)
+    generationRecoveryNoticeRef.current = null
   }, [])
 
   const refreshKnowledgeFiles = useCallback(async () => {
@@ -684,6 +734,42 @@ export default function ProjectDashboard() {
       loadWorkbenchChapter(selectedChapterNumber)
     }
   }, [activeTab, loadWorkbenchChapter, selectedChapterNumber])
+
+  const finalizeGenerationTask = useCallback((taskId: string, status: "done" | "cancelled" | "failed", message?: string) => {
+    setGenerationRecovering(false)
+    handledGenerationTaskIdRef.current = taskId
+    setGenerationStopping(false)
+    setGenerationTaskId(null)
+    setGenerationTaskLabel("")
+    generationRecoveryNoticeRef.current = null
+
+    if (status === "cancelled") {
+      toast.info(message || "生成任务已取消")
+      return
+    }
+
+    if (status === "failed") {
+      toast.error(message || "生成任务失败")
+      return
+    }
+
+    toast.success(message || "生成已完成")
+
+    if (sseAction === "architecture" || sseAction === "blueprint") {
+      void loadArchitectureAndOutline()
+      void queryClient.invalidateQueries({ queryKey: ["chapters", id] })
+    }
+
+    if (activeTab === "generation" && (sseAction === "architecture" || sseAction === "blueprint") && !autoOpenFilesAfterDoneRef.current) {
+      autoOpenFilesAfterDoneRef.current = true
+      setActiveTab("files")
+    }
+
+    if (sseAction === "chapter" || sseAction === "chapterBatch" || sseAction === "finalize") {
+      void loadWorkbenchChapter(selectedChapterNumber)
+      void queryClient.invalidateQueries({ queryKey: ["chapters", id] })
+    }
+  }, [activeTab, id, loadArchitectureAndOutline, loadWorkbenchChapter, queryClient, selectedChapterNumber, sseAction])
 
   const handleSaveWorkbenchChapter = async () => {
     if (!chapterEditorContent.trim()) {
@@ -840,13 +926,135 @@ export default function ProjectDashboard() {
   }, [generationTaskId, isConnected, clearGenerationState, events])
 
   useEffect(() => {
+    if (!generationTaskId || !sseError) return
+    if (lastCancelled || lastDone || lastError) return
+
+    let cancelled = false
+
+    const inspectTask = async () => {
+      try {
+        const task = await api.generate.taskStatus(id, generationTaskId)
+        if (cancelled) return
+
+        if (task?.status === "running" || task?.status === "cancelling") {
+          setGenerationRecovering(true)
+          if (generationRecoveryNoticeRef.current !== generationTaskId) {
+            toast.info("实时连接已断开，任务仍在后台继续，正在持续检查状态")
+            generationRecoveryNoticeRef.current = generationTaskId
+          }
+          return
+        }
+
+        if (task?.status === "done") {
+          finalizeGenerationTask(generationTaskId, "done", task?.message || "生成已完成")
+          return
+        }
+
+        if (task?.status === "cancelled") {
+          finalizeGenerationTask(generationTaskId, "cancelled", task?.message || "生成任务已取消")
+          return
+        }
+
+        if (task?.status === "failed") {
+          finalizeGenerationTask(generationTaskId, "failed", task?.message || sseError)
+          return
+        }
+
+        setGenerationRecovering(false)
+        generationRecoveryNoticeRef.current = null
+        toast.error(sseError)
+        clearGenerationState()
+      } catch {
+        if (cancelled) return
+        setGenerationRecovering(true)
+      }
+    }
+
+    void inspectTask()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    activeTab,
+    clearGenerationState,
+    generationTaskId,
+    id,
+    lastCancelled,
+    lastDone,
+    lastError,
+    loadArchitectureAndOutline,
+    loadWorkbenchChapter,
+    finalizeGenerationTask,
+    queryClient,
+    selectedChapterNumber,
+    sseAction,
+    sseError,
+  ])
+
+  useEffect(() => {
+    if (!generationTaskId) return
+    if (isConnected) return
+    if (!generationRecovering) return
+
+    let cancelled = false
+
+    const pollTask = async () => {
+      try {
+        const task = await api.generate.taskStatus(id, generationTaskId)
+        if (cancelled) return
+
+        if (task?.status === "running" || task?.status === "cancelling") {
+          return
+        }
+
+        if (task?.status === "done") {
+          finalizeGenerationTask(generationTaskId, "done", task?.message || "生成已完成")
+          return
+        }
+
+        if (task?.status === "cancelled") {
+          finalizeGenerationTask(generationTaskId, "cancelled", task?.message || "生成任务已取消")
+          return
+        }
+
+        if (task?.status === "failed") {
+          finalizeGenerationTask(generationTaskId, "failed", task?.message || "生成任务失败")
+          return
+        }
+      } catch {
+        // Keep polling; transient status fetch failures should not discard the task.
+      }
+    }
+
+    void pollTask()
+    const timer = window.setInterval(() => {
+      void pollTask()
+    }, 3000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [
+    activeTab,
+    generationRecovering,
+    generationTaskId,
+    finalizeGenerationTask,
+    id,
+    isConnected,
+    loadArchitectureAndOutline,
+    loadWorkbenchChapter,
+    queryClient,
+    selectedChapterNumber,
+    sseAction,
+  ])
+
+  useEffect(() => {
     const terminalEvent = lastCancelled || lastDone || lastError
     const taskId = terminalEvent?.data?.task_id
 
     // SSE 连接级错误（如网络中断），利用 sseError 兜底
     if (!terminalEvent && sseError && generationTaskId) {
-      toast.error(sseError)
-      clearGenerationState()
       return
     }
 
@@ -854,37 +1062,18 @@ export default function ProjectDashboard() {
     if (handledGenerationTaskIdRef.current === taskId) return
     if (generationTaskId && taskId !== generationTaskId) return
 
-    handledGenerationTaskIdRef.current = taskId
-    setGenerationStopping(false)
-    setGenerationTaskId(null)
-    setGenerationTaskLabel("")
-
     if (lastCancelled?.data?.task_id === taskId) {
-      toast.info(lastCancelled?.data?.message || "生成任务已取消")
+      finalizeGenerationTask(taskId, "cancelled", lastCancelled?.data?.message || "生成任务已取消")
       return
     }
 
     if (lastError?.data?.task_id === taskId) {
-      toast.error(lastError?.data?.message || "生成任务失败")
+      finalizeGenerationTask(taskId, "failed", lastError?.data?.message || "生成任务失败")
       return
     }
 
-    // 架构/目录生成完成后刷新状态
-    if (sseAction === "architecture" || sseAction === "blueprint") {
-      loadArchitectureAndOutline()
-      queryClient.invalidateQueries({ queryKey: ["chapters", id] })
-    }
-
-    if (activeTab === "generation" && (sseAction === "architecture" || sseAction === "blueprint") && !autoOpenFilesAfterDoneRef.current) {
-      autoOpenFilesAfterDoneRef.current = true
-      setActiveTab("files")
-    }
-
-    if (sseAction === "chapter" || sseAction === "chapterBatch" || sseAction === "finalize") {
-      loadWorkbenchChapter(selectedChapterNumber)
-      queryClient.invalidateQueries({ queryKey: ["chapters", id] })
-    }
-  }, [activeTab, generationTaskId, id, lastCancelled, lastDone, lastError, sseError, loadWorkbenchChapter, queryClient, selectedChapterNumber, sseAction, clearGenerationState])
+    finalizeGenerationTask(taskId, "done", lastDone?.data?.message || "生成已完成")
+  }, [finalizeGenerationTask, generationTaskId, lastCancelled, lastDone, lastError, sseError])
 
   const handleCopyOutput = async () => {
     if (!outputFileContent) return
@@ -1275,7 +1464,7 @@ export default function ProjectDashboard() {
                     <RefreshCw className="h-4 w-4 mr-2" />批量生成
                   </Button>
                   {generationTaskId && (
-                    <Button variant="destructive" onClick={handleStopGeneration} disabled={generationStopping || !isConnected}>
+                    <Button variant="destructive" onClick={handleStopGeneration} disabled={generationStopping}>
                       {generationStopping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Ban className="h-4 w-4 mr-2" />}
                       中断生成
                     </Button>
@@ -1484,11 +1673,11 @@ export default function ProjectDashboard() {
                       </p>
                     </div>
                     <Badge variant={generationStopping ? "secondary" : "outline"}>
-                      {generationStopping ? "停止中" : isConnected ? "进行中" : "待完成"}
+                      {generationStopping ? "停止中" : isConnected ? "进行中" : generationRecovering ? "后台继续中" : "待完成"}
                     </Badge>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button variant="destructive" onClick={handleStopGeneration} disabled={!generationTaskId || generationStopping || !isConnected}>
+                    <Button variant="destructive" onClick={handleStopGeneration} disabled={!generationTaskId || generationStopping}>
                       {generationStopping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Ban className="h-4 w-4 mr-2" />}
                       中断生成
                     </Button>
@@ -1507,6 +1696,13 @@ export default function ProjectDashboard() {
                 <div className="flex items-center gap-2 text-primary">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span>AI 正在生成中...</span>
+                </div>
+              )}
+
+              {!isConnected && generationRecovering && generationTaskId && (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>实时连接已断开，任务仍在后台继续，正在查询状态...</span>
                 </div>
               )}
 
@@ -2499,6 +2695,7 @@ export default function ProjectDashboard() {
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
         projectId={id}
+        defaultFileType={importDialogFileType}
         onImportSuccess={() => {
           loadArchitectureAndOutline()
           queryClient.invalidateQueries({ queryKey: ["chapters", id] })

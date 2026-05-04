@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from backend.app.auth import get_current_user
 from backend.app.services import chapter_service, file_service, project_service
 from backend.app.services.model_runtime import ConfigError, RuntimeConfig, _provider_to_interface, call_chat, call_embedding, create_chat_adapter, create_embedding_adapter, get_runtime_config, mark_used
-from backend.app.utils.sse import HEARTBEAT, SSEEmitter, sse_event_generator
+from backend.app.utils.sse import HEARTBEAT, SSEEmitter, attach_task_stream, detach_task_stream, reset_task_stream, sse_event_generator
 from llm_errors import LLMInvocationError, coerce_error_info
 from novel_generator.cancel_token import CancelToken
 from novel_generator.context import ChapterParams, GenerationContext, ProjectConfig
@@ -129,7 +129,9 @@ def _prepare_generation_task(project_id: str, user_id: str, kind: str, task_id: 
     resolved_task_id = task_id or uuid.uuid4().hex
     existing_task = get_task(resolved_task_id)
     if existing_task and existing_task.status not in {"done", "failed", "cancelled"}:
-        raise HTTPException(status_code=409, detail="该任务标识已在运行，请先取消当前任务后再开始新的生成")
+        if existing_task.project_id != project_id:
+            raise HTTPException(status_code=409, detail="该任务标识已在运行，请先取消当前任务后再开始新的生成")
+        return resolved_task_id
 
     active_task = get_active_task(project_id)
     if active_task and active_task.task_id != resolved_task_id:
@@ -181,6 +183,11 @@ def _build_terminal_error_payload(task_id: str, step: str, message: str, **extra
     }
     payload.update({key: value for key, value in extra.items() if value is not None})
     return payload
+
+
+def _is_active_task(task_id: str) -> bool:
+    task = get_task(task_id)
+    return bool(task and task.status not in {"done", "failed", "cancelled"})
 
 
 def _run_in_thread(emitter: SSEEmitter, task_id: str, func, *args, **kwargs):
@@ -268,26 +275,26 @@ async def _heartbeat(queue: asyncio.Queue, interval: float = 3.0):
 def _make_streaming_response(
     request: Request,
     queue: asyncio.Queue,
-    emitter: SSEEmitter,
     task_id: str,
     target_func,
     *args,
 ) -> StreamingResponse:
     loop = asyncio.get_event_loop()
-    emitter.set_queue(queue, loop)
+    attach_task_stream(task_id, queue, loop)
 
     async def event_gen():
-        loop.run_in_executor(None, _run_in_thread, emitter, task_id, target_func, *args)
+        if not _is_active_task(task_id):
+            reset_task_stream(task_id)
+            loop.run_in_executor(None, _run_in_thread, SSEEmitter(task_id), task_id, target_func, *args)
         hb = asyncio.create_task(_heartbeat(queue))
         try:
             async for sse_data in sse_event_generator(queue):
                 if await request.is_disconnected():
-                    request_cancel(task_id)
                     break
                 yield sse_data
         finally:
             hb.cancel()
-            emitter.clear()
+            detach_task_stream(task_id, queue, loop)
 
     return StreamingResponse(
         event_gen(),
@@ -331,7 +338,6 @@ async def generate_architecture(project_id: str, request: Request, task_id: str 
     return _make_streaming_response(
         request,
         asyncio.Queue(),
-        SSEEmitter(),
         resolved_task_id,
         _run_architecture,
         project,
@@ -399,7 +405,6 @@ async def generate_blueprint(project_id: str, request: Request, task_id: str | N
     return _make_streaming_response(
         request,
         asyncio.Queue(),
-        SSEEmitter(),
         resolved_task_id,
         _run_blueprint,
         project,
@@ -462,7 +467,6 @@ async def generate_chapter(project_id: str, chapter_number: int, request: Reques
     return _make_streaming_response(
         request,
         asyncio.Queue(),
-        SSEEmitter(),
         resolved_task_id,
         _run_chapter_generation,
         project,
@@ -496,7 +500,6 @@ async def generate_chapter_batch(
     return _make_streaming_response(
         request,
         asyncio.Queue(),
-        SSEEmitter(),
         resolved_task_id,
         _run_chapter_batch_generation,
         project,
@@ -618,7 +621,6 @@ async def finalize_chapter_route(project_id: str, chapter_number: int, request: 
     return _make_streaming_response(
         request,
         asyncio.Queue(),
-        SSEEmitter(),
         resolved_task_id,
         _run_finalize,
         project,
