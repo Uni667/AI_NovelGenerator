@@ -196,6 +196,7 @@ def test_credential(cred_id: str, user_id: str) -> dict:
 
 def _test_chat(cred: dict, api_key: str) -> dict:
     from llm_adapters import create_llm_adapter
+    from backend.app.services.model_runtime import _provider_to_interface
 
     now = datetime.datetime.now().isoformat()
     masked = mask_api_key(api_key)
@@ -204,7 +205,7 @@ def _test_chat(cred: dict, api_key: str) -> dict:
 
     try:
         adapter = create_llm_adapter(
-            interface_format="OpenAI",
+            interface_format=_provider_to_interface(provider),
             base_url=base_url,
             model_name=PROVIDER_DEFAULTS.get(provider, "")
             or "gpt-4o-mini",

@@ -97,12 +97,8 @@ def _profile_row(row) -> dict:
 
 
 def _build_chat(cfg):
-    from llm_adapters import create_llm_adapter
-    return create_llm_adapter(
-        interface_format="OpenAI", base_url=cfg.base_url, model_name=cfg.model,
-        api_key=cfg.api_key, temperature=cfg.temperature or 0.7,
-        max_tokens=cfg.max_tokens or 8192, timeout=600,
-    )
+    from backend.app.services.model_runtime import _build_chat_adapter
+    return _build_chat_adapter(cfg, None, None)
 
 
 def _update_model_health(profile_id: str, status: str, error: str, now: str) -> None:
@@ -315,7 +311,7 @@ def test_model_profile(profile_id: str, request: Request):
         _check_model_ownership(conn, profile_id, user_id)
 
     try:
-        cfg = _build_runtime(profile_id, "general")
+        cfg = _build_runtime(profile_id, "general", user_id)
     except ConfigError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

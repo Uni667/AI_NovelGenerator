@@ -323,7 +323,7 @@ def suggest_characters(project_id: str, request: Request):
         ).fetchall()
         existing = [dict(r) for r in rows]
 
-    from backend.app.services.model_runtime import get_runtime_config, ConfigError
+    from backend.app.services.model_runtime import get_runtime_config, _build_chat_adapter, ConfigError
 
     try:
         runtime_cfg = get_runtime_config(user_id, "character", project_id)
@@ -336,24 +336,7 @@ def suggest_characters(project_id: str, request: Request):
         with open(architecture_file, "r", encoding="utf-8") as f:
             architecture = f.read()[:5000]
 
-    from llm_adapters import create_llm_adapter
-
-    # Map provider to interface format (same mapping as model_runtime._provider_to_interface)
-    _provider_iface_map = {
-        "openai": "OpenAI", "deepseek": "OpenAI", "qwen": "OpenAI",
-        "anthropic": "OpenAI", "custom": "OpenAI", "local": "Ollama",
-    }
-    interface_format = _provider_iface_map.get(runtime_cfg.provider, "OpenAI")
-
-    llm = create_llm_adapter(
-        interface_format=interface_format,
-        base_url=runtime_cfg.base_url,
-        model_name=runtime_cfg.model,
-        api_key=runtime_cfg.api_key,
-        temperature=runtime_cfg.temperature,
-        max_tokens=runtime_cfg.max_tokens,
-        timeout=600,
-    )
+    llm = _build_chat_adapter(runtime_cfg, runtime_cfg.temperature, runtime_cfg.max_tokens)
 
     prompt = CHARACTER_SUGGESTION_PROMPT.format(
         topic=pconfig.get("topic", ""),

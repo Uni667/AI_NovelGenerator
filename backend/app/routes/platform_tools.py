@@ -149,23 +149,14 @@ CHAPTER_TITLE_PROMPT = """你是一位番茄免费小说平台的编辑。请根
 
 def _get_llm_and_config(user_id: str, project_id: str):
     """Get LLM adapter and config through ModelRuntimeService."""
-    from backend.app.services.model_runtime import get_runtime_config, ConfigError
-    from llm_adapters import create_llm_adapter
+    from backend.app.services.model_runtime import get_runtime_config, _build_chat_adapter, ConfigError
 
     try:
         rt = get_runtime_config(user_id, "draft", project_id)
     except ConfigError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    adapter = create_llm_adapter(
-        interface_format="OpenAI",
-        base_url=rt.base_url,
-        model_name=rt.model,
-        api_key=rt.api_key,
-        temperature=rt.temperature or 0.7,
-        max_tokens=rt.max_tokens or 8192,
-        timeout=600,
-    )
+    adapter = _build_chat_adapter(rt, None, None)
     return adapter, rt
 
 

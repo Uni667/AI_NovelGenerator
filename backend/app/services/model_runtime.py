@@ -126,14 +126,19 @@ def get_runtime_config(
             f"阶段「{purpose}」没有配置可用模型，请先创建模型配置并在项目参数中选择。"
         )
 
-    return _build_runtime(profile_id, purpose)
+    return _build_runtime(profile_id, purpose, user_id)
 
 
-def _build_runtime(profile_id: str, purpose: str) -> RuntimeConfig:
+def _build_runtime(profile_id: str, purpose: str, user_id: str = "") -> RuntimeConfig:
     with get_db() as conn:
-        profile = conn.execute(
-            "SELECT * FROM model_profile WHERE id=?", (profile_id,)
-        ).fetchone()
+        if user_id:
+            profile = conn.execute(
+                "SELECT * FROM model_profile WHERE id=? AND user_id=?", (profile_id, user_id)
+            ).fetchone()
+        else:
+            profile = conn.execute(
+                "SELECT * FROM model_profile WHERE id=?", (profile_id,)
+            ).fetchone()
         if not profile:
             raise ConfigError("模型配置不存在")
         profile = dict(profile)
@@ -154,9 +159,14 @@ def _build_runtime(profile_id: str, purpose: str) -> RuntimeConfig:
         raise ConfigError(f"模型配置「{profile['name']}」没有绑定 API 凭证")
 
     with get_db() as conn:
-        cred = conn.execute(
-            "SELECT * FROM api_credential WHERE id=?", (cred_id,)
-        ).fetchone()
+        if user_id:
+            cred = conn.execute(
+                "SELECT * FROM api_credential WHERE id=? AND user_id=?", (cred_id, user_id)
+            ).fetchone()
+        else:
+            cred = conn.execute(
+                "SELECT * FROM api_credential WHERE id=?", (cred_id,)
+            ).fetchone()
         if not cred:
             raise ConfigError(f"API 凭证不存在或已被删除")
         cred = dict(cred)

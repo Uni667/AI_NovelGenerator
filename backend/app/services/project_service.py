@@ -36,12 +36,21 @@ def create_project(data: dict, user_id: str) -> dict:
     return get_project(project_id, user_id)
 
 
-def get_project(project_id: str, user_id: str = "") -> dict | None:
+def get_project(project_id: str, user_id: str) -> dict | None:
+    """获取项目，必须提供 user_id 以验证所有权。"""
     with get_db() as conn:
-        if user_id:
-            row = conn.execute("SELECT * FROM project WHERE id = ? AND user_id = ?", (project_id, user_id)).fetchone()
-        else:
-            row = conn.execute("SELECT * FROM project WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM project WHERE id = ? AND user_id = ?", (project_id, user_id)
+        ).fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
+def get_project_unscoped(project_id: str) -> dict | None:
+    """内部使用：不验证所有权的项目查询。仅用于已通过其他方式验证的场景。"""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM project WHERE id = ?", (project_id,)).fetchone()
         if not row:
             return None
         return dict(row)
@@ -91,6 +100,7 @@ def delete_project(project_id: str, user_id: str) -> bool:
 
 
 def get_project_config(project_id: str) -> dict | None:
+    """获取项目配置。调用者必须先通过 get_project 验证项目所有权。"""
     with get_db() as conn:
         row = conn.execute("SELECT * FROM project_config WHERE project_id = ?", (project_id,)).fetchone()
         if not row:
@@ -99,6 +109,7 @@ def get_project_config(project_id: str) -> dict | None:
 
 
 def update_project_config(project_id: str, data: dict) -> dict:
+    """更新项目配置。调用者必须先通过 get_project 验证项目所有权。"""
     config = get_project_config(project_id)
     if not config:
         raise ValueError(f"项目配置不存在: {project_id}")
