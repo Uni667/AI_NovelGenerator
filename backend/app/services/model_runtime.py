@@ -37,12 +37,14 @@ PURPOSE_MAP = {
     "embedding": "embedding_profile_id",
     "rerank": "rerank_profile_id",
 }
+REMOVED_LEGACY_MARKERS = ("uni656", "flah", "bge-m3", "bge_m3", "bge m3")
 
 PROVIDER_DEFAULTS = {
     "openai": "https://api.openai.com/v1",
-    "deepseek": "https://api.deepseek.com",
+    "deepseek": "https://api.deepseek.com/v1",
     "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "anthropic": "https://api.anthropic.com/v1",
+    "anthropic": "https://api.anthropic.com",
+    "siliconflow": "https://api.siliconflow.cn/v1",
     "custom": "",
     "local": "http://localhost:11434",
 }
@@ -90,9 +92,15 @@ def get_runtime_config(
     if project_id and purpose in PURPOSE_MAP:
         field = PURPOSE_MAP[purpose]
         with get_db() as conn:
+            project = conn.execute(
+                "SELECT id FROM project WHERE id=? AND user_id=?",
+                (project_id, user_id),
+            ).fetchone()
+            if not project:
+                raise ConfigError("项目不存在或你没有权限访问。")
             row = conn.execute(
-                f"SELECT {field} FROM project_model_assignment WHERE project_id=?",
-                (project_id,),
+                f"SELECT {field} FROM project_model_assignment WHERE project_id=? AND user_id=?",
+                (project_id, user_id),
             ).fetchone()
             if row and row[0]:
                 profile_id = row[0]
@@ -129,11 +137,11 @@ def get_runtime_config(
     return _build_runtime(profile_id, purpose, user_id)
 
 
-def _build_runtime(profile_id: str, purpose: str, user_id: str = "") -> RuntimeConfig:
+def _build_runtime(profile_id: str, purpose: str, user_id: str = "", allow_unhealthy: bool = False) -> RuntimeConfig:
     with get_db() as conn:
         if user_id:
             profile = conn.execute(
-                "SELECT * FROM model_profile WHERE id=? AND user_id=?", (profile_id, user_id)
+                "SELECT * FROM model_profile WHERE id=? AND user_id=? AND is_active=1", (profile_id, user_id)
             ).fetchone()
         else:
             profile = conn.execute(
@@ -142,9 +150,14 @@ def _build_runtime(profile_id: str, purpose: str, user_id: str = "") -> RuntimeC
         if not profile:
             raise ConfigError("模型配置不存在")
         profile = dict(profile)
+    legacy_haystack = " ".join(str(profile.get(key, "")) for key in ("name", "provider", "model")).lower()
+    if any(marker in legacy_haystack for marker in REMOVED_LEGACY_MARKERS):
+        raise ConfigError("LEGACY_CONFIG_REMOVED: 旧版模型配置已移除，请在 settings 中重新创建新配置。")
 
     if not profile.get("is_active"):
         raise ConfigError(f"模型配置「{profile['name']}」已禁用")
+    if not allow_unhealthy and profile.get("health_status") in ("disabled", "invalid"):
+        raise ConfigError(f"模型配置「{profile['name']}」不可用，请先测试并修复。")
 
     expected_type = _purpose_to_type(purpose)
     if profile["type"] != expected_type:
@@ -171,8 +184,8 @@ def _build_runtime(profile_id: str, purpose: str, user_id: str = "") -> RuntimeC
             raise ConfigError(f"API 凭证不存在或已被删除")
         cred = dict(cred)
 
-    if cred.get("status") == "disabled":
-        raise ConfigError(f"API 凭证「{cred['name']}」已禁用")
+    if cred.get("status") != "active":
+        raise ConfigError(f"API 凭证「{cred['name']}」不可用，请先测试通过或重新启用。")
 
     # 解密 API Key
     api_key = ""
@@ -197,13 +210,20 @@ def _build_runtime(profile_id: str, purpose: str, user_id: str = "") -> RuntimeC
         except Exception:
             pass
 
+    base_url = cred["base_url"] or PROVIDER_DEFAULTS.get(cred["provider"], "")
+    model_name = (profile["model"] or "").strip()
+    if model_name.startswith(("http://", "https://")):
+        raise ConfigError("模型名不能是 URL，请检查 baseUrl 和 model 字段是否传反。")
+    if not base_url.startswith(("http://", "https://")):
+        raise ConfigError("Base URL 必须以 http:// 或 https:// 开头。")
+
     return RuntimeConfig(
         api_credential_id=cred_id,
         model_profile_id=profile_id,
         provider=cred["provider"],
-        base_url=cred["base_url"] or PROVIDER_DEFAULTS.get(cred["provider"], ""),
+        base_url=base_url,
         api_key=api_key,
-        model=profile["model"],
+        model=model_name,
         type=profile["type"],
         temperature=profile.get("temperature") or 0.7,
         max_tokens=profile.get("max_tokens") or 8192,
@@ -227,7 +247,7 @@ def call_chat(
 ) -> str:
     """统一聊天模型调用。"""
     cfg = get_runtime_config(user_id, purpose, project_id)
-    return _invoke_chat(user_id, cfg, prompt, temperature, max_tokens, cancel_token)
+    return _invoke_chat(user_id, cfg, prompt, temperature, max_tokens, cancel_token, project_id=project_id or "")
 
 
 def call_embedding(
@@ -238,7 +258,7 @@ def call_embedding(
 ) -> list[float]:
     """统一向量化调用。"""
     cfg = get_runtime_config(user_id, "embedding", project_id)
-    return _invoke_embedding(user_id, cfg, text)
+    return _invoke_embedding(user_id, cfg, text, project_id=project_id or "")
 
 
 def create_chat_adapter(
@@ -275,13 +295,13 @@ def mark_used(user_id: str, cred_id: str = "", profile_id: str = "") -> None:
     with get_db() as conn:
         if cred_id:
             conn.execute(
-                "UPDATE api_credential SET last_used_at=?, updated_at=? WHERE id=?",
-                (now, now, cred_id),
+                "UPDATE api_credential SET last_used_at=?, updated_at=? WHERE id=? AND user_id=?",
+                (now, now, cred_id, user_id),
             )
         if profile_id:
             conn.execute(
-                "UPDATE model_profile SET last_used_at=?, updated_at=? WHERE id=?",
-                (now, now, profile_id),
+                "UPDATE model_profile SET last_used_at=?, updated_at=? WHERE id=? AND user_id=?",
+                (now, now, profile_id, user_id),
             )
 
 
@@ -349,7 +369,7 @@ def _build_chat_adapter(cfg: RuntimeConfig, temperature: float | None, max_token
     )
 
 
-def _invoke_chat(user_id: str, cfg: RuntimeConfig, prompt: str, temperature: float | None, max_tokens: int | None, cancel_token=None) -> str:
+def _invoke_chat(user_id: str, cfg: RuntimeConfig, prompt: str, temperature: float | None, max_tokens: int | None, cancel_token=None, project_id: str = "", task_id: str = "") -> str:
     masked = mask_api_key(cfg.api_key) if cfg.api_key else "N/A"
     logger.info(
         "ModelRuntime chat [user=%s cred=%s profile=%s provider=%s model=%s key=%s]",
@@ -365,13 +385,14 @@ def _invoke_chat(user_id: str, cfg: RuntimeConfig, prompt: str, temperature: flo
         mark_used(user_id, cfg.api_credential_id, cfg.model_profile_id)
         log_invocation(user_id, cfg,
                        input_chars=len(prompt), output_chars=len(result),
-                       latency_ms=elapsed, success=True)
+                       latency_ms=elapsed, success=True, project_id=project_id, task_id=task_id)
     else:
         err = getattr(adapter, "last_error", "")
         _update_health(cfg.model_profile_id, "invalid", err)
         log_invocation(user_id, cfg,
                        input_chars=len(prompt), latency_ms=elapsed,
-                       success=False, error_code="MODEL_CALL_FAILED", error_message=err)
+                       success=False, error_code="MODEL_CALL_FAILED", error_message=err,
+                       project_id=project_id, task_id=task_id)
 
     return result
 
@@ -386,7 +407,7 @@ def _build_embedding_adapter(cfg: RuntimeConfig):
     )
 
 
-def _invoke_embedding(user_id: str, cfg: RuntimeConfig, text: str) -> list[float]:
+def _invoke_embedding(user_id: str, cfg: RuntimeConfig, text: str, project_id: str = "", task_id: str = "") -> list[float]:
     masked = mask_api_key(cfg.api_key) if cfg.api_key else "N/A"
     logger.info(
         "ModelRuntime embedding [cred=%s profile=%s provider=%s model=%s key=%s]",
@@ -400,12 +421,13 @@ def _invoke_embedding(user_id: str, cfg: RuntimeConfig, text: str) -> list[float
     if result:
         mark_used(user_id, cfg.api_credential_id, cfg.model_profile_id)
         log_invocation(user_id, cfg, input_chars=len(text), output_chars=len(result),
-                       latency_ms=elapsed, success=True)
+                       latency_ms=elapsed, success=True, project_id=project_id, task_id=task_id)
     else:
         err = getattr(adapter, "last_error", "")
         _update_health(cfg.model_profile_id, "invalid", err)
         log_invocation(user_id, cfg, input_chars=len(text), latency_ms=elapsed,
-                       success=False, error_code="EMBEDDING_FAILED", error_message=err)
+                       success=False, error_code="EMBEDDING_FAILED", error_message=err,
+                       project_id=project_id, task_id=task_id)
 
     return result
 
@@ -413,7 +435,8 @@ def _invoke_embedding(user_id: str, cfg: RuntimeConfig, text: str) -> list[float
 def _provider_to_interface(provider: str) -> str:
     mapping = {
         "openai": "OpenAI", "deepseek": "OpenAI", "qwen": "OpenAI",
-        "anthropic": "OpenAI", "custom": "OpenAI", "local": "Ollama",
+        "anthropic": "Anthropic", "siliconflow": "siliconflow",
+        "custom": "OpenAI", "local": "Ollama",
     }
     return mapping.get(provider, "OpenAI")
 

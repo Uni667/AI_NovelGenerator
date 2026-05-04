@@ -13,12 +13,14 @@ import { getUser, clearToken } from "@/lib/auth"
 import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { LogOut, User } from "lucide-react"
+import { useQueryClient } from "@tanstack/react-query"
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const { data: projects } = useProjects()
   const { theme, setTheme } = useTheme()
   const router = useRouter()
+  const queryClient = useQueryClient()
 
   return (
     <>
@@ -73,7 +75,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           variant="ghost"
           size="sm"
           className="w-full justify-start gap-2 text-muted-foreground"
-          onClick={() => { clearToken(); router.push("/login") }}
+          onClick={() => { clearToken(); queryClient.clear(); router.push("/login") }}
         >
           <LogOut className="h-4 w-4" />
           退出登录

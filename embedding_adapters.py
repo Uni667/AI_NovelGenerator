@@ -278,22 +278,22 @@ class GeminiEmbeddingAdapter(BaseEmbeddingAdapter):
 
 class SiliconFlowEmbeddingAdapter(BaseEmbeddingAdapter):
     """
-    基于 SiliconFlow 的 embedding 适配器
+    基于 SiliconFlow 的 embedding 适配器。
+    base_url 应为 https://api.siliconflow.cn/v1，适配器自动拼接 /embeddings。
     """
     def __init__(self, api_key: str, base_url: str, model_name: str):
         super().__init__()
-        # 自动为 base_url 添加 scheme（如果缺失）
         if not base_url.startswith("http://") and not base_url.startswith("https://"):
             base_url = "https://" + base_url
-        self.url = base_url if base_url else "https://api.siliconflow.cn/v1/embeddings"
+        # 去掉 base_url 末尾可能多余的 /embeddings 或结尾斜杠，统一再拼接 /embeddings
+        url = (base_url or "https://api.siliconflow.cn/v1").rstrip("/")
+        if url.endswith("/embeddings"):
+            url = url[: -len("/embeddings")]
+        self.url = f"{url}/embeddings"
 
-        self.payload = {
-            "model": model_name,
-            "input": "Silicon flow embedding online: fast, affordable, and high-quality embedding services. come try it out!",
-            "encoding_format": "float"
-        }
+        self.model_name = model_name
         self.headers = {
-            "Authorization": "Bearer {api_key}".format(api_key=api_key),
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
 
@@ -301,8 +301,8 @@ class SiliconFlowEmbeddingAdapter(BaseEmbeddingAdapter):
         embeddings = []
         for text in texts:
             try:
-                self.payload["input"] = text
-                response = requests.post(self.url, json=self.payload, headers=self.headers)
+                payload = {"model": self.model_name, "input": text, "encoding_format": "float"}
+                response = requests.post(self.url, json=payload, headers=self.headers)
                 response.raise_for_status()
                 result = response.json()
                 if not result or "data" not in result or not result["data"]:
@@ -324,8 +324,8 @@ class SiliconFlowEmbeddingAdapter(BaseEmbeddingAdapter):
 
     def embed_query(self, query: str) -> List[float]:
         try:
-            self.payload["input"] = query
-            response = requests.post(self.url, json=self.payload, headers=self.headers)
+            payload = {"model": self.model_name, "input": query, "encoding_format": "float"}
+            response = requests.post(self.url, json=payload, headers=self.headers)
             response.raise_for_status()
             result = response.json()
             if not result or "data" not in result or not result["data"]:

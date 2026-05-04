@@ -191,7 +191,7 @@ export default function ProjectDashboard() {
   const params = useParams()
   const router = useRouter()
   const id = params.id as string
-  const { data: project, isLoading } = useProject(id)
+  const { data: project, isLoading, error: projectError } = useProject(id)
   const { data: config } = useProjectConfig(id)
   const { data: chapters } = useChapters(id)
   const updateConfig = useUpdateProjectConfig(id)
@@ -299,6 +299,25 @@ export default function ProjectDashboard() {
       return false
     }
     return true
+  }
+
+  const checkModelReady = async (): Promise<boolean> => {
+    try {
+      const status = await api.config.modelStatus()
+      if (status.chatReady) return true
+      toast.error(
+        <div className="flex flex-col gap-1">
+          <span>{status.chatErrors?.length ? "模型配置异常，请先重新测试或清空后重配。" : "你还没有配置文本生成模型，请先完成模型设置。"}</span>
+          <Button variant="link" size="sm" className="h-auto p-0 justify-start text-white underline" onClick={() => router.push("/settings")}>
+            去模型设置
+          </Button>
+        </div> as any,
+        { duration: 8000 },
+      )
+      return false
+    } catch {
+      return true // 如果检查接口挂了，让用户尝试生成，后端会报具体错误
+    }
   }
 
   const outputFileRequestId = useRef(0)
@@ -673,6 +692,8 @@ export default function ProjectDashboard() {
   const handleGenerateWorkbenchChapter = async () => {
     if (!checkOutline()) return
     try {
+      const modelOk = await checkModelReady()
+      if (!modelOk) return
       await saveGenerationTargets()
       openGenerationStream(
         "chapter",
@@ -688,6 +709,8 @@ export default function ProjectDashboard() {
   const handleGenerateChapterBatch = async () => {
     if (!checkOutline()) return
     try {
+      const modelOk = await checkModelReady()
+      if (!modelOk) return
       await saveGenerationTargets()
       openGenerationStream(
         "chapterBatch",
@@ -894,6 +917,8 @@ export default function ProjectDashboard() {
 
   const handleGenerateArchitecture = async () => {
     try {
+      const modelOk = await checkModelReady()
+      if (!modelOk) return
       await saveGenerationTargets()
       openGenerationStream(
         "architecture",
@@ -910,6 +935,8 @@ export default function ProjectDashboard() {
   const handleGenerateBlueprint = async () => {
     if (!checkArchitecture()) return
     try {
+      const modelOk = await checkModelReady()
+      if (!modelOk) return
       await saveGenerationTargets()
       openGenerationStream(
         "blueprint",
@@ -1010,7 +1037,16 @@ export default function ProjectDashboard() {
     )
   }
 
-  if (!project) return null
+  if (projectError || !project) {
+    return (
+      <div className="mx-auto max-w-xl rounded-lg border p-6 text-center">
+        <AlertCircle className="mx-auto mb-3 h-8 w-8 text-destructive" />
+        <h1 className="text-lg font-semibold">项目不存在或你没有权限访问。</h1>
+        <p className="mt-2 text-sm text-muted-foreground">请确认当前登录账号，或返回项目列表重新选择。</p>
+        <Button className="mt-4" onClick={() => router.push("/")}>返回项目列表</Button>
+      </div>
+    )
+  }
 
   return (
     <div>

@@ -314,7 +314,7 @@ def batch_check_chapter_hooks(project_id: str, request: Request):
     if not pconfig:
         raise HTTPException(status_code=404, detail="项目配置不存在")
 
-    chapters = chapter_service.list_chapters(project_id)
+    chapters = chapter_service.list_chapters(project_id, user_id)
     if not chapters:
         raise HTTPException(status_code=404, detail="没有章节")
 

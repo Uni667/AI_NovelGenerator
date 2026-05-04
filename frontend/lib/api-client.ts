@@ -19,8 +19,19 @@ function formatErrorDetail(detail: unknown): string {
       .join("; ")
   }
   if (detail && typeof detail === "object") {
-    const value = detail as { message?: string; error?: string }
-    return value.message || value.error || JSON.stringify(detail)
+    const value = detail as { message?: string; error?: { message?: string; code?: string }; code?: string }
+    const code = value.error?.code || value.code
+    const known: Record<string, string> = {
+      AUTH_REQUIRED: "请先登录。",
+      PROJECT_NOT_FOUND: "项目不存在或你没有权限访问。",
+      PROJECT_FORBIDDEN: "项目不存在或你没有权限访问。",
+      MODEL_PROFILE_NOT_FOUND: "当前阶段没有配置模型，请先到项目参数中选择模型。",
+      MODEL_TYPE_MISMATCH: "当前阶段选择的模型类型不匹配。",
+      API_CREDENTIAL_DISABLED: "API 凭证不可用，请检查后重新启用。",
+      API_KEY_DECRYPT_FAILED: "API Key 解密失败，请重新填写 API Key。",
+    }
+    if (code && known[code]) return known[code]
+    return value.error?.message || value.message || "请求失败，请稍后重试。"
   }
   return typeof detail === "string" ? detail : ""
 }
@@ -45,7 +56,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       clearToken()
       // 不在此处硬刷新，由 AuthGuard 统一处理路由跳转，避免刷新循环
     }
-    throw new Error(`接口请求失败（${method} ${url}，${res.status}）: ${message}`)
+    throw new Error(message || `请求失败：${method} ${url} (${res.status})`)
   }
   const contentType = res.headers.get("content-type") || ""
   if (contentType.includes("application/json")) {
@@ -92,14 +103,26 @@ export const api = {
       request<any>("/api/user/api-credentials", { method: "POST", body: JSON.stringify(data) }),
     updateCredential: (id: string, data: any) =>
       request<any>(`/api/user/api-credentials/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-    deleteCredential: (id: string) =>
-      request<any>(`/api/user/api-credentials/${id}`, { method: "DELETE" }),
+    deleteCredential: (id: string, cascade?: boolean) =>
+      request<any>(`/api/user/api-credentials/${id}${cascade ? "?cascade=true" : ""}`, { method: "DELETE" }),
     testCredential: (id: string) =>
       request<{ success: boolean; message: string }>(`/api/user/api-credentials/${id}/test`, { method: "POST" }),
     enableCredential: (id: string) =>
       request<any>(`/api/user/api-credentials/${id}/enable`, { method: "POST" }),
     disableCredential: (id: string) =>
       request<any>(`/api/user/api-credentials/${id}/disable`, { method: "POST" }),
+    fetchModels: (id: string) =>
+      request<{ models: { id: string; name: string; type: string; provider: string }[]; provider: string }>(`/api/user/api-credentials/${id}/models`),
+    fixLegacyCredentials: () =>
+      request<{ fixed: number; details: any[] }>("/api/user/fix-legacy-credentials", { method: "POST" }),
+    modelQuickSetup: (data: { provider: string; api_key: string; project_id?: string }) =>
+      request<{ success: boolean; data: { message: string; provider: string; chatReady: boolean; embeddingReady: boolean; chatModel: string; embeddingMessage: string } }>("/api/user/model-quick-setup", { method: "POST", body: JSON.stringify(data) }),
+    modelStatus: () =>
+      request<{ chatReady: boolean; embeddingReady: boolean; chatModel: string; chatProvider: string; chatErrors: string[]; activeCredentials: number; coreReady: boolean; message: string }>("/api/user/model-settings/status"),
+    modelReset: () =>
+      request<{ success: boolean; message: string }>("/api/user/model-settings/reset", { method: "POST" }),
+    modelRepair: () =>
+      request<{ success: boolean; message: string; details: string[] }>("/api/user/model-settings/repair", { method: "POST" }),
     // 模型配置
     listProfiles: () => request<any[]>("/api/user/model-profiles"),
     getProfile: (id: string) => request<any>(`/api/user/model-profiles/${id}`),

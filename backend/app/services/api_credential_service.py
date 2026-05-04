@@ -17,9 +17,10 @@ logger = logging.getLogger(__name__)
 
 PROVIDER_DEFAULTS = {
     "openai": "https://api.openai.com/v1",
-    "deepseek": "https://api.deepseek.com",
+    "deepseek": "https://api.deepseek.com/v1",
     "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "anthropic": "https://api.anthropic.com/v1",
+    "anthropic": "https://api.anthropic.com",
+    "siliconflow": "https://api.siliconflow.cn/v1",
     "custom": "",
     "local": "http://localhost:11434",
 }
@@ -29,10 +30,12 @@ PROVIDER_DEFAULT_TEST_MODELS = {
     "openai": "gpt-4o-mini",
     "deepseek": "deepseek-chat",
     "qwen": "qwen-plus",
-    "anthropic": "claude-haiku-4-5-20251001",
+    "anthropic": "claude-3-5-haiku-latest",
+    "siliconflow": "deepseek-v4-flash",
     "custom": "",
     "local": "",
 }
+REMOVED_LEGACY_MARKERS = ("uni656", "flah", "bge-m3", "bge_m3", "bge m3")
 
 
 def _validate_model_not_url(model: str) -> None:
@@ -56,6 +59,9 @@ def list_credentials(user_id: str) -> list[dict]:
         r.pop("api_key_hash", None)
         r.pop("headers_encrypted", None)
         r["is_default"] = bool(r.get("is_default"))
+        haystack = f"{r.get('name', '')} {r.get('provider', '')}".lower()
+        if any(marker in haystack for marker in REMOVED_LEGACY_MARKERS):
+            continue
         result.append(r)
     return result
 
@@ -88,6 +94,8 @@ def create_credential(user_id: str, data: dict) -> dict:
     if not is_local and not api_key:
         raise ValueError("API Key 不能为空（本地模型除外）")
 
+    if not base_url.startswith(("http://", "https://")):
+        raise ValueError("Base URL 必须以 http:// 或 https:// 开头。")
     # 校验 provider ↔ base_url
     _validate_provider_url(provider, base_url)
 
@@ -136,6 +144,8 @@ def update_credential(cred_id: str, user_id: str, data: dict) -> dict:
 
     for field in ["name", "provider", "base_url", "status"]:
         if field in data and data[field] is not None:
+            if field == "base_url" and data[field] and not data[field].startswith(("http://", "https://")):
+                raise ValueError("Base URL 必须以 http:// 或 https:// 开头。")
             sets.append(f"{field}=?")
             params.append(data[field])
 
@@ -168,17 +178,51 @@ def update_credential(cred_id: str, user_id: str, data: dict) -> dict:
     return get_credential(cred_id, user_id)
 
 
-def delete_credential(cred_id: str, user_id: str) -> None:
-    # 检查是否有 ModelProfile 引用
+def delete_credential(cred_id: str, user_id: str, cascade: bool = False) -> None:
+    """删除 API 凭证。cascade=True 时同时删除关联的 ModelProfile。"""
+    import datetime
+
     with get_db() as conn:
-        count = conn.execute(
-            "SELECT COUNT(*) FROM model_profile WHERE api_credential_id=?", (cred_id,)
-        ).fetchone()[0]
-    if count > 0:
-        raise ValueError(
-            f"该凭证被 {count} 个模型配置引用，请先删除或更换这些模型配置的绑定"
-        )
-    with get_db() as conn:
+        # 验证凭证属于当前用户
+        row = conn.execute(
+            "SELECT id FROM api_credential WHERE id=? AND user_id=?", (cred_id, user_id)
+        ).fetchone()
+        if not row:
+            raise ValueError("凭证不存在或不属于你。")
+
+        # 查找关联的 ModelProfile
+        linked = conn.execute(
+            "SELECT id FROM model_profile WHERE api_credential_id=? AND user_id=?", (cred_id, user_id)
+        ).fetchall()
+
+        if linked and not cascade:
+            count = len(linked)
+            raise ValueError(
+                f"该凭证被 {count} 个模型配置引用，请先删除或更换这些模型配置的绑定"
+            )
+
+        if linked and cascade:
+            # 清空 ProjectModelAssignment 中引用这些 ModelProfile 的字段
+            profile_ids = [row[0] for row in linked]
+            profile_fields = [
+                "architecture_profile_id", "worldbuilding_profile_id", "character_profile_id",
+                "outline_profile_id", "draft_profile_id", "polish_profile_id",
+                "review_profile_id", "summary_profile_id", "feedback_profile_id",
+                "embedding_profile_id", "rerank_profile_id",
+            ]
+            now = datetime.datetime.now().isoformat()
+            for pid in profile_ids:
+                for field in profile_fields:
+                    conn.execute(
+                        f"UPDATE project_model_assignment SET {field}=NULL, updated_at=? WHERE {field}=? AND user_id=?",
+                        (now, pid, user_id),
+                    )
+            # 删除 ModelProfile
+            conn.execute(
+                "DELETE FROM model_profile WHERE api_credential_id=? AND user_id=?",
+                (cred_id, user_id),
+            )
+
         conn.execute("DELETE FROM api_credential WHERE id=? AND user_id=?", (cred_id, user_id))
 
 
@@ -221,8 +265,11 @@ def _test_chat(cred: dict, api_key: str) -> dict:
     provider = cred["provider"]
     base_url = cred["base_url"] or PROVIDER_DEFAULTS.get(provider, "")
     test_model = PROVIDER_DEFAULT_TEST_MODELS.get(provider, "") or "gpt-4o-mini"
+    if not base_url.startswith(("http://", "https://")):
+        return {"success": False, "message": "服务地址配置异常，请清空后重新配置。"}
+    if provider in {"custom", "local"} and not PROVIDER_DEFAULT_TEST_MODELS.get(provider):
+        return {"success": False, "message": "自定义凭证测试需要先创建模型配置并填写测试模型。"}
 
-    # 防御性校验：如果模型名被错误地传成了 URL，立刻报错
     _validate_model_not_url(test_model)
 
     try:
@@ -235,20 +282,20 @@ def _test_chat(cred: dict, api_key: str) -> dict:
             max_tokens=32,
             timeout=25,
         )
-    except Exception as e:
-        _set_cred_health(cred["id"], "invalid", str(e)[:500], now)
-        return {"success": False, "message": f"初始化失败: {e}"}
+    except Exception:
+        _set_cred_health(cred["id"], "invalid", "模型初始化失败", now)
+        return {"success": False, "message": "测试失败，请检查 API Key 和服务商是否匹配。"}
 
     response = adapter.invoke("Reply exactly: OK")
     if response:
         _set_cred_health(cred["id"], "active", "", now)
         logger.info("Credential %s test PASSED (provider=%s key=%s)", cred["id"], provider, masked)
-        return {"success": True, "message": f"测试成功！回复: {response[:200]}"}
+        return {"success": True, "message": "测试成功"}
 
     err = getattr(adapter, "last_error", "") or "无响应"
     _set_cred_health(cred["id"], "invalid", err[:500], now)
     logger.warning("Credential %s test FAILED (provider=%s key=%s): %s", cred["id"], provider, masked, err)
-    return {"success": False, "message": f"测试失败（Key: {masked}）: {err}"}
+    return {"success": False, "message": "测试失败，请检查 API Key 和服务商是否匹配。"}
 
 
 def _test_local(cred: dict, api_key: str) -> dict:
@@ -276,14 +323,15 @@ def _set_cred_health(cred_id: str, status: str, error: str, now: str) -> None:
 
 
 def _validate_provider_url(provider: str, url: str) -> None:
-    if provider == "custom" or provider == "local":
+    if provider in ("custom", "local"):
         return
     url_lower = url.lower()
     conflicts = {
-        "openai": ["deepseek.com", "dashscope.aliyuncs.com", "anthropic.com"],
-        "deepseek": ["openai.com", "dashscope.aliyuncs.com", "anthropic.com"],
-        "qwen": ["openai.com", "deepseek.com", "anthropic.com"],
-        "anthropic": ["openai.com", "deepseek.com", "dashscope.aliyuncs.com"],
+        "openai": ["deepseek.com", "dashscope.aliyuncs.com", "anthropic.com", "siliconflow.cn"],
+        "deepseek": ["openai.com", "dashscope.aliyuncs.com", "anthropic.com", "siliconflow.cn"],
+        "qwen": ["openai.com", "deepseek.com", "anthropic.com", "siliconflow.cn"],
+        "anthropic": ["openai.com", "deepseek.com", "dashscope.aliyuncs.com", "siliconflow.cn"],
+        "siliconflow": ["openai.com", "deepseek.com", "dashscope.aliyuncs.com", "anthropic.com"],
     }
     for indicator in conflicts.get(provider, []):
         if indicator in url_lower:

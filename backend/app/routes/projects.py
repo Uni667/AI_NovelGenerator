@@ -83,7 +83,7 @@ def export_project(project_id: str, request: Request, format: str = Query("txt",
 
     filepath = project["filepath"]
     chapters_dir = os.path.join(filepath, "chapters")
-    chapters = chapter_service.list_chapters(project_id)
+    chapters = chapter_service.list_chapters(project_id, user_id)
 
     if not chapters:
         raise HTTPException(status_code=400, detail="没有章节可导出")

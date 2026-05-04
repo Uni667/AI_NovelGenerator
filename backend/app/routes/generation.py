@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from backend.app.auth import get_current_user
 from backend.app.services import chapter_service, file_service, project_service
-from backend.app.services.model_runtime import ConfigError, RuntimeConfig, call_chat, call_embedding, create_chat_adapter, create_embedding_adapter, get_runtime_config, mark_used
+from backend.app.services.model_runtime import ConfigError, RuntimeConfig, _provider_to_interface, call_chat, call_embedding, create_chat_adapter, create_embedding_adapter, get_runtime_config, mark_used
 from backend.app.utils.sse import HEARTBEAT, SSEEmitter, sse_event_generator
 from llm_errors import LLMInvocationError, coerce_error_info
 from novel_generator.cancel_token import CancelToken
@@ -55,7 +55,7 @@ def _runtime_to_llm_conf(rt: RuntimeConfig) -> dict:
         "api_key": rt.api_key,
         "base_url": rt.base_url,
         "model_name": rt.model,
-        "interface_format": "OpenAI",
+        "interface_format": _provider_to_interface(rt.provider),
         "temperature": rt.temperature or 0.7,
         "max_tokens": rt.max_tokens or 8192,
         "timeout": 600,
@@ -67,8 +67,15 @@ def _runtime_to_emb_conf(rt: RuntimeConfig) -> dict:
         "api_key": rt.api_key,
         "base_url": rt.base_url,
         "model_name": rt.model,
-        "interface_format": "OpenAI",
+        "interface_format": _provider_to_interface(rt.provider),
     }
+
+
+def _optional_embedding_conf(user_id: str, project_id: str) -> dict:
+    try:
+        return _runtime_to_emb_conf(get_runtime_config(user_id, "embedding", project_id))
+    except ConfigError:
+        return {}
 
 
 def _make_ctx(
@@ -118,7 +125,7 @@ def _task_label(kind: str) -> str:
     }.get(kind, kind)
 
 
-def _prepare_generation_task(project_id: str, kind: str, task_id: str | None, metadata: dict[str, object]) -> str:
+def _prepare_generation_task(project_id: str, user_id: str, kind: str, task_id: str | None, metadata: dict[str, object]) -> str:
     resolved_task_id = task_id or uuid.uuid4().hex
     existing_task = get_task(resolved_task_id)
     if existing_task and existing_task.status not in {"done", "failed", "cancelled"}:
@@ -131,7 +138,7 @@ def _prepare_generation_task(project_id: str, kind: str, task_id: str | None, me
             detail=f"项目正在执行{_task_label(active_task.kind)}，请先中断后再开始新的生成",
         )
 
-    register_task(resolved_task_id, project_id, kind, metadata)
+    register_task(resolved_task_id, project_id, kind, user_id=user_id, metadata=metadata)
     return resolved_task_id
 
 
@@ -316,6 +323,7 @@ async def generate_architecture(project_id: str, request: Request, task_id: str 
     project, pconfig, user_id = _check_project(project_id, request)
     resolved_task_id = _prepare_generation_task(
         project_id,
+        user_id,
         "architecture",
         task_id,
         {"project_name": project.get("name", ""), "chapter_count": pconfig.get("num_chapters", 0)},
@@ -342,7 +350,7 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict, user_id
 
     rt = _get_runtime_config(user_id, "architecture", project["id"])
     llm_conf = _runtime_to_llm_conf(rt)
-    emb_conf = _runtime_to_emb_conf(rt)
+    emb_conf = _optional_embedding_conf(user_id, project["id"])
     if task_id:
         _log_llm_selection(task_id, project, llm_conf, "architecture")
 
@@ -358,6 +366,7 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict, user_id
         if arch_content.strip():
             file_service.create_project_file(
                 project_id=project["id"],
+                user_id=user_id,
                 type="architecture",
                 title=f"{project.get('name', '')} 架构",
                 filename="Novel_architecture.txt",
@@ -382,6 +391,7 @@ async def generate_blueprint(project_id: str, request: Request, task_id: str | N
     project, pconfig, user_id = _check_project(project_id, request)
     resolved_task_id = _prepare_generation_task(
         project_id,
+        user_id,
         "blueprint",
         task_id,
         {"project_name": project.get("name", ""), "chapter_count": pconfig.get("num_chapters", 0)},
@@ -423,6 +433,7 @@ def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: s
         if dir_content.strip():
             file_service.create_project_file(
                 project_id=project["id"],
+                user_id=user_id,
                 type="outline",
                 title=f"{project.get('name', '')} 章节目录",
                 filename="Novel_directory.txt",
@@ -431,7 +442,7 @@ def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: s
                 is_current=True,
             )
 
-        chapter_service.sync_chapters_from_directory(project["id"], project["filepath"])
+        chapter_service.sync_chapters_from_directory(project["id"], project["filepath"], user_id)
     finally:
         if task_id:
             unbind_cancel_token(task_id)
@@ -443,6 +454,7 @@ async def generate_chapter(project_id: str, chapter_number: int, request: Reques
     project, pconfig, user_id = _check_project(project_id, request)
     resolved_task_id = _prepare_generation_task(
         project_id,
+        user_id,
         "chapter",
         task_id,
         {"project_name": project.get("name", ""), "chapter_number": chapter_number},
@@ -476,6 +488,7 @@ async def generate_chapter_batch(
     project, pconfig, user_id = _check_project(project_id, request)
     resolved_task_id = _prepare_generation_task(
         project_id,
+        user_id,
         "chapter_batch",
         task_id,
         {"project_name": project.get("name", ""), "start_chapter": start_chapter, "count": count},
@@ -555,7 +568,7 @@ def _run_chapter_generation(
         _require_project_file(project["filepath"], "Novel_directory.txt", "章节目录")
         rt = _get_runtime_config(user_id, "draft", project["id"])
         llm_conf = _runtime_to_llm_conf(rt)
-        emb_conf = _runtime_to_emb_conf(rt)
+        emb_conf = _optional_embedding_conf(user_id, project["id"])
         if task_id:
             _log_llm_selection(task_id, project, llm_conf, "chapter")
 
@@ -597,6 +610,7 @@ async def finalize_chapter_route(project_id: str, chapter_number: int, request: 
     project, pconfig, user_id = _check_project(project_id, request)
     resolved_task_id = _prepare_generation_task(
         project_id,
+        user_id,
         "finalize",
         task_id,
         {"project_name": project.get("name", ""), "chapter_number": chapter_number},
@@ -633,7 +647,7 @@ def _run_finalize(
         _require_project_file(project["filepath"], chapter_filename, f"第 {chapter_number} 章草稿")
         rt = _get_runtime_config(user_id, "polish", project["id"])
         llm_conf = _runtime_to_llm_conf(rt)
-        emb_conf = _runtime_to_emb_conf(rt)
+        emb_conf = _optional_embedding_conf(user_id, project["id"])
         if task_id:
             _log_llm_selection(task_id, project, llm_conf, "finalize")
 

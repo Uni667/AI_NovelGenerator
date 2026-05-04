@@ -22,7 +22,7 @@ def _check_project(project_id: str, request: Request) -> tuple[dict, str]:
 
 def _resolve_embedding_config(user_id: str, project_id: str) -> dict:
     """Get embedding runtime config through ModelRuntimeService. Returns dict with keys for downstream."""
-    from backend.app.services.model_runtime import get_runtime_config, ConfigError
+    from backend.app.services.model_runtime import get_runtime_config, ConfigError, _provider_to_interface
 
     try:
         rt = get_runtime_config(user_id, "embedding", project_id)
@@ -33,32 +33,32 @@ def _resolve_embedding_config(user_id: str, project_id: str) -> dict:
         "api_key": rt.api_key,
         "base_url": rt.base_url,
         "model_name": rt.model,
-        "interface_format": "OpenAI",
+        "interface_format": _provider_to_interface(rt.provider),
     }
 
 
-def _fetch_knowledge_file(project_id: str, file_id: int) -> dict | None:
+def _fetch_knowledge_file(project_id: str, user_id: str, file_id: int) -> dict | None:
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM knowledge_file WHERE id = ? AND project_id = ?",
-            (file_id, project_id),
+            "SELECT * FROM knowledge_file WHERE id = ? AND project_id = ? AND user_id = ?",
+            (file_id, project_id, user_id),
         ).fetchone()
         return dict(row) if row else None
 
 
-def _set_imported(project_id: str, file_id: int, imported: int) -> None:
+def _set_imported(project_id: str, user_id: str, file_id: int, imported: int) -> None:
     with get_db() as conn:
         conn.execute(
-            "UPDATE knowledge_file SET imported = ? WHERE id = ? AND project_id = ?",
-            (imported, file_id, project_id),
+            "UPDATE knowledge_file SET imported = ? WHERE id = ? AND project_id = ? AND user_id = ?",
+            (imported, file_id, project_id, user_id),
         )
 
 
-def _list_files(project_id: str) -> list[dict]:
+def _list_files(project_id: str, user_id: str) -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM knowledge_file WHERE project_id = ? ORDER BY created_at DESC",
-            (project_id,),
+            "SELECT * FROM knowledge_file WHERE project_id = ? AND user_id = ? ORDER BY created_at DESC",
+            (project_id, user_id),
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -83,7 +83,7 @@ def _import_file_to_vector_store(project: dict, embedding_config: dict, file_pat
 
 def _rebuild_vector_store(project: dict, user_id: str) -> dict:
     embedding_config = _resolve_embedding_config(user_id, project["id"])
-    remaining_files = _list_files(project["id"])
+    remaining_files = _list_files(project["id"], user_id)
     imported_files = [row for row in remaining_files if row.get("imported") and os.path.exists(row.get("filepath", ""))]
 
     clear_vector_store(project["filepath"])
@@ -97,8 +97,8 @@ def _rebuild_vector_store(project: dict, user_id: str) -> dict:
     if not embedding_config:
         with get_db() as conn:
             conn.execute(
-                "UPDATE knowledge_file SET imported = 0 WHERE project_id = ?",
-                (project["id"],),
+                "UPDATE knowledge_file SET imported = 0 WHERE project_id = ? AND user_id = ?",
+                (project["id"], user_id),
             )
         return {
             "success": False,
@@ -112,10 +112,10 @@ def _rebuild_vector_store(project: dict, user_id: str) -> dict:
         result = _import_file_to_vector_store(project, embedding_config, row["filepath"])
         if result.get("success"):
             rebuilt += 1
-            _set_imported(project["id"], row["id"], 1)
+            _set_imported(project["id"], user_id, row["id"], 1)
         else:
             failures.append({"file_id": row["id"], "filename": row["filename"], "message": result.get("message", "")})
-            _set_imported(project["id"], row["id"], 0)
+            _set_imported(project["id"], user_id, row["id"], 0)
 
     return {
         "success": not failures,
@@ -127,8 +127,8 @@ def _rebuild_vector_store(project: dict, user_id: str) -> dict:
 
 @router.get("/api/v1/projects/{project_id}/knowledge/files")
 def list_knowledge_files(project_id: str, request: Request):
-    _check_project(project_id, request)
-    return _list_files(project_id)
+    _project, user_id = _check_project(project_id, request)
+    return _list_files(project_id, user_id)
 
 
 @router.post("/api/v1/projects/{project_id}/knowledge/upload")
@@ -144,15 +144,15 @@ async def upload_knowledge(project_id: str, request: Request, file: UploadFile =
     now = datetime.datetime.now().isoformat()
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO knowledge_file (project_id, filename, filepath, file_size, imported, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (project_id, file.filename, file_path, os.path.getsize(file_path), 0, now),
+            "INSERT INTO knowledge_file (user_id, project_id, filename, filepath, file_size, imported, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, project_id, file.filename, file_path, os.path.getsize(file_path), 0, now),
         )
         file_id = cursor.lastrowid
 
     embedding_config = _resolve_embedding_config(user_id, project_id)
     import_result = _import_file_to_vector_store(project, embedding_config, file_path)
     if import_result.get("success"):
-        _set_imported(project_id, file_id, 1)
+        _set_imported(project_id, user_id, file_id, 1)
         return {
             "message": import_result.get("message", "导入完成"),
             "file": {"id": file_id, "filename": file.filename, "filepath": file_path},
@@ -169,13 +169,13 @@ async def upload_knowledge(project_id: str, request: Request, file: UploadFile =
 @router.post("/api/v1/projects/{project_id}/knowledge/files/{file_id}/reimport")
 def reimport_knowledge_file(project_id: str, file_id: int, request: Request):
     project, user_id = _check_project(project_id, request)
-    row = _fetch_knowledge_file(project_id, file_id)
+    row = _fetch_knowledge_file(project_id, user_id, file_id)
     if not row:
         raise HTTPException(status_code=404, detail="知识库文件不存在")
     if not os.path.exists(row["filepath"]):
         raise HTTPException(status_code=404, detail=f"知识库文件已丢失: {row['filename']}")
 
-    _set_imported(project_id, file_id, 1)
+    _set_imported(project_id, user_id, file_id, 1)
     result = _rebuild_vector_store(project, user_id)
     return {
         "message": result.get("message", "重导完成"),
@@ -187,7 +187,7 @@ def reimport_knowledge_file(project_id: str, file_id: int, request: Request):
 @router.delete("/api/v1/projects/{project_id}/knowledge/files/{file_id}")
 def delete_knowledge_file(project_id: str, file_id: int, request: Request):
     project, user_id = _check_project(project_id, request)
-    row = _fetch_knowledge_file(project_id, file_id)
+    row = _fetch_knowledge_file(project_id, user_id, file_id)
     if not row:
         raise HTTPException(status_code=404, detail="知识库文件不存在")
 
@@ -198,8 +198,8 @@ def delete_knowledge_file(project_id: str, file_id: int, request: Request):
 
     with get_db() as conn:
         conn.execute(
-            "DELETE FROM knowledge_file WHERE id = ? AND project_id = ?",
-            (file_id, project_id),
+            "DELETE FROM knowledge_file WHERE id = ? AND project_id = ? AND user_id = ?",
+            (file_id, project_id, user_id),
         )
 
     if os.path.exists(filepath):
@@ -220,9 +220,8 @@ def clear_vector_db(project_id: str, request: Request):
 
     with get_db() as conn:
         conn.execute(
-            "UPDATE knowledge_file SET imported = 0 WHERE project_id = ?",
-            (project_id,),
+            "UPDATE knowledge_file SET imported = 0 WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id),
         )
 
     return {"message": "向量库已清空"}
-

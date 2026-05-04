@@ -18,6 +18,7 @@ class TaskCancelledError(RuntimeError):
 @dataclass
 class TaskState:
     task_id: str
+    user_id: str
     project_id: str
     kind: str
     status: str = "running"
@@ -58,12 +59,13 @@ def _persist_task_to_db(state: TaskState) -> None:
         with get_db() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO generation_task
-                   (id, project_id, type, status, input_snapshot, output_file_id,
+                   (id, user_id, project_id, type, status, input_snapshot, output_file_id,
                     error_message, error_code, error_category, retryable,
                     created_at, updated_at, finished_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     state.task_id,
+                    state.user_id,
                     state.project_id,
                     state.kind,
                     state.status,
@@ -100,6 +102,7 @@ def load_tasks_from_db() -> None:
             ) if "T" in r["created_at"] else time.time()
             state = TaskState(
                 task_id=r["id"],
+                user_id=r.get("user_id") or "",
                 project_id=r["project_id"],
                 kind=r["type"],
                 status="failed",
@@ -134,6 +137,7 @@ def register_task(
     task_id: str,
     project_id: str,
     kind: str,
+    user_id: str = "",
     metadata: Optional[dict[str, Any]] = None,
 ) -> TaskState:
     now = time.time()
@@ -144,6 +148,7 @@ def register_task(
             return existing
         state = TaskState(
             task_id=task_id,
+            user_id=user_id,
             project_id=project_id,
             kind=kind,
             metadata=dict(metadata or {}),

@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import hmac
 import os
 
 _ENV_KEY = os.getenv("API_SECRET_ENCRYPTION_KEY", "")
@@ -60,8 +61,9 @@ def decrypt_api_key(encrypted: str) -> str:
 
 
 def hash_api_key(api_key: str) -> str:
-    """SHA-256 哈希，用于判断用户是否重复提交相同的 Key。不可逆。"""
-    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    """HMAC-SHA256 fingerprint for duplicate detection. Not reversible."""
+    key = (_ENV_KEY or "missing-encryption-key").encode("utf-8")
+    return hmac.new(key, api_key.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def last4(value: str) -> str:
@@ -89,3 +91,9 @@ def mask_api_key(key: str) -> str:
         return k[:1] + "***"
     # 取前缀前 3 个字符 + *** + 末尾 4 个字符
     return k[:3] + "***" + k[-4:]
+
+
+encrypt_secret = encrypt_api_key
+decrypt_secret = decrypt_api_key
+hash_secret = hash_api_key
+mask_secret = mask_api_key

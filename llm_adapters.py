@@ -465,6 +465,65 @@ class AzureAIAdapter(BaseLLMAdapter):
             return ""
 
 
+class AnthropicAdapter(BaseLLMAdapter):
+    """Adapter for Anthropic Claude Messages API."""
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        model_name: str,
+        max_tokens: int,
+        temperature: float = 0.7,
+        timeout: Optional[int] = 600,
+        cancel_token=None,
+    ):
+        normalized_base_url = check_base_url(base_url).rstrip("/")
+        super().__init__(
+            cancel_token=cancel_token,
+            provider="Anthropic",
+            model_name=model_name,
+            base_url=normalized_base_url,
+        )
+        self.api_key = api_key
+        self.model_name = model_name
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.timeout = timeout
+
+    def invoke(self, prompt: str) -> str:
+        self._reset_error_state()
+        try:
+            import requests
+
+            response = requests.post(
+                f"{self.base_url}/messages",
+                headers={
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": self.model_name,
+                    "max_tokens": self.max_tokens,
+                    "temperature": self.temperature,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            data = response.json()
+            parts = data.get("content") or []
+            text = "".join(part.get("text", "") for part in parts if isinstance(part, dict))
+            if not text:
+                self.last_error = "No text response from Anthropic API"
+            return text
+        except Exception as exc:
+            info = self._record_exception(exc)
+            self._log_failure(info, exc, "Anthropic")
+            return ""
+
+
 def create_llm_adapter(
     interface_format: str,
     base_url: str,
@@ -494,6 +553,11 @@ def create_llm_adapter(
         )
     if not (model_name or "").strip():
         raise ValueError("LLM 配置错误：模型名称为空。请在设置中填写模型名称。")
+
+    if (model_name or "").strip().startswith(("http://", "https://")):
+        raise ValueError("模型名不能是 URL，请检查 baseUrl 和 model 字段是否传反。")
+    if requires_base_url and not (base_url or "").strip().startswith(("http://", "https://")):
+        raise ValueError("Base URL 必须以 http:// 或 https:// 开头。")
 
     if fmt in {"deepseek", "openai", "ollama", "ml studio", "阿里云百炼", "alibaba bailian"}:
         return OpenAICompatibleAdapter(
@@ -550,5 +614,8 @@ def create_llm_adapter(
 
     if fmt == "gemini":
         return GeminiAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout, cancel_token=cancel_token)
+
+    if fmt == "anthropic":
+        return AnthropicAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout, cancel_token=cancel_token)
 
     raise ValueError(f"Unknown interface_format: {interface_format}")

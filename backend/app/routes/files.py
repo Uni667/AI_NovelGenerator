@@ -107,6 +107,7 @@ async def import_file(
 
     result = file_service.create_project_file(
         project_id=project_id,
+        user_id=user_id,
         type=file_type,
         title=title,
         filename=filename,
@@ -126,7 +127,7 @@ async def import_file(
         dir_file = os.path.join(project["filepath"], "Novel_directory.txt")
         clear_file_content(dir_file)
         save_string_to_txt(content, dir_file)
-        chapter_service.sync_chapters_from_directory(project_id, project["filepath"])
+        chapter_service.sync_chapters_from_directory(project_id, project["filepath"], user_id)
 
     return result
 
@@ -137,7 +138,7 @@ def list_project_files_route(project_id: str, request: Request, type: str | None
     project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    return file_service.list_project_files(project_id, type)
+    return file_service.list_project_files(project_id, user_id, type)
 
 
 @router.put("/api/v1/projects/{project_id}/project-files/{file_id}/set-current")
@@ -146,7 +147,7 @@ def set_file_as_current(project_id: str, file_id: str, request: Request):
     project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    result = file_service.set_current_file(file_id)
+    result = file_service.set_current_file(file_id, user_id)
     if not result:
         raise HTTPException(status_code=404, detail="文件不存在")
 
@@ -161,7 +162,7 @@ def set_file_as_current(project_id: str, file_id: str, request: Request):
         dir_file = os.path.join(project["filepath"], "Novel_directory.txt")
         clear_file_content(dir_file)
         save_string_to_txt(result["content"], dir_file)
-        chapter_service.sync_chapters_from_directory(project_id, project["filepath"])
+        chapter_service.sync_chapters_from_directory(project_id, project["filepath"], user_id)
 
     return result
 
@@ -172,7 +173,7 @@ def delete_project_file_route(project_id: str, file_id: str, request: Request):
     project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    success = file_service.delete_project_file(file_id)
+    success = file_service.delete_project_file(file_id, user_id)
     if not success:
         raise HTTPException(status_code=404, detail="文件不存在")
     return {"message": f"已删除文件: {file_id}"}
@@ -184,7 +185,7 @@ def get_current_architecture(project_id: str, request: Request):
     project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    current = file_service.get_current_file(project_id, "architecture")
+    current = file_service.get_current_file(project_id, user_id, "architecture")
     if not current:
         raise HTTPException(status_code=404, detail="当前项目没有架构，请先生成或导入架构")
     return current
@@ -196,7 +197,7 @@ def get_current_outline(project_id: str, request: Request):
     project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    current = file_service.get_current_file(project_id, "outline")
+    current = file_service.get_current_file(project_id, user_id, "outline")
     if not current:
         raise HTTPException(status_code=404, detail="当前项目没有章节目录，请先生成或导入目录")
     return current

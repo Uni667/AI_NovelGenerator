@@ -79,6 +79,7 @@ def init_db():
 
             CREATE TABLE IF NOT EXISTS chapter (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT REFERENCES user(id) ON DELETE CASCADE,
                 project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
                 chapter_number INTEGER NOT NULL,
                 chapter_title TEXT DEFAULT '',
@@ -98,6 +99,7 @@ def init_db():
 
             CREATE TABLE IF NOT EXISTS knowledge_file (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT REFERENCES user(id) ON DELETE CASCADE,
                 project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
                 filename TEXT NOT NULL,
                 filepath TEXT NOT NULL,
@@ -184,6 +186,7 @@ def init_db():
             -- 项目文件（架构、目录等产物的数据库记录）
             CREATE TABLE IF NOT EXISTS project_file (
                 id TEXT PRIMARY KEY,
+                user_id TEXT REFERENCES user(id) ON DELETE CASCADE,
                 project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
                 type TEXT NOT NULL CHECK(type IN ('architecture','core_seed','characters',
                     'worldview','outline','summary','chapter','character_state','plot_arcs',
@@ -204,6 +207,7 @@ def init_db():
             -- 生成任务持久化
             CREATE TABLE IF NOT EXISTS generation_task (
                 id TEXT PRIMARY KEY,
+                user_id TEXT REFERENCES user(id) ON DELETE CASCADE,
                 project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
                 type TEXT NOT NULL CHECK(type IN ('generate_architecture','generate_outline',
                     'generate_chapter','generate_chapter_batch','finalize_chapter')),
@@ -228,7 +232,7 @@ def init_db():
                 user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
                 name TEXT NOT NULL,
                 provider TEXT NOT NULL DEFAULT 'openai'
-                    CHECK(provider IN ('openai','deepseek','qwen','anthropic','custom','local')),
+                    CHECK(provider IN ('openai','deepseek','qwen','anthropic','siliconflow','custom','local')),
                 api_key_encrypted TEXT,
                 api_key_last4 TEXT DEFAULT '',
                 api_key_hash TEXT DEFAULT '',
@@ -278,6 +282,7 @@ def init_db():
             -- 项目模型分配（每个阶段用哪个 ModelProfile）
             CREATE TABLE IF NOT EXISTS project_model_assignment (
                 id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
                 project_id TEXT NOT NULL UNIQUE REFERENCES project(id) ON DELETE CASCADE,
                 architecture_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
                 worldbuilding_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
@@ -374,6 +379,7 @@ def init_db():
 
         # ── 迁移：generation_task 新增 model/credential 追踪字段 ──
         for col, defn in [
+            ("user_id", "TEXT REFERENCES user(id) ON DELETE CASCADE"),
             ("purpose", "TEXT DEFAULT ''"),
             ("model_profile_id", "TEXT"),
             ("api_credential_id", "TEXT"),
@@ -385,3 +391,69 @@ def init_db():
                 conn.execute(f"ALTER TABLE generation_task ADD COLUMN {col} {defn}")
             except Exception:
                 pass
+
+        for table in ["chapter", "knowledge_file", "project_file", "project_model_assignment"]:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT REFERENCES user(id) ON DELETE CASCADE")
+            except Exception:
+                pass
+
+        for table in ["chapter", "knowledge_file", "project_file", "project_model_assignment", "generation_task"]:
+            try:
+                conn.execute(
+                    f"""UPDATE {table}
+                        SET user_id = (
+                            SELECT user_id FROM project WHERE project.id = {table}.project_id
+                        )
+                        WHERE (user_id IS NULL OR user_id = '')
+                          AND project_id IN (SELECT id FROM project)"""
+                )
+            except Exception:
+                pass
+
+        for index_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_project_file_user ON project_file(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_generation_task_user ON generation_task(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_project_assignment_user ON project_model_assignment(user_id)",
+        ]:
+            try:
+                conn.execute(index_sql)
+            except Exception:
+                pass
+
+        # ── 迁移：api_credential provider CHECK 约束增加 'siliconflow' ──
+        try:
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='api_credential'"
+            ).fetchone()
+            if row and row[0] and "siliconflow" not in (row[0] or ""):
+                logger.info("Migrating api_credential table to add siliconflow provider...")
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS api_credential_new (
+                        id TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+                        name TEXT NOT NULL,
+                        provider TEXT NOT NULL DEFAULT 'openai'
+                            CHECK(provider IN ('openai','deepseek','qwen','anthropic','siliconflow','custom','local')),
+                        api_key_encrypted TEXT,
+                        api_key_last4 TEXT DEFAULT '',
+                        api_key_hash TEXT DEFAULT '',
+                        base_url TEXT NOT NULL DEFAULT '',
+                        headers_encrypted TEXT,
+                        status TEXT NOT NULL DEFAULT 'untested'
+                            CHECK(status IN ('untested','active','invalid','disabled')),
+                        is_default INTEGER NOT NULL DEFAULT 0,
+                        last_tested_at TEXT,
+                        last_used_at TEXT,
+                        last_error TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    INSERT INTO api_credential_new SELECT * FROM api_credential;
+                    DROP TABLE api_credential;
+                    ALTER TABLE api_credential_new RENAME TO api_credential;
+                    CREATE INDEX IF NOT EXISTS idx_api_credential_user ON api_credential(user_id);
+                """)
+                logger.info("api_credential migration complete.")
+        except Exception as e:
+            logger.warning("api_credential siliconflow migration skipped: %s", e)

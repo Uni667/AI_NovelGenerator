@@ -15,6 +15,7 @@ SOURCE_LABELS = {
 
 def create_project_file(
     project_id: str,
+    user_id: str,
     type: str,
     title: str,
     filename: str,
@@ -31,70 +32,73 @@ def create_project_file(
 
     with get_db() as conn:
         conn.execute(
-            """INSERT INTO project_file (id, project_id, type, title, filename,
+            """INSERT INTO project_file (id, user_id, project_id, type, title, filename,
                content, source, is_current, file_size, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (file_id, project_id, type, title, filename, content, source,
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (file_id, user_id, project_id, type, title, filename, content, source,
              1 if is_current else 0, file_size, now, now),
         )
     logger.info("Created project_file %s type=%s project=%s current=%s", file_id, type, project_id, is_current)
     return _get_project_file(file_id)
 
 
-def _get_project_file(file_id: str) -> dict | None:
+def _get_project_file(file_id: str, user_id: str | None = None) -> dict | None:
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM project_file WHERE id=?", (file_id,)).fetchone()
+        if user_id:
+            row = conn.execute("SELECT * FROM project_file WHERE id=? AND user_id=?", (file_id, user_id)).fetchone()
+        else:
+            row = conn.execute("SELECT * FROM project_file WHERE id=?", (file_id,)).fetchone()
         if not row:
             return None
         return _row_to_dict(row)
 
 
-def list_project_files(project_id: str, file_type: str | None = None) -> list[dict]:
+def list_project_files(project_id: str, user_id: str, file_type: str | None = None) -> list[dict]:
     with get_db() as conn:
         if file_type:
             rows = conn.execute(
-                "SELECT * FROM project_file WHERE project_id=? AND type=? ORDER BY updated_at DESC",
-                (project_id, file_type),
+                "SELECT * FROM project_file WHERE project_id=? AND user_id=? AND type=? ORDER BY updated_at DESC",
+                (project_id, user_id, file_type),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM project_file WHERE project_id=? ORDER BY updated_at DESC",
-                (project_id,),
+                "SELECT * FROM project_file WHERE project_id=? AND user_id=? ORDER BY updated_at DESC",
+                (project_id, user_id),
             ).fetchall()
         return [_row_to_dict(r) for r in rows]
 
 
-def get_current_file(project_id: str, file_type: str) -> dict | None:
+def get_current_file(project_id: str, user_id: str, file_type: str) -> dict | None:
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM project_file WHERE project_id=? AND type=? AND is_current=1 LIMIT 1",
-            (project_id, file_type),
+            "SELECT * FROM project_file WHERE project_id=? AND user_id=? AND type=? AND is_current=1 LIMIT 1",
+            (project_id, user_id, file_type),
         ).fetchone()
         if not row:
             return None
         return _row_to_dict(row)
 
 
-def set_current_file(file_id: str) -> dict | None:
-    record = _get_project_file(file_id)
+def set_current_file(file_id: str, user_id: str) -> dict | None:
+    record = _get_project_file(file_id, user_id)
     if not record:
         return None
     now = datetime.datetime.now().isoformat()
     _clear_current_for_type(record["project_id"], record["type"], now)
     with get_db() as conn:
         conn.execute(
-            "UPDATE project_file SET is_current=1, updated_at=? WHERE id=?",
-            (now, file_id),
+            "UPDATE project_file SET is_current=1, updated_at=? WHERE id=? AND user_id=?",
+            (now, file_id, user_id),
         )
-    return _get_project_file(file_id)
+    return _get_project_file(file_id, user_id)
 
 
-def delete_project_file(file_id: str) -> bool:
-    record = _get_project_file(file_id)
+def delete_project_file(file_id: str, user_id: str) -> bool:
+    record = _get_project_file(file_id, user_id)
     if not record:
         return False
     with get_db() as conn:
-        conn.execute("DELETE FROM project_file WHERE id=?", (file_id,))
+        conn.execute("DELETE FROM project_file WHERE id=? AND user_id=?", (file_id, user_id))
     logger.info("Deleted project_file %s", file_id)
     return True
 

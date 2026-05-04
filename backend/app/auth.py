@@ -18,6 +18,9 @@ SECRET_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.pa
 
 
 def _get_or_create_secret() -> str:
+    env_secret = os.getenv("NEXTAUTH_SECRET") or os.getenv("JWT_SECRET")
+    if env_secret:
+        return env_secret
     os.makedirs(os.path.dirname(SECRET_FILE), exist_ok=True)
     if os.path.exists(SECRET_FILE):
         with open(SECRET_FILE, "r") as f:

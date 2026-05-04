@@ -5,12 +5,18 @@ from utils import read_file
 from chapter_directory_parser import parse_chapter_blueprint
 
 
-def list_chapters(project_id: str) -> list[dict]:
+def list_chapters(project_id: str, user_id: str | None = None) -> list[dict]:
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM chapter WHERE project_id=? ORDER BY chapter_number ASC",
-            (project_id,)
-        ).fetchall()
+        if user_id:
+            rows = conn.execute(
+                "SELECT * FROM chapter WHERE project_id=? AND user_id=? ORDER BY chapter_number ASC",
+                (project_id, user_id)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM chapter WHERE project_id=? ORDER BY chapter_number ASC",
+                (project_id,)
+            ).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -31,7 +37,7 @@ def get_chapter(project_id: str, chapter_number: int) -> dict | None:
         return dict(row)
 
 
-def sync_chapters_from_directory(project_id: str, filepath: str):
+def sync_chapters_from_directory(project_id: str, filepath: str, user_id: str | None = None):
     """从 Novel_directory.txt 解析章节元信息并同步到数据库"""
     directory_file = os.path.join(filepath, "Novel_directory.txt")
     if not os.path.exists(directory_file):
@@ -58,10 +64,10 @@ def sync_chapters_from_directory(project_id: str, filepath: str):
                 )
             else:
                 conn.execute(
-                    """INSERT INTO chapter (project_id, chapter_number, chapter_title, chapter_role, chapter_purpose,
+                    """INSERT INTO chapter (user_id, project_id, chapter_number, chapter_title, chapter_role, chapter_purpose,
                        suspense_level, foreshadowing, plot_twist_level, chapter_summary, status, created_at, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (project_id, ch["chapter_number"],
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (user_id, project_id, ch["chapter_number"],
                      ch.get("chapter_title", ""), ch.get("chapter_role", ""), ch.get("chapter_purpose", ""),
                      ch.get("suspense_level", ""), ch.get("foreshadowing", ""), ch.get("plot_twist_level", ""),
                      ch.get("chapter_summary", ""), "pending", now, now)
