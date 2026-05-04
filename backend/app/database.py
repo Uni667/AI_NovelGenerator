@@ -118,6 +118,17 @@ def get_db():
 
 def init_db():
     with get_db() as conn:
+        # 修复旧版 model_profile 表：如果存在但缺少 api_credential_id 列则删除重建
+        try:
+            cur = conn.execute("SELECT api_credential_id FROM model_profile LIMIT 0")
+        except Exception:
+            try:
+                conn.execute("DROP TABLE IF EXISTS model_profile")
+                conn.execute("DROP TABLE IF EXISTS project_model_assignment")
+                conn.execute("DROP TABLE IF EXISTS model_invocation_log")
+            except Exception:
+                pass
+
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS user (
                 id TEXT PRIMARY KEY,
