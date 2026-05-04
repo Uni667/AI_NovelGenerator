@@ -1,3 +1,4 @@
+import os
 import uuid
 import datetime
 from backend.app.database import get_db
@@ -82,11 +83,74 @@ def get_user(user_id: str) -> dict | None:
 
 # ---- 用户级 LLM 配置 ----
 
+def _make_raw_config(name: str, c: dict) -> dict:
+    return {
+        "name": name,
+        "interface_format": str(c.get("interface_format", "OpenAI")),
+        "api_key": str(c.get("api_key", "")),
+        "base_url": str(c.get("base_url", "")),
+        "model_name": str(c.get("model_name", "")),
+        "temperature": float(c.get("temperature", 0.7)),
+        "max_tokens": int(c.get("max_tokens", 8192)),
+        "timeout": int(c.get("timeout", 600)),
+    }
+
+
+def _fallback_config_json() -> dict:
+    """如果数据库无 LLM 配置，依次从 config.json、环境变量兜底"""
+    import json
+    candidates = {}
+
+    # 1) config.json
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            for name, c in cfg.get("llm_configs", {}).items():
+                if c.get("api_key"):
+                    candidates[name] = c
+        except Exception:
+            pass
+
+    # 2) 环境变量 (LLM_API_KEY / LLM_BASE_URL / LLM_MODEL_NAME)
+    env_key = os.getenv("LLM_API_KEY", "")
+    if env_key and "env-default" not in candidates:
+        candidates["env-default"] = {
+            "api_key": env_key,
+            "base_url": os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1"),
+            "model_name": os.getenv("LLM_MODEL_NAME", "deepseek-chat"),
+            "interface_format": os.getenv("LLM_INTERFACE", "OpenAI"),
+            "temperature": float(os.getenv("LLM_TEMPERATURE", "0.7")),
+            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "8192")),
+            "timeout": int(os.getenv("LLM_TIMEOUT", "600")),
+        }
+
+    result = {}
+    for name, c in candidates.items():
+        result[name] = {
+            "name": name,
+            "base_url": c.get("base_url", ""),
+            "model_name": c.get("model_name", ""),
+            "temperature": c.get("temperature", 0.7),
+            "max_tokens": c.get("max_tokens", 8192),
+            "timeout": c.get("timeout", 600),
+            "interface_format": c.get("interface_format", "OpenAI"),
+            "usage": "general",
+            "api_key_masked": mask_key(c.get("api_key", "")),
+        }
+    return result
+
+
 def list_user_llm_configs(user_id: str) -> dict:
     with get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM user_llm_config WHERE user_id = ? ORDER BY created_at", (user_id,)
         ).fetchall()
+    if not rows:
+        fallback = _fallback_config_json()
+        if fallback:
+            return fallback
     result = {}
     for row in rows:
         r = dict(row)
@@ -248,6 +312,30 @@ def get_user_llm_config_raw(user_id: str, name: str) -> dict:
             "SELECT * FROM user_llm_config WHERE name = ? AND user_id = ?", (name, user_id)
         ).fetchone()
         if not row:
+            # Fallback: config.json → 环境变量（任何名称都尝试 env）
+            import json
+            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "config.json")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                    c = cfg.get("llm_configs", {}).get(name)
+                    if c and c.get("api_key"):
+                        return _make_raw_config(name, c)
+                except Exception:
+                    pass
+            # 环境变量兜底（无论 name 是什么，只要 env 设了就返回）
+            env_key = os.getenv("LLM_API_KEY", "")
+            if env_key:
+                return _make_raw_config(name, {
+                    "api_key": env_key,
+                    "base_url": os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1"),
+                    "model_name": os.getenv("LLM_MODEL_NAME", "deepseek-chat"),
+                    "interface_format": os.getenv("LLM_INTERFACE", "OpenAI"),
+                    "temperature": os.getenv("LLM_TEMPERATURE", "0.7"),
+                    "max_tokens": os.getenv("LLM_MAX_TOKENS", "8192"),
+                    "timeout": os.getenv("LLM_TIMEOUT", "600"),
+                })
             return {}
         conf = dict(row)
     try:

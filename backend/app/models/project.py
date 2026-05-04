@@ -65,3 +65,33 @@ class ConfigResponse(BaseModel):
     final_chapter_llm: str
     consistency_review_llm: str
     embedding_config: str
+
+
+class ProjectFileResponse(BaseModel):
+    id: str
+    project_id: str
+    type: str
+    title: str
+    filename: str
+    content: str = ""
+    source: str
+    is_current: bool
+    file_size: int
+    created_at: str
+    updated_at: str
+
+
+class GenerationTaskResponse(BaseModel):
+    id: str
+    project_id: str
+    type: str
+    status: str
+    input_snapshot: str = ""
+    output_file_id: str | None = None
+    error_message: str | None = None
+    error_code: str | None = None
+    error_category: str | None = None
+    retryable: bool = False
+    created_at: str
+    updated_at: str
+    finished_at: str | None = None

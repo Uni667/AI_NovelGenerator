@@ -125,6 +125,23 @@ export interface SSEPartial {
   content: string
 }
 
+export interface SSEGenerationError {
+  step: string
+  message: string
+  task_id?: string
+  status?: "failed"
+  terminal?: boolean
+  error_code?: string
+  error_category?: string
+  detail?: string
+  retryable?: boolean
+  provider?: string
+  model_name?: string
+  base_url?: string
+  status_code?: number
+  operation?: string
+}
+
 // ── 角色相关 ──
 
 export interface CharacterProfile {
@@ -224,8 +241,102 @@ export const CONFLICT_TYPE_LABELS: Record<string, string> = {
   ideology: "理念冲突", class: "阶层冲突", betrayal: "背叛", other: "其他",
 }
 
+export interface CharacterDashboard {
+  characters: CharacterProfile[]
+  relationships: CharacterRelationship[]
+  conflicts: CharacterConflict[]
+  appearances: CharacterAppearance[]
+  timeline: TimelineEntry[]
+  summary: {
+    total_characters: number
+    appeared: number
+    planned: number
+    suggested: number
+    total_relationships: number
+    active_relationships: number
+    total_conflicts: number
+    active_conflicts: number
+    total_appearances: number
+    chapters_with_data: number
+  }
+}
+
 export const APPEARANCE_TYPE_LABELS: Record<string, string> = {
   present: "登场", mentioned: "被提及", flashback: "闪回",
   implied: "暗示/伏笔", exit: "退场", return: "回归",
   transformation: "重大转变",
+}
+
+// ── 项目文件（架构、目录等） ──
+
+export type FileType = "architecture" | "outline" | "core_seed" | "characters" |
+  "worldview" | "summary" | "chapter" | "character_state" | "plot_arcs" | "user_upload"
+
+export type FileSource = "ai_generated" | "user_imported" | "user_edited"
+
+export interface ProjectFile {
+  id: string
+  project_id: string
+  type: FileType
+  title: string
+  filename: string
+  content: string
+  source: FileSource
+  is_current: boolean
+  file_size: number
+  created_at: string
+  updated_at: string
+}
+
+export const FILE_SOURCE_LABELS: Record<FileSource, string> = {
+  ai_generated: "AI 生成",
+  user_imported: "用户导入",
+  user_edited: "用户编辑",
+}
+
+// ── 生成任务 ──
+
+export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled"
+
+export type TaskType = "generate_architecture" | "generate_outline" |
+  "generate_chapter" | "generate_chapter_batch" | "finalize_chapter"
+
+export interface GenerationTask {
+  id: string
+  project_id: string
+  type: TaskType
+  status: TaskStatus
+  input_snapshot: string
+  output_file_id: string | null
+  error_message: string | null
+  error_code: string | null
+  error_category: string | null
+  retryable: boolean
+  created_at: string
+  updated_at: string
+  finished_at: string | null
+}
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  pending: "等待中",
+  running: "生成中",
+  completed: "已完成",
+  failed: "失败",
+  cancelled: "已取消",
+}
+
+export const TASK_TYPE_LABELS: Record<TaskType, string> = {
+  generate_architecture: "架构生成",
+  generate_outline: "章节目录生成",
+  generate_chapter: "章节草稿生成",
+  generate_chapter_batch: "批量章节生成",
+  finalize_chapter: "章节定稿",
+}
+
+export interface ProjectOverview {
+  project: Project
+  has_architecture: boolean
+  architecture_source: FileSource | null
+  has_outline: boolean
+  outline_source: FileSource | null
 }

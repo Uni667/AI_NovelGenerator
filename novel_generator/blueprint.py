@@ -61,6 +61,9 @@ def Chapter_blueprint_generate(
     def _check_cancel():
         if task_id:
             raise_if_cancelled(task_id)
+        if ctx.cancel_token is not None:
+            ctx.cancel_token.raise_if_set()
+        return False
 
     filepath = ctx.filepath
     number_of_chapters = project.num_chapters

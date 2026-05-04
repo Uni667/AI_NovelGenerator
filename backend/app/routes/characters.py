@@ -9,6 +9,7 @@ from backend.app.models.chapter import (
     CharacterImportSelection,
     CharacterProfileCreate,
     CharacterProfileUpdate,
+    CharacterProfileResponse,
 )
 from novel_generator.character_import import (
     build_character_import_preview,
@@ -385,3 +386,93 @@ def suggest_characters(project_id: str, request: Request):
         return {"characters": suggestions[:8]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"人物建议生成失败: {str(e)}")
+
+
+# ── 角色库全景视图 ──
+
+@router.get("/api/v1/projects/{project_id}/characters/dashboard")
+def character_dashboard(project_id: str, request: Request):
+    """角色库统一入口：返回角色 + 关系 + 冲突 + 登场时间线的完整快照"""
+    _check_project(project_id, request)
+    with get_db() as conn:
+        characters = [
+            dict(r) for r in conn.execute(
+                """SELECT * FROM character_profile WHERE project_id=?
+                   ORDER BY COALESCE(first_appearance_chapter, 999999), updated_at DESC""",
+                (project_id,)
+            ).fetchall()
+        ]
+
+        relationships = [
+            dict(r) for r in conn.execute(
+                """SELECT cr.*, ca.name AS name_a, cb.name AS name_b
+                   FROM character_relationship cr
+                   LEFT JOIN character_profile ca ON ca.id=cr.character_id_a
+                   LEFT JOIN character_profile cb ON cb.id=cr.character_id_b
+                   WHERE cr.project_id=?
+                   ORDER BY cr.strength DESC""",
+                (project_id,)
+            ).fetchall()
+        ]
+
+        conflicts = [
+            dict(r) for r in conn.execute(
+                "SELECT * FROM character_conflict WHERE project_id=? ORDER BY intensity DESC",
+                (project_id,)
+            ).fetchall()
+        ]
+        for c in conflicts:
+            c["participants"] = [
+                dict(p) for p in conn.execute(
+                    """SELECT cp.*, ch.name, ch.status AS char_status
+                       FROM character_conflict_participant cp
+                       JOIN character_profile ch ON ch.id=cp.character_id
+                       WHERE cp.conflict_id=?""",
+                    (c["id"],)
+                ).fetchall()
+            ]
+
+        appearances = [
+            dict(r) for r in conn.execute(
+                """SELECT ca.*, ch.name AS character_name, ch.status AS character_status
+                   FROM character_appearance ca
+                   JOIN character_profile ch ON ch.id=ca.character_id
+                   WHERE ca.project_id=?
+                   ORDER BY ca.chapter_number""",
+                (project_id,)
+            ).fetchall()
+        ]
+
+        # timeline aggregation
+        chapters_map: dict[int, list] = {}
+        for a in appearances:
+            ch_num = a["chapter_number"]
+            chapters_map.setdefault(ch_num, []).append(dict(a))
+        timeline = [
+            {
+                "chapter_number": ch,
+                "character_count": len(entries),
+                "entries": entries,
+            }
+            for ch, entries in sorted(chapters_map.items())
+        ]
+
+    return {
+        "characters": characters,
+        "relationships": relationships,
+        "conflicts": conflicts,
+        "appearances": appearances,
+        "timeline": timeline,
+        "summary": {
+            "total_characters": len(characters),
+            "appeared": sum(1 for c in characters if c.get("status") == "appeared"),
+            "planned": sum(1 for c in characters if c.get("status") == "planned"),
+            "suggested": sum(1 for c in characters if c.get("status") == "suggested"),
+            "total_relationships": len(relationships),
+            "active_relationships": sum(1 for r in relationships if r.get("status") == "active"),
+            "total_conflicts": len(conflicts),
+            "active_conflicts": sum(1 for c in conflicts if c.get("status") in ("active", "escalating", "brewing")),
+            "total_appearances": len(appearances),
+            "chapters_with_data": len(timeline),
+        },
+    }

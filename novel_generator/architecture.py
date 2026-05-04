@@ -11,6 +11,7 @@ import os
 import json
 import logging
 import traceback
+from llm_errors import LLMInvocationError, build_empty_response_error
 from novel_generator.common import invoke_with_cleaning
 from novel_generator.task_manager import raise_if_cancelled
 from llm_adapters import create_llm_adapter
@@ -88,18 +89,26 @@ def Novel_architecture_generate(
     def _check_cancel():
         if task_id:
             raise_if_cancelled(task_id)
+        if ctx.cancel_token is not None:
+            ctx.cancel_token.raise_if_set()
         return False
 
     def _failure_message(step_label: str) -> str:
         last_error = getattr(llm, "last_error", "").strip()
-        if last_error:
-            return f"{step_label}失败：LLM 调用没有返回有效内容。模型错误：{last_error}"
-        return f"{step_label}失败：LLM 调用没有返回有效内容。请检查模型、API Key、Base URL、max_tokens 和超时设置。"
+        detail = f"模型错误：{last_error}" if last_error else "请检查模型名称、API Key、Base URL、max_tokens 和超时设置"
+        return f"{step_label}失败：LLM 调用没有返回有效内容。{detail}"
 
     def _fail(step: str, message: str):
-        _emit("error", {"step": step, "message": message})
         save_partial_architecture_data(filepath, partial_data)
-        raise RuntimeError(message)
+        raise LLMInvocationError(
+            build_empty_response_error(
+                provider=getattr(llm, "provider", ""),
+                model_name=getattr(llm, "model_name", ""),
+                base_url=getattr(llm, "base_url", ""),
+            ),
+            operation_name=message,
+            step=step,
+        )
 
     filepath = ctx.filepath
     os.makedirs(filepath, exist_ok=True)
@@ -137,7 +146,13 @@ def Novel_architecture_generate(
             user_guidance=user_guidance,
             knowledge_context=knowledge_context,
         )
-        core_seed_result = invoke_with_cleaning(llm, prompt_core, cancel_check=_check_cancel)
+        core_seed_result = invoke_with_cleaning(
+            llm,
+            prompt_core,
+            cancel_check=_check_cancel,
+            operation_name="核心种子生成",
+            step="core_seed",
+        )
         if not core_seed_result.strip():
             logger.warning("core_seed_prompt generation failed and returned empty.")
             _fail("core_seed", _failure_message("核心种子生成"))
@@ -159,7 +174,13 @@ def Novel_architecture_generate(
             core_seed=partial_data["core_seed_result"].strip(),
             user_guidance=user_guidance
         )
-        character_dynamics_result = invoke_with_cleaning(llm, prompt_character, cancel_check=_check_cancel)
+        character_dynamics_result = invoke_with_cleaning(
+            llm,
+            prompt_character,
+            cancel_check=_check_cancel,
+            operation_name="角色架构生成",
+            step="character",
+        )
         if not character_dynamics_result.strip():
             logger.warning("character_dynamics_prompt generation failed.")
             _fail("character", _failure_message("角色架构生成"))
@@ -179,7 +200,13 @@ def Novel_architecture_generate(
         prompt_char_state_init = prompt_definitions.create_character_state_prompt.format(
             character_dynamics=partial_data["character_dynamics_result"].strip()
         )
-        character_state_init = invoke_with_cleaning(llm, prompt_char_state_init, cancel_check=_check_cancel)
+        character_state_init = invoke_with_cleaning(
+            llm,
+            prompt_char_state_init,
+            cancel_check=_check_cancel,
+            operation_name="角色状态表生成",
+            step="character_state",
+        )
         if not character_state_init.strip():
             logger.warning("create_character_state_prompt generation failed.")
             _fail("character_state", _failure_message("角色状态生成"))
@@ -200,7 +227,13 @@ def Novel_architecture_generate(
             core_seed=partial_data["core_seed_result"].strip(),
             user_guidance=user_guidance
         )
-        world_building_result = invoke_with_cleaning(llm, prompt_world, cancel_check=_check_cancel)
+        world_building_result = invoke_with_cleaning(
+            llm,
+            prompt_world,
+            cancel_check=_check_cancel,
+            operation_name="世界观生成",
+            step="world",
+        )
         if not world_building_result.strip():
             logger.warning("world_building_prompt generation failed.")
             _fail("world", _failure_message("世界观生成"))
@@ -223,7 +256,13 @@ def Novel_architecture_generate(
             world_building=partial_data["world_building_result"].strip(),
             user_guidance=user_guidance
         )
-        plot_arch_result = invoke_with_cleaning(llm, prompt_plot, cancel_check=_check_cancel)
+        plot_arch_result = invoke_with_cleaning(
+            llm,
+            prompt_plot,
+            cancel_check=_check_cancel,
+            operation_name="情节架构生成",
+            step="plot",
+        )
         if not plot_arch_result.strip():
             logger.warning("plot_architecture_prompt generation failed.")
             _fail("plot", _failure_message("三幕式情节架构生成"))
@@ -257,7 +296,13 @@ def Novel_architecture_generate(
             world_building=world_building_result.strip(),
             plot_architecture=plot_arch_result.strip(),
         )
-        global_summary_result = invoke_with_cleaning(llm, prompt_global_summary, cancel_check=_check_cancel)
+        global_summary_result = invoke_with_cleaning(
+            llm,
+            prompt_global_summary,
+            cancel_check=_check_cancel,
+            operation_name="全局摘要生成",
+            step="global_summary_init",
+        )
         if not global_summary_result.strip():
             logger.warning("initial_global_summary_prompt generation failed.")
             _fail("global_summary_init", _failure_message("初始全局摘要生成"))
@@ -280,7 +325,13 @@ def Novel_architecture_generate(
             world_building=world_building_result.strip(),
             plot_architecture=plot_arch_result.strip(),
         )
-        plot_arcs_result = invoke_with_cleaning(llm, prompt_plot_arcs, cancel_check=_check_cancel)
+        plot_arcs_result = invoke_with_cleaning(
+            llm,
+            prompt_plot_arcs,
+            cancel_check=_check_cancel,
+            operation_name="伏笔台账生成",
+            step="plot_arcs_init",
+        )
         if not plot_arcs_result.strip():
             logger.warning("initial_plot_arcs_prompt generation failed.")
             _fail("plot_arcs_init", _failure_message("伏笔暗线台账生成"))

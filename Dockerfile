@@ -14,6 +14,7 @@ COPY prompt_definitions.py .
 COPY utils.py .
 COPY chapter_directory_parser.py .
 COPY consistency_checker.py .
+COPY llm_errors.py .
 COPY novel_generator/ novel_generator/
 
 # Ensure data directory

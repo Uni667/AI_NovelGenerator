@@ -51,6 +51,8 @@ def summarize_recent_chapters(
         def _check_cancel():
             if task_id:
                 raise_if_cancelled(task_id)
+            if ctx.cancel_token is not None:
+                ctx.cancel_token.raise_if_set()
             return False
 
         _check_cancel()
@@ -183,6 +185,8 @@ def get_filtered_knowledge_context(
         def _check_cancel():
             if task_id:
                 raise_if_cancelled(task_id)
+            if ctx.cancel_token is not None:
+                ctx.cancel_token.raise_if_set()
             return False
 
         _check_cancel()

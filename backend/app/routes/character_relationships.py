@@ -161,3 +161,39 @@ def get_relationship_graph(project_id: str, request: Request):
 @router.get("/api/v1/character-relationship-types")
 def get_relationship_types():
     return {"types": REL_TYPES, "statuses": STATUSES}
+
+
+@router.post("/api/v1/projects/{project_id}/character-relationships/batch")
+def create_relationships_batch(project_id: str, data: list[CharacterRelationshipCreate], request: Request):
+    """批量创建角色关系"""
+    _check_project(project_id, request)
+    if not data:
+        raise HTTPException(status_code=400, detail="请提供至少一条关系记录")
+    now = datetime.now().isoformat()
+    created = []
+    with get_db() as conn:
+        for item in data:
+            if item.character_id_a == item.character_id_b:
+                continue
+            existing = conn.execute(
+                """SELECT id FROM character_relationship
+                   WHERE project_id=? AND (
+                     (character_id_a=? AND character_id_b=?) OR
+                     (character_id_a=? AND character_id_b=?)
+                   )""",
+                (project_id, item.character_id_a, item.character_id_b,
+                 item.character_id_b, item.character_id_a)
+            ).fetchone()
+            if existing:
+                continue
+            cur = conn.execute(
+                """INSERT INTO character_relationship
+                   (project_id, character_id_a, character_id_b, rel_type, description,
+                    strength, direction, start_chapter, status, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (project_id, item.character_id_a, item.character_id_b,
+                 item.rel_type, item.description, item.strength, item.direction,
+                 item.start_chapter, item.status, now)
+            )
+            created.append(cur.lastrowid)
+    return {"created": len(created), "ids": created}

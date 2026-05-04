@@ -160,3 +160,37 @@ def get_timeline(project_id: str, request: Request):
 @router.get("/api/v1/character-appearance-types")
 def get_appearance_types():
     return {"types": APPEARANCE_TYPES, "roles": ROLE_TYPES}
+
+
+@router.post("/api/v1/projects/{project_id}/character-appearances/batch")
+def create_appearances_batch(project_id: str, data: list[CharacterAppearanceCreate], request: Request):
+    """批量创建登场记录"""
+    _check_project(project_id, request)
+    if not data:
+        raise HTTPException(status_code=400, detail="请提供至少一条登场记录")
+    now = datetime.now().isoformat()
+    created = []
+    with get_db() as conn:
+        for item in data:
+            existing = conn.execute(
+                "SELECT id FROM character_appearance WHERE character_id=? AND chapter_number=?",
+                (item.character_id, item.chapter_number)
+            ).fetchone()
+            if existing:
+                continue
+            cur = conn.execute(
+                """INSERT INTO character_appearance
+                   (project_id, character_id, chapter_number, appearance_type,
+                    role_in_chapter, summary, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (project_id, item.character_id, item.chapter_number,
+                 item.appearance_type, item.role_in_chapter, item.summary, now)
+            )
+            conn.execute(
+                """UPDATE character_profile
+                   SET first_appearance_chapter=COALESCE(first_appearance_chapter, ?)
+                   WHERE id=? AND project_id=?""",
+                (item.chapter_number, item.character_id, project_id)
+            )
+            created.append(cur.lastrowid)
+    return {"created": len(created), "ids": created}

@@ -34,6 +34,8 @@ def finalize_chapter(
     def _check_cancel():
         if task_id:
             raise_if_cancelled(task_id)
+        if ctx.cancel_token is not None:
+            ctx.cancel_token.raise_if_set()
         return False
 
     filepath = ctx.filepath
@@ -128,6 +130,8 @@ def enrich_chapter_text(
     def _check_cancel():
         if task_id:
             raise_if_cancelled(task_id)
+        if ctx.cancel_token is not None:
+            ctx.cancel_token.raise_if_set()
         return False
 
     llm = create_llm_adapter(

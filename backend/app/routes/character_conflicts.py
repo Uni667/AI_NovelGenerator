@@ -144,3 +144,32 @@ def update_participant_role(project_id: str, conflict_id: int, character_id: int
 @router.get("/api/v1/character-conflict-types")
 def get_conflict_types():
     return {"types": CONFLICT_TYPES, "statuses": CONFLICT_STATUSES, "roles": PARTICIPANT_ROLES}
+
+
+@router.post("/api/v1/projects/{project_id}/character-conflicts/batch")
+def create_conflicts_batch(project_id: str, data: list[CharacterConflictCreate], request: Request):
+    """批量创建角色冲突"""
+    _check_project(project_id, request)
+    if not data:
+        raise HTTPException(status_code=400, detail="请提供至少一条冲突记录")
+    now = datetime.now().isoformat()
+    created = []
+    with get_db() as conn:
+        for item in data:
+            cur = conn.execute(
+                """INSERT INTO character_conflict
+                   (project_id, title, description, conflict_type, intensity,
+                    start_chapter, resolved_chapter, resolution, status, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (project_id, item.title, item.description, item.conflict_type,
+                 item.intensity, item.start_chapter, item.resolved_chapter,
+                 item.resolution, item.status, now)
+            )
+            conflict_id = cur.lastrowid
+            for char_id in item.participant_ids:
+                conn.execute(
+                    "INSERT OR IGNORE INTO character_conflict_participant (conflict_id, character_id, role) VALUES (?, ?, ?)",
+                    (conflict_id, char_id, "participant")
+                )
+            created.append(conflict_id)
+    return {"created": len(created), "ids": created}

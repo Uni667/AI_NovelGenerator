@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import init_db
-from backend.app.routes import config, projects, chapters, files, knowledge, generation, characters, platform_tools, auth, character_relationships, character_conflicts, character_appearances
+from backend.app.routes import auth, chapters, character_appearances, character_conflicts, character_relationships, characters, config, files, generation, knowledge, model_profiles, platform_tools, projects, user_api_config
 
 # 统一日志配置（整个应用只在此处配置一次）
 logging.basicConfig(
@@ -40,11 +40,15 @@ app.include_router(auth.router)
 app.include_router(character_relationships.router)
 app.include_router(character_conflicts.router)
 app.include_router(character_appearances.router)
+app.include_router(user_api_config.router)
+app.include_router(model_profiles.router)
 
 
 @app.on_event("startup")
 def startup():
     init_db()
+    from novel_generator.task_manager import load_tasks_from_db
+    load_tasks_from_db()
 
 
 @app.get("/api/v1/health")

@@ -1,12 +1,11 @@
-"""Lightweight cooperative task registry and cancellation helpers."""
+"""Lightweight cooperative task registry and cancellation helpers with DB persistence."""
 
 from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
-
 
 TERMINAL_STATUSES = {"done", "failed", "cancelled"}
 ACTIVE_STATUSES = {"running", "cancelling"}
@@ -33,6 +32,89 @@ class TaskState:
 _TASKS: dict[str, TaskState] = {}
 _CANCEL_TOKENS: dict[str, object] = {}  # task_id → CancelToken
 _LOCK = threading.RLock()
+
+
+def _persist_task_to_db(state: TaskState) -> None:
+    """将任务状态写入数据库（惰性导入避免循环依赖）。"""
+    try:
+        import datetime
+
+        from backend.app.database import get_db
+
+        now_str = datetime.datetime.now().isoformat()
+        created_str = datetime.datetime.fromtimestamp(state.created_at).isoformat()
+        finished_str = (
+            datetime.datetime.fromtimestamp(state.finished_at).isoformat()
+            if state.finished_at
+            else None
+        )
+        error_message = state.message if state.status == "failed" else None
+        error_code = state.metadata.get("error_code") if state.metadata else None
+        error_category = state.metadata.get("error_category") if state.metadata else None
+        retryable = 1 if (state.metadata or {}).get("retryable") else 0
+        input_snapshot = (state.metadata or {}).get("input_snapshot", "")
+        output_file_id = (state.metadata or {}).get("output_file_id")
+
+        with get_db() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO generation_task
+                   (id, project_id, type, status, input_snapshot, output_file_id,
+                    error_message, error_code, error_category, retryable,
+                    created_at, updated_at, finished_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    state.task_id,
+                    state.project_id,
+                    state.kind,
+                    state.status,
+                    input_snapshot,
+                    output_file_id,
+                    error_message,
+                    error_code,
+                    error_category,
+                    retryable,
+                    created_str,
+                    now_str,
+                    finished_str,
+                ),
+            )
+    except Exception:
+        pass  # 持久化失败不阻断内存操作
+
+
+def load_tasks_from_db() -> None:
+    """从数据库恢复任务状态到内存（服务器启动时调用）。"""
+    try:
+        from backend.app.database import get_db
+
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT * FROM generation_task WHERE status IN ('running','pending')"
+            ).fetchall()
+        for row in rows:
+            r = dict(row)
+            created = time.mktime(
+                time.strptime(r["created_at"], "%Y-%m-%dT%H:%M:%S.%f")
+            ) if "." in r["created_at"] else time.mktime(
+                time.strptime(r["created_at"], "%Y-%m-%dT%H:%M:%S")
+            ) if "T" in r["created_at"] else time.time()
+            state = TaskState(
+                task_id=r["id"],
+                project_id=r["project_id"],
+                kind=r["type"],
+                status="failed",
+                message="服务器重启导致任务中断",
+                created_at=created,
+                metadata={
+                    "output_file_id": r.get("output_file_id"),
+                    "error_code": r.get("error_code"),
+                    "error_category": r.get("error_category"),
+                    "input_snapshot": r.get("input_snapshot", ""),
+                },
+            )
+            _TASKS[state.task_id] = state
+    except Exception:
+        pass
 
 
 def _cleanup_finished_tasks_locked(max_age_seconds: int = 86400) -> None:
@@ -69,6 +151,7 @@ def register_task(
             updated_at=now,
         )
         _TASKS[task_id] = state
+        _persist_task_to_db(state)
         return state
 
 
@@ -110,6 +193,7 @@ def update_task(task_id: str, **changes: Any) -> Optional[TaskState]:
             if hasattr(state, key) and value is not None:
                 setattr(state, key, value)
         state.updated_at = time.time()
+        _persist_task_to_db(state)
         return state
 
 
@@ -144,6 +228,7 @@ def request_cancel(task_id: str) -> Optional[TaskState]:
             except Exception:
                 pass
 
+        _persist_task_to_db(state)
         return state
 
 
@@ -169,6 +254,7 @@ def finish_task(task_id: str, status: str, message: str) -> Optional[TaskState]:
         state.message = message
         state.updated_at = time.time()
         state.finished_at = state.updated_at
+        _persist_task_to_db(state)
         return state
 
 
@@ -176,5 +262,12 @@ def task_payload(task_id: str) -> dict[str, Any]:
     state = get_task(task_id)
     if not state:
         return {}
-    return asdict(state)
-
+    d = asdict(state)
+    # 将 metadata 字段映射到外部期望的名称
+    if state.metadata.get("output_file_id"):
+        d["output_file_id"] = state.metadata["output_file_id"]
+    if state.metadata.get("error_code"):
+        d["error_code"] = state.metadata["error_code"]
+    if state.metadata.get("error_category"):
+        d["error_category"] = state.metadata["error_category"]
+    return d

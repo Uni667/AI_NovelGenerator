@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation"
 import { useProject, useProjectConfig, useChapters, useUpdateProjectConfig } from "@/lib/hooks/use-projects"
 import { useSSE } from "@/lib/hooks/use-sse"
 import { api } from "@/lib/api-client"
-import { PLATFORM_CONFIG, PLATFORMS } from "@/lib/types"
+import { PLATFORM_CONFIG, PLATFORMS, ProjectFile, TASK_STATUS_LABELS, TASK_TYPE_LABELS } from "@/lib/types"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -24,6 +24,9 @@ import { Play, FileText, Upload, Trash2, CheckCircle, AlertCircle, Loader2, User
 import RelationshipManager from "@/components/character/RelationshipManager"
 import ConflictManager from "@/components/character/ConflictManager"
 import AppearanceTimeline from "@/components/character/AppearanceTimeline"
+import { ArchitectureStatusCard } from "@/components/files/ArchitectureStatusCard"
+import { OutlineStatusCard } from "@/components/files/OutlineStatusCard"
+import { FileImportDialog } from "@/components/files/FileImportDialog"
 
 const GENERATED_FILES = [
   {
@@ -192,7 +195,7 @@ export default function ProjectDashboard() {
   const { data: config } = useProjectConfig(id)
   const { data: chapters } = useChapters(id)
   const updateConfig = useUpdateProjectConfig(id)
-  const { events, isConnected, connect } = useSSE()
+  const { events, isConnected, error: sseError, connect } = useSSE()
   const queryClient = useQueryClient()
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -210,6 +213,7 @@ export default function ProjectDashboard() {
   const [deleteCharTarget, setDeleteCharTarget] = useState<number | null>(null)
   const [characterSuggestions, setCharacterSuggestions] = useState<any[]>([])
   const [characterLoading, setCharacterLoading] = useState("")
+  const [dashboardSummary, setDashboardSummary] = useState<any>(null)
 
   // 平台工具状态
   const [titles, setTitles] = useState<string[]>([])
@@ -251,6 +255,51 @@ export default function ProjectDashboard() {
   const [characterImportSelectedIds, setCharacterImportSelectedIds] = useState<string[]>([])
   const [characterImportLoading, setCharacterImportLoading] = useState(false)
   const [characterImportConfirming, setCharacterImportConfirming] = useState(false)
+
+  // ── 架构/目录状态 ──
+  const [architectureFile, setArchitectureFile] = useState<ProjectFile | null>(null)
+  const [outlineFile, setOutlineFile] = useState<ProjectFile | null>(null)
+  const [archOutlineLoading, setArchOutlineLoading] = useState(true)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [importDialogFileType, setImportDialogFileType] = useState<"architecture" | "outline">("architecture")
+
+  const loadArchitectureAndOutline = useCallback(async () => {
+    if (!id) return
+    setArchOutlineLoading(true)
+    const [arch, outline] = await Promise.all([
+      api.projectFiles.getCurrentArchitecture(id),
+      api.projectFiles.getCurrentOutline(id),
+    ])
+    setArchitectureFile(arch)
+    setOutlineFile(outline)
+    setArchOutlineLoading(false)
+  }, [id])
+
+  useEffect(() => {
+    loadArchitectureAndOutline()
+  }, [loadArchitectureAndOutline])
+
+  // ── 生成前检查 ──
+  const checkArchitecture = (): boolean => {
+    if (!architectureFile) {
+      toast.error("请先生成或导入小说架构")
+      return false
+    }
+    return true
+  }
+
+  const checkOutline = (): boolean => {
+    if (!architectureFile) {
+      toast.error("请先生成或导入小说架构")
+      return false
+    }
+    if (!outlineFile) {
+      toast.error("请先生成或导入章节目录")
+      return false
+    }
+    return true
+  }
+
   const outputFileRequestId = useRef(0)
   const autoOpenFilesAfterDoneRef = useRef(false)
   const handledGenerationTaskIdRef = useRef<string | null>(null)
@@ -300,9 +349,13 @@ export default function ProjectDashboard() {
     try { setCharacters(await api.characters.list(id)) } catch { /* ignore */ }
   }, [id])
 
+  const loadDashboard = useCallback(async () => {
+    try { setDashboardSummary((await api.characters.dashboard(id)).summary) } catch { /* ignore */ }
+  }, [id])
+
   useEffect(() => {
-    if (activeTab === "characters") loadCharacters()
-  }, [activeTab, id, loadCharacters])
+    if (activeTab === "characters") { loadCharacters(); loadDashboard() }
+  }, [activeTab, id, loadCharacters, loadDashboard])
 
   const handleCreateCharacter = async () => {
     if (!charName.trim()) return
@@ -610,6 +663,7 @@ export default function ProjectDashboard() {
   }
 
   const handleGenerateWorkbenchChapter = async () => {
+    if (!checkOutline()) return
     try {
       await saveGenerationTargets()
       openGenerationStream(
@@ -624,6 +678,7 @@ export default function ProjectDashboard() {
   }
 
   const handleGenerateChapterBatch = async () => {
+    if (!checkOutline()) return
     try {
       await saveGenerationTargets()
       openGenerationStream(
@@ -716,9 +771,38 @@ export default function ProjectDashboard() {
     }
   }, [activeTab, selectedOutputFile, loadOutputFile])
 
+  // 生成超时保护：如果 10 分钟没有新事件且连接断开，自动清理卡死状态
+  const generationStartTimeRef = useRef(0)
+  useEffect(() => {
+    if (generationTaskId && isConnected && generationStartTimeRef.current === 0) {
+      generationStartTimeRef.current = Date.now()
+    }
+    if (!generationTaskId) {
+      generationStartTimeRef.current = 0
+    }
+  }, [generationTaskId, isConnected])
+
+  useEffect(() => {
+    if (!generationTaskId || !isConnected || generationStartTimeRef.current === 0) return
+    const elapsed = Date.now() - generationStartTimeRef.current
+    if (elapsed < 10 * 60_000) return
+
+    // super slow generation — just treat as stuck
+    toast.error("生成超时，连接已断开，请重试")
+    clearGenerationState()
+  }, [generationTaskId, isConnected, clearGenerationState, events])
+
   useEffect(() => {
     const terminalEvent = lastCancelled || lastDone || lastError
     const taskId = terminalEvent?.data?.task_id
+
+    // SSE 连接级错误（如网络中断），利用 sseError 兜底
+    if (!terminalEvent && sseError && generationTaskId) {
+      toast.error(sseError)
+      clearGenerationState()
+      return
+    }
+
     if (!terminalEvent || !taskId) return
     if (handledGenerationTaskIdRef.current === taskId) return
     if (generationTaskId && taskId !== generationTaskId) return
@@ -738,6 +822,12 @@ export default function ProjectDashboard() {
       return
     }
 
+    // 架构/目录生成完成后刷新状态
+    if (sseAction === "architecture" || sseAction === "blueprint") {
+      loadArchitectureAndOutline()
+      queryClient.invalidateQueries({ queryKey: ["chapters", id] })
+    }
+
     if (activeTab === "generation" && (sseAction === "architecture" || sseAction === "blueprint") && !autoOpenFilesAfterDoneRef.current) {
       autoOpenFilesAfterDoneRef.current = true
       setActiveTab("files")
@@ -747,7 +837,7 @@ export default function ProjectDashboard() {
       loadWorkbenchChapter(selectedChapterNumber)
       queryClient.invalidateQueries({ queryKey: ["chapters", id] })
     }
-  }, [activeTab, generationTaskId, id, lastCancelled, lastDone, lastError, loadWorkbenchChapter, queryClient, selectedChapterNumber, sseAction])
+  }, [activeTab, generationTaskId, id, lastCancelled, lastDone, lastError, sseError, loadWorkbenchChapter, queryClient, selectedChapterNumber, sseAction, clearGenerationState])
 
   const handleCopyOutput = async () => {
     if (!outputFileContent) return
@@ -810,6 +900,7 @@ export default function ProjectDashboard() {
   }
 
   const handleGenerateBlueprint = async () => {
+    if (!checkArchitecture()) return
     try {
       await saveGenerationTargets()
       openGenerationStream(
@@ -998,6 +1089,25 @@ export default function ProjectDashboard() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* ── 架构与目录状态卡片 ── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ArchitectureStatusCard
+              architecture={architectureFile}
+              isLoading={archOutlineLoading}
+              onImport={() => { setImportDialogFileType("architecture"); setImportDialogOpen(true) }}
+              onRegenerate={handleGenerateArchitecture}
+              onPreview={() => { setSelectedOutputFile("Novel_architecture.txt"); setActiveTab("files") }}
+            />
+            <OutlineStatusCard
+              outline={outlineFile}
+              hasArchitecture={!!architectureFile}
+              isLoading={archOutlineLoading}
+              onImport={() => { setImportDialogFileType("outline"); setImportDialogOpen(true) }}
+              onRegenerate={handleGenerateBlueprint}
+              onPreview={() => { setSelectedOutputFile("Novel_directory.txt"); setActiveTab("files") }}
+            />
+          </div>
 
           <Card>
             <CardHeader><CardTitle>章节列表</CardTitle></CardHeader>
@@ -1570,6 +1680,24 @@ export default function ProjectDashboard() {
               </div>
             </CardHeader>
           </Card>
+
+          {/* 角色库概览 */}
+          {dashboardSummary && (
+            <div className="grid grid-cols-5 gap-3">
+              {[
+                { label: "人物", value: dashboardSummary.total_characters, sub: `${dashboardSummary.appeared}登场·${dashboardSummary.planned}计划·${dashboardSummary.suggested}建议` },
+                { label: "关系", value: dashboardSummary.total_relationships, sub: `${dashboardSummary.active_relationships} 活跃` },
+                { label: "冲突", value: dashboardSummary.total_conflicts, sub: `${dashboardSummary.active_conflicts} 进行中` },
+                { label: "登场", value: dashboardSummary.total_appearances, sub: `${dashboardSummary.chapters_with_data} 章有数据` },
+              ].map(s => (
+                <Card key={s.label} className="bg-muted/30"><CardContent className="p-3 text-center">
+                  <p className="text-2xl font-bold">{s.value}</p>
+                  <p className="text-xs font-medium text-muted-foreground">{s.label}</p>
+                  {s.sub && <p className="text-xs text-muted-foreground mt-0.5">{s.sub}</p>}
+                </CardContent></Card>
+              ))}
+            </div>
+          )}
 
           {/* 角色管理子标签 */}
           <Tabs defaultValue="roster">
@@ -2299,6 +2427,17 @@ export default function ProjectDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── 文件导入对话框 ── */}
+      <FileImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        projectId={id}
+        onImportSuccess={() => {
+          loadArchitectureAndOutline()
+          queryClient.invalidateQueries({ queryKey: ["chapters", id] })
+        }}
+      />
     </div>
   )
 }

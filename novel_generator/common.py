@@ -8,6 +8,12 @@ import re
 import time
 import traceback
 
+from llm_errors import (
+    LLMInvocationError,
+    build_empty_response_error,
+    classify_llm_exception,
+    coerce_error_info,
+)
 from novel_generator.task_manager import TaskCancelledError
 
 logger = logging.getLogger(__name__)
@@ -44,22 +50,20 @@ def debug_log(prompt: str, response_content: str):
     )
 
 
-def invoke_with_cleaning(llm_adapter, prompt: str, max_retries: int = 3,
-                         cancel_check=None, cancel_token=None) -> str:
-    """Invoke an LLM and normalize the returned text.
+def invoke_with_cleaning(
+    llm_adapter,
+    prompt: str,
+    max_retries: int = 3,
+    cancel_check=None,
+    cancel_token=None,
+    operation_name: str = "LLM 调用",
+    step: str | None = None,
+) -> str:
+    """Invoke an LLM and normalize the returned text."""
+    if cancel_token is None and hasattr(llm_adapter, "_cancel_token"):
+        cancel_token = getattr(llm_adapter, "_cancel_token", None)
 
-    cancel_check: optional no-arg callback; if it returns True, the task is cancelled.
-    cancel_token:  optional CancelToken for transport-level HTTP abort.
-
-    The cancel_token is bound to the adapter so that transport-level abort
-    (httpx client close) works alongside cooperative cancel_check.
-    """
-    if cancel_check and cancel_check():
-        raise TaskCancelledError("任务已取消")
-
-    # Bind cancel_token to adapter so adapter.cancel() can close connections
-    if cancel_token is not None and hasattr(llm_adapter, '_cancel_token'):
-        llm_adapter._cancel_token = cancel_token
+    _raise_if_cancelled(cancel_check, cancel_token)
 
     print("\n" + "=" * 50)
     print("发送到 LLM 的提示词:")
@@ -67,21 +71,13 @@ def invoke_with_cleaning(llm_adapter, prompt: str, max_retries: int = 3,
     print(prompt)
     print("=" * 50 + "\n")
 
-    result = ""
-    retry_count = 0
-
-    while retry_count < max_retries:
+    for attempt in range(1, max_retries + 1):
         try:
-            if cancel_check and cancel_check():
-                raise TaskCancelledError("任务已取消")
-            # Check cancel_token before invoking
-            if cancel_token is not None:
-                cancel_token.raise_if_set()
+            _raise_if_cancelled(cancel_check, cancel_token)
             result = llm_adapter.invoke(prompt)
-            if cancel_check and cancel_check():
-                raise TaskCancelledError("任务已取消")
-            if cancel_token is not None:
-                cancel_token.raise_if_set()
+            error_info = coerce_error_info(getattr(llm_adapter, "last_error_info", None))
+
+            _raise_if_cancelled(cancel_check, cancel_token)
 
             print("\n" + "=" * 50)
             print("LLM 返回的内容:")
@@ -89,22 +85,84 @@ def invoke_with_cleaning(llm_adapter, prompt: str, max_retries: int = 3,
             print(result)
             print("=" * 50 + "\n")
 
-            result = result.replace("```", "").strip()
-            if result:
-                return result
+            cleaned = result.replace("```", "").strip() if isinstance(result, str) else ""
+            if cleaned:
+                _raise_if_cancelled(cancel_check, cancel_token)
+                return cleaned
 
-            retry_count += 1
+            if error_info is None and getattr(llm_adapter, "last_error", ""):
+                error_info = classify_llm_exception(
+                    RuntimeError(llm_adapter.last_error),
+                    provider=getattr(llm_adapter, "provider", ""),
+                    model_name=getattr(llm_adapter, "model_name", ""),
+                    base_url=getattr(llm_adapter, "base_url", ""),
+                )
+
+            if error_info is None:
+                error_info = build_empty_response_error(
+                    provider=getattr(llm_adapter, "provider", ""),
+                    model_name=getattr(llm_adapter, "model_name", ""),
+                    base_url=getattr(llm_adapter, "base_url", ""),
+                )
+
+            if attempt < max_retries and error_info.retryable:
+                wait_seconds = min(2 * attempt, 5)
+                logger.warning(
+                    "LLM 调用失败，准备重试 [attempt=%s/%s category=%s code=%s wait=%ss detail=%s]",
+                    attempt,
+                    max_retries,
+                    error_info.category,
+                    error_info.code,
+                    wait_seconds,
+                    error_info.detail,
+                )
+                time.sleep(wait_seconds)
+                continue
+
+            raise LLMInvocationError(error_info, operation_name=operation_name, step=step)
         except TaskCancelledError:
             raise
+        except LLMInvocationError:
+            raise
         except Exception as exc:
-            if cancel_check and cancel_check():
-                raise TaskCancelledError("任务已取消") from exc
-            if cancel_token is not None and cancel_token.is_set():
-                raise TaskCancelledError("任务已取消") from exc
-            print(f"调用失败 ({retry_count + 1}/{max_retries}): {str(exc)}")
-            retry_count += 1
-            if retry_count >= max_retries:
-                raise
+            _raise_if_cancelled(cancel_check, cancel_token, source_exc=exc)
+            error_info = classify_llm_exception(
+                exc,
+                provider=getattr(llm_adapter, "provider", ""),
+                model_name=getattr(llm_adapter, "model_name", ""),
+                base_url=getattr(llm_adapter, "base_url", ""),
+            )
+            if attempt < max_retries and error_info.retryable:
+                wait_seconds = min(2 * attempt, 5)
+                logger.warning(
+                    "LLM 调用异常，准备重试 [attempt=%s/%s category=%s code=%s wait=%ss detail=%s]",
+                    attempt,
+                    max_retries,
+                    error_info.category,
+                    error_info.code,
+                    wait_seconds,
+                    error_info.detail,
+                )
+                time.sleep(wait_seconds)
+                continue
+            raise LLMInvocationError(error_info, operation_name=operation_name, step=step) from exc
 
-    return result
+    raise LLMInvocationError(
+        build_empty_response_error(
+            provider=getattr(llm_adapter, "provider", ""),
+            model_name=getattr(llm_adapter, "model_name", ""),
+            base_url=getattr(llm_adapter, "base_url", ""),
+        ),
+        operation_name=operation_name,
+        step=step,
+    )
 
+
+def _raise_if_cancelled(cancel_check=None, cancel_token=None, source_exc: Exception | None = None) -> None:
+    if cancel_check and cancel_check():
+        raise TaskCancelledError("任务已取消") from source_exc
+    if cancel_token is not None and hasattr(cancel_token, "raise_if_set"):
+        try:
+            cancel_token.raise_if_set()
+        except TaskCancelledError as exc:
+            raise TaskCancelledError("任务已取消") from source_exc or exc
