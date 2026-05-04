@@ -224,8 +224,9 @@ export default function ProjectDashboard() {
   const [chapterTitles, setChapterTitles] = useState<string[]>([])
   const [platformLoading, setPlatformLoading] = useState("")
   const [hookChapterNum, setHookChapterNum] = useState(1)
-  const [llmConfigs, setLLMConfigs] = useState<Record<string, any>>({})
-  const [embConfigs, setEmbConfigs] = useState<Record<string, any>>({})
+  const [modelProfiles, setModelProfiles] = useState<any[]>([])
+  const [modelAssignment, setModelAssignment] = useState<Record<string, string | null>>({})
+  const [modelAssignmentSaving, setModelAssignmentSaving] = useState(false)
   const [selectedOutputFile, setSelectedOutputFile] = useState<(typeof GENERATED_FILES)[number]["filename"]>(GENERATED_FILES[0].filename)
   const [outputFileContent, setOutputFileContent] = useState("")
   const [outputFileLoading, setOutputFileLoading] = useState(false)
@@ -304,15 +305,10 @@ export default function ProjectDashboard() {
   const autoOpenFilesAfterDoneRef = useRef(false)
   const handledGenerationTaskIdRef = useRef<string | null>(null)
 
-  const usageLabel = (usage: string) => {
-    const map: Record<string, string> = { general: "通用", architecture: "架构生成", outline: "章节目录", draft: "章节草稿", finalize: "定稿", review: "一致性审校", platform: "平台工具" }
-    return map[usage] || "通用"
-  }
-
   useEffect(() => {
-    api.config.llmList().then(setLLMConfigs).catch(() => {})
-    api.config.embList().then(setEmbConfigs).catch(() => {})
-  }, [])
+    api.config.listProfiles().then(setModelProfiles).catch(() => {})
+    api.modelAssignment.get(id).then(setModelAssignment).catch(() => {})
+  }, [id])
 
   useEffect(() => {
     if (!config) return
@@ -557,6 +553,18 @@ export default function ProjectDashboard() {
   const handleApplyGenerationTargets = async () => {
     await saveGenerationTargets()
     toast.success("生成控制已更新")
+  }
+
+  const handleSaveModelAssignment = async () => {
+    setModelAssignmentSaving(true)
+    try {
+      await api.modelAssignment.save(id, modelAssignment)
+      toast.success("模型分配已保存")
+    } catch (e: any) {
+      toast.error(e?.message || "保存失败")
+    } finally {
+      setModelAssignmentSaving(false)
+    }
   }
 
   const buildGenerationStreamUrl = useCallback((path: string, taskId: string) => {
@@ -2140,69 +2148,66 @@ export default function ProjectDashboard() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>模型分配</CardTitle><CardDescription>为每个生成阶段选择使用的 LLM 模型和 Embedding 服务。留空则使用默认配置。</CardDescription></CardHeader>
+            <CardHeader>
+              <CardTitle>模型分配</CardTitle>
+              <CardDescription>为每个生成阶段选择使用的模型配置，留空则使用默认模型。</CardDescription>
+            </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label>架构生成</Label>
-                  <Select value={config?.architecture_llm || ""} onValueChange={(v) => updateConfig.mutate({ architecture_llm: v || undefined } as any)}>
-                    <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">默认（第一个可用）</SelectItem>
-                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{name} [{usageLabel(llmConfigs[name]?.usage)}] - {llmConfigs[name]?.model_name || ""}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>章节目录</Label>
-                  <Select value={config?.chapter_outline_llm || ""} onValueChange={(v) => updateConfig.mutate({ chapter_outline_llm: v || undefined } as any)}>
-                    <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">默认（第一个可用）</SelectItem>
-                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{name} [{usageLabel(llmConfigs[name]?.usage)}] - {llmConfigs[name]?.model_name || ""}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>章节草稿</Label>
-                  <Select value={config?.prompt_draft_llm || ""} onValueChange={(v) => updateConfig.mutate({ prompt_draft_llm: v || undefined } as any)}>
-                    <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">默认（第一个可用）</SelectItem>
-                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{name} [{usageLabel(llmConfigs[name]?.usage)}] - {llmConfigs[name]?.model_name || ""}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>章节定稿</Label>
-                  <Select value={config?.final_chapter_llm || ""} onValueChange={(v) => updateConfig.mutate({ final_chapter_llm: v || undefined } as any)}>
-                    <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">默认（第一个可用）</SelectItem>
-                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{name} [{usageLabel(llmConfigs[name]?.usage)}] - {llmConfigs[name]?.model_name || ""}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>一致性审校</Label>
-                  <Select value={config?.consistency_review_llm || ""} onValueChange={(v) => updateConfig.mutate({ consistency_review_llm: v || undefined } as any)}>
-                    <SelectTrigger><SelectValue placeholder="默认（第一个可用）" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">默认（第一个可用）</SelectItem>
-                      {Object.keys(llmConfigs).sort().map(name => <SelectItem key={name} value={name}>{name} [{usageLabel(llmConfigs[name]?.usage)}] - {llmConfigs[name]?.model_name || ""}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {([
+                  { field: "architecture_profile_id", label: "架构生成" },
+                  { field: "outline_profile_id", label: "章节目录" },
+                  { field: "draft_profile_id", label: "章节草稿" },
+                  { field: "polish_profile_id", label: "章节定稿" },
+                  { field: "review_profile_id", label: "一致性审校" },
+                ] as const).map(({ field, label }) => (
+                  <div key={field}>
+                    <Label>{label}</Label>
+                    <Select
+                      value={modelAssignment[field] || ""}
+                      onValueChange={(v) => setModelAssignment(prev => ({ ...prev, [field]: v || null }))}
+                    >
+                      <SelectTrigger><SelectValue placeholder="默认模型" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">默认模型</SelectItem>
+                        {modelProfiles
+                          .filter(p => p.type === "chat" && p.is_active)
+                          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                          .map(p => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name} ({p.provider}/{p.model})
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
                 <div>
                   <Label>Embedding 向量化</Label>
-                  <Select value={config?.embedding_config || ""} onValueChange={(v) => updateConfig.mutate({ embedding_config: v || undefined } as any)}>
+                  <Select
+                    value={modelAssignment["embedding_profile_id"] || ""}
+                    onValueChange={(v) => setModelAssignment(prev => ({ ...prev, embedding_profile_id: v || null }))}
+                  >
                     <SelectTrigger><SelectValue placeholder="不使用" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">不使用</SelectItem>
-                      {Object.keys(embConfigs).sort().map(name => <SelectItem key={name} value={name}>{embConfigs[name]?.model_name || name}</SelectItem>)}
+                      {modelProfiles
+                        .filter(p => p.type === "embedding" && p.is_active)
+                        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                        .map(p => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name} ({p.provider}/{p.model})
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <Button onClick={handleSaveModelAssignment} disabled={modelAssignmentSaving}>
+                  {modelAssignmentSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                  保存分配
+                </Button>
               </div>
             </CardContent>
           </Card>

@@ -1,9 +1,7 @@
 import sqlite3
 import os
-import json
 import logging
 from contextlib import contextmanager
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -12,90 +10,6 @@ DB_PATH = os.path.join(DB_DIR, "projects.db")
 
 os.makedirs(DB_DIR, exist_ok=True)
 
-DEFAULT_USER_ID = "default-admin"
-DEFAULT_USERNAME = "admin"
-
-
-def _seed_config_json(conn) -> None:
-    """种子：从 config.json 导入 LLM/Embedding 配置到数据库（仅当 DB 为空时）。"""
-    config_path = os.path.join(os.path.dirname(DB_DIR), "config.json")
-    if not os.path.exists(config_path):
-        logger.info("config.json not found, skipping seed")
-        return
-
-    # 已有 LLM 配置则跳过
-    existing = conn.execute("SELECT COUNT(*) FROM user_llm_config").fetchone()
-    if existing and existing[0] > 0:
-        return
-
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-    except Exception:
-        logger.warning("Failed to read config.json for seed", exc_info=True)
-        return
-
-    # 确保默认用户存在
-    existing_user = conn.execute("SELECT id FROM user WHERE id=?", (DEFAULT_USER_ID,)).fetchone()
-    if not existing_user:
-        conn.execute(
-            "INSERT INTO user (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
-            (DEFAULT_USER_ID, DEFAULT_USERNAME, "seeded-not-for-login", datetime.now().isoformat()),
-        )
-
-    now = datetime.now().isoformat()
-
-    # 导入 LLM 配置
-    llm_configs = cfg.get("llm_configs", {})
-    for name, c in llm_configs.items():
-        if not c.get("api_key"):
-            continue
-        conn.execute(
-            """INSERT OR IGNORE INTO user_llm_config
-               (user_id, name, interface_format, api_key, base_url, model_name,
-                temperature, max_tokens, timeout, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                DEFAULT_USER_ID,
-                name,
-                c.get("interface_format", "OpenAI"),
-                c.get("api_key", ""),
-                c.get("base_url", ""),
-                c.get("model_name", ""),
-                c.get("temperature", 0.7),
-                c.get("max_tokens", 8192),
-                c.get("timeout", 600),
-                now,
-                now,
-            ),
-        )
-        logger.info("Seeded LLM config: %s", name)
-
-    # 导入 Embedding 配置
-    emb_configs = cfg.get("embedding_configs", {})
-    for name, c in emb_configs.items():
-        if not c.get("api_key"):
-            continue
-        conn.execute(
-            """INSERT OR IGNORE INTO user_embedding_config
-               (user_id, name, interface_format, api_key, base_url, model_name,
-                retrieval_k, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                DEFAULT_USER_ID,
-                name,
-                c.get("interface_format", "OpenAI"),
-                c.get("api_key", ""),
-                c.get("base_url", ""),
-                c.get("model_name", ""),
-                c.get("retrieval_k", 4),
-                now,
-                now,
-            ),
-        )
-        logger.info("Seeded embedding config: %s", name)
-
-    logger.info("config.json seed complete")
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -103,6 +17,7 @@ def get_connection():
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
 
 @contextmanager
 def get_db():
@@ -115,6 +30,7 @@ def get_db():
         raise
     finally:
         conn.close()
+
 
 def init_db():
     with get_db() as conn:
@@ -137,38 +53,9 @@ def init_db():
                 created_at TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS user_llm_config (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-                name TEXT NOT NULL,
-                interface_format TEXT NOT NULL DEFAULT 'OpenAI',
-                api_key TEXT NOT NULL,
-                base_url TEXT DEFAULT '',
-                model_name TEXT DEFAULT '',
-                temperature REAL DEFAULT 0.7,
-                max_tokens INTEGER DEFAULT 8192,
-                timeout INTEGER DEFAULT 600,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                UNIQUE(user_id, name)
-            );
-
-            CREATE TABLE IF NOT EXISTS user_embedding_config (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-                name TEXT NOT NULL,
-                interface_format TEXT NOT NULL DEFAULT 'OpenAI',
-                api_key TEXT NOT NULL,
-                base_url TEXT DEFAULT '',
-                model_name TEXT DEFAULT '',
-                retrieval_k INTEGER DEFAULT 4,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                UNIQUE(user_id, name)
-            );
-
             CREATE TABLE IF NOT EXISTS project (
                 id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
                 name TEXT NOT NULL,
                 description TEXT DEFAULT '',
                 filepath TEXT NOT NULL UNIQUE,
@@ -186,12 +73,8 @@ def init_db():
                 word_number INTEGER DEFAULT 3000,
                 user_guidance TEXT DEFAULT '',
                 language TEXT DEFAULT 'zh',
-                architecture_llm TEXT DEFAULT '',
-                chapter_outline_llm TEXT DEFAULT '',
-                prompt_draft_llm TEXT DEFAULT '',
-                final_chapter_llm TEXT DEFAULT '',
-                consistency_review_llm TEXT DEFAULT '',
-                embedding_config TEXT DEFAULT ''
+                platform TEXT DEFAULT 'tomato',
+                category TEXT DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS chapter (
@@ -411,7 +294,6 @@ def init_db():
                 updated_at TEXT NOT NULL
             );
 
-
             -- 模型调用日志
             CREATE TABLE IF NOT EXISTS model_invocation_log (
                 id TEXT PRIMARY KEY,
@@ -436,7 +318,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_invocation_task ON model_invocation_log(task_id);
         """)
 
-        # 迁移：新增 platform 和 category 列（如果不存在则忽略）
+        # ── 迁移：project_config 新增 platform 和 category 列 ──
         try:
             conn.execute("ALTER TABLE project_config ADD COLUMN platform TEXT DEFAULT 'tomato'")
         except Exception:
@@ -445,17 +327,8 @@ def init_db():
             conn.execute("ALTER TABLE project_config ADD COLUMN category TEXT DEFAULT ''")
         except Exception:
             pass
-        # 迁移：新增 user_id 列（多用户）
-        try:
-            conn.execute("ALTER TABLE project ADD COLUMN user_id TEXT REFERENCES user(id)")
-        except Exception:
-            pass
-        # 迁移：新增 usage 列（LLM 配置用途）
-        try:
-            conn.execute("ALTER TABLE user_llm_config ADD COLUMN usage TEXT DEFAULT 'general'")
-        except Exception:
-            pass
-        # 迁移：新增角色规划字段
+
+        # ── 迁移：character_profile 新增字段 ──
         try:
             conn.execute("ALTER TABLE character_profile ADD COLUMN status TEXT DEFAULT 'appeared'")
         except Exception:
@@ -469,7 +342,7 @@ def init_db():
         except Exception:
             pass
 
-        # ── 迁移：model_profile 新增字段（必须在 _migrate_user_api_config_to_credential 之前）──
+        # ── 迁移：model_profile 新增字段 ──
         for col, defn in [
             ("purpose", "TEXT DEFAULT 'general'"),
             ("api_credential_id", "TEXT REFERENCES api_credential(id) ON DELETE SET NULL"),
@@ -488,12 +361,6 @@ def init_db():
                 conn.execute(f"ALTER TABLE model_profile ADD COLUMN {col} {defn}")
             except Exception:
                 pass
-
-        # ── 迁移：旧 user_api_config → 新 api_credential ──
-        try:
-            _migrate_user_api_config_to_credential(conn)
-        except Exception:
-            pass
 
         # ── 迁移：project_model_assignment 新增阶段字段 ──
         for col in ["worldbuilding_profile_id", "character_profile_id", "summary_profile_id",
@@ -518,59 +385,3 @@ def init_db():
                 conn.execute(f"ALTER TABLE generation_task ADD COLUMN {col} {defn}")
             except Exception:
                 pass
-
-        # 种子导入：config.json → 数据库（仅在 LLM 配置为空时）
-        _seed_config_json(conn)
-
-
-def _migrate_user_api_config_to_credential(conn) -> None:
-    """将旧的 user_api_config 迁移为 api_credential + 更新 model_profile 绑定。"""
-    # 检查旧表是否存在
-    try:
-        rows = conn.execute("SELECT * FROM user_api_config").fetchall()
-    except Exception:
-        return
-    if not rows:
-        return
-
-    logger.info("Migrating %d user_api_config rows → api_credential...", len(rows))
-    for row in rows:
-        r = dict(row)
-        user_id = r["user_id"]
-        # 检查是否已迁移
-        existing = conn.execute(
-            "SELECT id FROM api_credential WHERE user_id=? AND api_key_hash=?",
-            (user_id, r.get("api_key_hash", "")),
-        ).fetchone()
-        if existing:
-            cred_id = existing[0]
-        else:
-            import uuid as _uuid
-            cred_id = _uuid.uuid4().hex
-            now = r.get("updated_at") or r.get("created_at")
-            conn.execute(
-                """INSERT INTO api_credential
-                   (id, user_id, name, provider, api_key_encrypted, api_key_last4, api_key_hash,
-                    base_url, status, is_default, last_tested_at, last_used_at, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (cred_id, user_id,
-                 f"{r.get('provider','openai')}-default",
-                 r.get("provider", "openai"),
-                 r.get("api_key_encrypted", ""),
-                 r.get("api_key_last4", ""),
-                 r.get("api_key_hash", ""),
-                 r.get("base_url", ""),
-                 r.get("status", "untested"),
-                 1,  # is_default
-                 r.get("last_tested_at"),
-                 r.get("last_used_at"),
-                 now, now),
-            )
-
-        # 更新已有 model_profile 绑定到新 credential
-        conn.execute(
-            "UPDATE model_profile SET api_credential_id=? WHERE user_id=? AND api_credential_id IS NULL",
-            (cred_id, user_id),
-        )
-
-    logger.info("Migration complete: user_api_config → api_credential")

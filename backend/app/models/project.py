@@ -41,12 +41,7 @@ class ConfigUpdate(BaseModel):
     language: Optional[str] = None
     platform: Optional[str] = None
     category: Optional[str] = None
-    architecture_llm: Optional[str] = None
-    chapter_outline_llm: Optional[str] = None
-    prompt_draft_llm: Optional[str] = None
-    final_chapter_llm: Optional[str] = None
-    consistency_review_llm: Optional[str] = None
-    embedding_config: Optional[str] = None
+    # 旧版 LLM 名称字段已废弃，请使用 /api/projects/{id}/model-assignment
 
 
 class ConfigResponse(BaseModel):
@@ -59,12 +54,6 @@ class ConfigResponse(BaseModel):
     language: str
     platform: str
     category: str
-    architecture_llm: str
-    chapter_outline_llm: str
-    prompt_draft_llm: str
-    final_chapter_llm: str
-    consistency_review_llm: str
-    embedding_config: str
 
 
 class ProjectFileResponse(BaseModel):

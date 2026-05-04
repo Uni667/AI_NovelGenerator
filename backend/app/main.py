@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import init_db
-from backend.app.routes import auth, chapters, character_appearances, character_conflicts, character_relationships, characters, config, files, generation, knowledge, model_profiles, platform_tools, projects, user_api_config
+from backend.app.routes import auth, chapters, character_appearances, character_conflicts, character_relationships, characters, files, generation, knowledge, model_profiles, platform_tools, projects, user_api_config
 
 # 统一日志配置（整个应用只在此处配置一次）
 logging.basicConfig(
@@ -28,7 +28,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(config.router)
 app.include_router(projects.router)
 app.include_router(chapters.router)
 app.include_router(files.router)

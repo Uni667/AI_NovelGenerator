@@ -86,26 +86,6 @@ export const api = {
     delete: (projectId: string, filename: string) => request<{ message: string; filename: string }>(`/api/v1/projects/${projectId}/files/${encodeURIComponent(filename)}`, { method: "DELETE" }),
   },
   config: {
-    llmList: () => request<Record<string, any>>("/api/v1/config/llm"),
-    llmCreate: (data: any) => request<any>("/api/v1/config/llm", { method: "POST", body: JSON.stringify(data) }),
-    llmUpdate: (name: string, data: any) => request<any>(`/api/v1/config/llm/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) }),
-    llmDelete: (name: string) => request<void>(`/api/v1/config/llm/${encodeURIComponent(name)}`, { method: "DELETE" }),
-    llmTest: (name: string) => request<any>(`/api/v1/config/llm/${encodeURIComponent(name)}/test`, { method: "POST" }),
-    embList: () => request<Record<string, any>>("/api/v1/config/embedding"),
-    embCreate: (data: any) => request<any>("/api/v1/config/embedding", { method: "POST", body: JSON.stringify(data) }),
-    embUpdate: (name: string, data: any) => request<any>(`/api/v1/config/embedding/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) }),
-    embDelete: (name: string) => request<void>(`/api/v1/config/embedding/${encodeURIComponent(name)}`, { method: "DELETE" }),
-    embTest: (name: string) => request<any>(`/api/v1/config/embedding/${encodeURIComponent(name)}/test`, { method: "POST" }),
-    // 新版用户 API 配置（简化接口）
-    get: () => request<any>("/api/user/api-config"),
-    save: (data: { provider: string; api_key: string; base_url?: string; default_model?: string; default_chat_model?: string; default_embedding_model?: string }) =>
-      request<any>("/api/user/api-config", { method: "POST", body: JSON.stringify(data) }),
-    update: (data: { default_chat_model?: string; default_embedding_model?: string; base_url?: string; provider?: string }) =>
-      request<any>("/api/user/api-config", { method: "PUT", body: JSON.stringify(data) }),
-    test: () => request<{ success: boolean; message: string }>("/api/user/api-config/test", { method: "POST" }),
-    delete: () => request<{ message: string }>("/api/user/api-config", { method: "DELETE" }),
-    migrate: () => request<{ migrated: number; message: string }>("/api/user/migrate-legacy-llm-configs", { method: "POST" }),
-    legacyStatus: () => request<{ total: number; llm: number; embedding: number }>("/api/user/legacy-llm-configs/status"),
     // API 凭证
     listCredentials: () => request<any[]>("/api/user/api-credentials"),
     createCredential: (data: { name: string; provider: string; api_key: string; base_url: string; is_default?: boolean }) =>
@@ -142,7 +122,7 @@ export const api = {
   modelAssignment: {
     get: (projectId: string) => request<any>(`/api/projects/${projectId}/model-assignment`),
     save: (projectId: string, data: any) =>
-      request<any>(`/api/projects/${projectId}/model-assignment`, { method: "POST", body: JSON.stringify(data) }),
+      request<any>(`/api/projects/${projectId}/model-assignment`, { method: "PUT", body: JSON.stringify(data) }),
   },
   knowledge: {
     upload: (projectId: string, file: File) => {

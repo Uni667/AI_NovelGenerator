@@ -1,41 +1,8 @@
-"""加密工具：Fernet (向后兼容) + AES-256-GCM (推荐)"""
+"""加密工具：AES-256-GCM 加密存储 API Key。"""
 
 import base64
 import hashlib
 import os
-
-from cryptography.fernet import Fernet
-
-# ── Fernet 兼容（旧 user_llm_config / user_embedding_config 仍在使用）──
-
-_KEY_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", ".fernet_key",
-)
-
-
-def _get_or_create_key() -> bytes:
-    os.makedirs(os.path.dirname(_KEY_FILE), exist_ok=True)
-    if os.path.exists(_KEY_FILE):
-        with open(_KEY_FILE, "rb") as f:
-            return f.read()
-    key = Fernet.generate_key()
-    with open(_KEY_FILE, "wb") as f:
-        f.write(key)
-    return key
-
-
-def encrypt(text: str) -> str:
-    f = Fernet(_get_or_create_key())
-    return f.encrypt(text.encode()).decode()
-
-
-def decrypt(token: str) -> str:
-    f = Fernet(_get_or_create_key())
-    return f.decrypt(token.encode()).decode()
-
-
-# ── AES-256-GCM 加密（新 user_api_config 使用，密钥来自环境变量）──
 
 _ENV_KEY = os.getenv("API_SECRET_ENCRYPTION_KEY", "")
 _SALT = b"ai_novel_generator_salt_v1"

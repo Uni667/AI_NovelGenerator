@@ -6,10 +6,6 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from backend.app.auth import get_current_user
 from backend.app.database import get_db
 from backend.app.services import project_service
-from backend.app.services.user_service import (
-    get_user_embedding_config_raw,
-    list_user_embedding_configs,
-)
 from novel_generator.knowledge import import_knowledge_file
 from novel_generator.vectorstore_utils import clear_vector_store
 
@@ -24,18 +20,21 @@ def _check_project(project_id: str, request: Request) -> tuple[dict, str]:
     return project, user_id
 
 
-def _resolve_embedding_config(user_id: str, project: dict) -> dict:
-    project_config = project_service.get_project_config(project["id"]) or {}
-    preferred_name = project_config.get("embedding_config", "")
-    if preferred_name:
-        config = get_user_embedding_config_raw(user_id, preferred_name)
-        if config:
-            return config
-    configs = list_user_embedding_configs(user_id)
-    if not configs:
-        return {}
-    first_name = next(iter(configs.keys()))
-    return get_user_embedding_config_raw(user_id, first_name)
+def _resolve_embedding_config(user_id: str, project_id: str) -> dict:
+    """Get embedding runtime config through ModelRuntimeService. Returns dict with keys for downstream."""
+    from backend.app.services.model_runtime import get_runtime_config, ConfigError
+
+    try:
+        rt = get_runtime_config(user_id, "embedding", project_id)
+    except ConfigError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {
+        "api_key": rt.api_key,
+        "base_url": rt.base_url,
+        "model_name": rt.model,
+        "interface_format": "OpenAI",
+    }
 
 
 def _fetch_knowledge_file(project_id: str, file_id: int) -> dict | None:
@@ -83,7 +82,7 @@ def _import_file_to_vector_store(project: dict, embedding_config: dict, file_pat
 
 
 def _rebuild_vector_store(project: dict, user_id: str) -> dict:
-    embedding_config = _resolve_embedding_config(user_id, project)
+    embedding_config = _resolve_embedding_config(user_id, project["id"])
     remaining_files = _list_files(project["id"])
     imported_files = [row for row in remaining_files if row.get("imported") and os.path.exists(row.get("filepath", ""))]
 
@@ -150,7 +149,7 @@ async def upload_knowledge(project_id: str, request: Request, file: UploadFile =
         )
         file_id = cursor.lastrowid
 
-    embedding_config = _resolve_embedding_config(user_id, project)
+    embedding_config = _resolve_embedding_config(user_id, project_id)
     import_result = _import_file_to_vector_store(project, embedding_config, file_path)
     if import_result.get("success"):
         _set_imported(project_id, file_id, 1)

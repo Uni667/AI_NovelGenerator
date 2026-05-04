@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from backend.app.services import project_service, chapter_service
-from backend.app.dependencies import get_user_llm_config
+
 from backend.app.auth import get_current_user
 
 router = APIRouter(tags=["番茄平台工具"])
@@ -147,38 +147,26 @@ CHAPTER_TITLE_PROMPT = """你是一位番茄免费小说平台的编辑。请根
 
 # ── Helper ──────────────────────────────────────────────────────────
 
-def _get_llm_and_config(project_id: str, user_id: str):
-    project = project_service.get_project(project_id, user_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-
-    pconfig = project_service.get_project_config(project_id)
-    if not pconfig:
-        raise HTTPException(status_code=404, detail="项目配置不存在")
-
-    llm_name = pconfig.get("prompt_draft_llm", "")
-    from backend.app.services.user_service import list_user_llm_configs, get_user_llm_config_raw
-    if llm_name:
-        llm_conf = get_user_llm_config_raw(user_id, llm_name)
-    else:
-        configs = list_user_llm_configs(user_id)
-        if not configs:
-            raise HTTPException(status_code=400, detail="没有可用的 LLM 配置")
-        llm_conf = get_user_llm_config_raw(user_id, next(iter(configs.keys())))
-    if not llm_conf:
-        raise HTTPException(status_code=400, detail="没有可用的 LLM 配置")
-
+def _get_llm_and_config(user_id: str, project_id: str):
+    """Get LLM adapter and config through ModelRuntimeService."""
+    from backend.app.services.model_runtime import get_runtime_config, ConfigError
     from llm_adapters import create_llm_adapter
-    llm = create_llm_adapter(
-        interface_format=llm_conf.get("interface_format", "OpenAI"),
-        base_url=llm_conf.get("base_url", ""),
-        model_name=llm_conf.get("model_name", ""),
-        api_key=llm_conf.get("api_key", ""),
-        temperature=0.8,
-        max_tokens=llm_conf.get("max_tokens", 4096),
-        timeout=llm_conf.get("timeout", 120)
+
+    try:
+        rt = get_runtime_config(user_id, "draft", project_id)
+    except ConfigError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    adapter = create_llm_adapter(
+        interface_format="OpenAI",
+        base_url=rt.base_url,
+        model_name=rt.model,
+        api_key=rt.api_key,
+        temperature=rt.temperature or 0.7,
+        max_tokens=rt.max_tokens or 8192,
+        timeout=600,
     )
-    return llm, project, pconfig
+    return adapter, rt
 
 
 def _read_architecture(filepath: str) -> str:
@@ -198,7 +186,13 @@ def _trim_response(text: str, max_chars: int = 3000) -> str:
 @router.post("/api/v1/projects/{project_id}/tools/titles")
 def generate_titles(project_id: str, request: Request):
     user_id = get_current_user(request)
-    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
+    llm, rt = _get_llm_and_config(user_id, project_id)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    pconfig = project_service.get_project_config(project_id)
+    if not pconfig:
+        raise HTTPException(status_code=404, detail="项目配置不存在")
 
     prompt = TITLE_GENERATION_PROMPT.format(
         topic=pconfig.get("topic", ""),
@@ -221,7 +215,13 @@ def generate_titles(project_id: str, request: Request):
 @router.post("/api/v1/projects/{project_id}/tools/blurb")
 def generate_blurb(project_id: str, request: Request):
     user_id = get_current_user(request)
-    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
+    llm, rt = _get_llm_and_config(user_id, project_id)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    pconfig = project_service.get_project_config(project_id)
+    if not pconfig:
+        raise HTTPException(status_code=404, detail="项目配置不存在")
     arch_summary = _read_architecture(project["filepath"])
 
     prompt = BLURB_GENERATION_PROMPT.format(
@@ -246,7 +246,13 @@ def generate_blurb(project_id: str, request: Request):
 @router.post("/api/v1/projects/{project_id}/tools/hook-check")
 def check_opening_hook(project_id: str, request: Request, chapter_number: int = 1):
     user_id = get_current_user(request)
-    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
+    llm, rt = _get_llm_and_config(user_id, project_id)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    pconfig = project_service.get_project_config(project_id)
+    if not pconfig:
+        raise HTTPException(status_code=404, detail="项目配置不存在")
 
     chapter_content = chapter_service.get_chapter_content(
         project_id, chapter_number, project["filepath"]
@@ -275,7 +281,13 @@ def check_opening_hook(project_id: str, request: Request, chapter_number: int = 
 @router.post("/api/v1/projects/{project_id}/tools/chapter-hook-check")
 def check_chapter_ending_hook(project_id: str, chapter_number: int, request: Request):
     user_id = get_current_user(request)
-    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
+    llm, rt = _get_llm_and_config(user_id, project_id)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    pconfig = project_service.get_project_config(project_id)
+    if not pconfig:
+        raise HTTPException(status_code=404, detail="项目配置不存在")
 
     chapter_content = chapter_service.get_chapter_content(
         project_id, chapter_number, project["filepath"]
@@ -303,7 +315,13 @@ def check_chapter_ending_hook(project_id: str, chapter_number: int, request: Req
 @router.post("/api/v1/projects/{project_id}/tools/batch-hook-check")
 def batch_check_chapter_hooks(project_id: str, request: Request):
     user_id = get_current_user(request)
-    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
+    llm, rt = _get_llm_and_config(user_id, project_id)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    pconfig = project_service.get_project_config(project_id)
+    if not pconfig:
+        raise HTTPException(status_code=404, detail="项目配置不存在")
 
     chapters = chapter_service.list_chapters(project_id)
     if not chapters:
@@ -342,7 +360,13 @@ def batch_check_chapter_hooks(project_id: str, request: Request):
 @router.post("/api/v1/projects/{project_id}/tools/tags")
 def generate_tags(project_id: str, request: Request):
     user_id = get_current_user(request)
-    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
+    llm, rt = _get_llm_and_config(user_id, project_id)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    pconfig = project_service.get_project_config(project_id)
+    if not pconfig:
+        raise HTTPException(status_code=404, detail="项目配置不存在")
     arch_summary = _read_architecture(project["filepath"])
 
     prompt = TAGS_GENERATION_PROMPT.format(
@@ -367,7 +391,13 @@ def generate_tags(project_id: str, request: Request):
 @router.post("/api/v1/projects/{project_id}/tools/chapter-title")
 def generate_chapter_title(project_id: str, chapter_number: int, request: Request):
     user_id = get_current_user(request)
-    llm, project, pconfig = _get_llm_and_config(project_id, user_id)
+    llm, rt = _get_llm_and_config(user_id, project_id)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    pconfig = project_service.get_project_config(project_id)
+    if not pconfig:
+        raise HTTPException(status_code=404, detail="项目配置不存在")
 
     chapter_meta = chapter_service.get_chapter(project_id, chapter_number)
     chapter_content = chapter_service.get_chapter_content(project_id, chapter_number, project["filepath"])

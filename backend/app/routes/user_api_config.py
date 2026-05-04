@@ -1,4 +1,4 @@
-"""API 凭证管理 + 模型配置管理 + 项目模型分配 + 迁移 + 调用日志。"""
+"""API 凭证管理 + 模型配置管理 + 项目模型分配 + 调用日志。旧版 LLM/Embedding 配置已移除。"""
 
 import datetime
 import logging
@@ -18,34 +18,12 @@ from backend.app.services.api_credential_service import (
     test_credential,
     update_credential,
 )
-from backend.app.services.user_api_config_service import (
-    get_user_api_config_response,
-    save_user_api_config,
-    update_user_api_config,
-)
-from backend.app.utils.crypto import decrypt
 
 router = APIRouter(tags=["API 配置"])
 logger = logging.getLogger(__name__)
 
 
 # ── Pydantic models ──
-
-class SaveConfigReq(BaseModel):
-    provider: str = "openai"
-    api_key: str = Field(..., min_length=1)
-    base_url: str | None = None
-    default_chat_model: str | None = None
-    default_embedding_model: str | None = None
-    default_model: str | None = None
-
-
-class UpdateConfigReq(BaseModel):
-    default_chat_model: str | None = None
-    default_embedding_model: str | None = None
-    base_url: str | None = None
-    provider: str | None = None
-
 
 class CredentialReq(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
@@ -109,52 +87,54 @@ class ProjectAssignmentReq(BaseModel):
     rerank_profile_id: str | None = None
 
 
-# ── 旧版兼容：单 API 配置 ──
+# ── 工具函数 ──
 
-@router.get("/api/user/api-config")
-def get_config(request: Request):
-    return get_user_api_config_response(get_current_user(request))
+def _profile_row(row) -> dict:
+    r = dict(row)
+    for bf in ["is_default", "is_active", "supports_streaming", "supports_json"]:
+        r[bf] = bool(r.get(bf, False))
+    return r
 
 
-@router.post("/api/user/api-config")
-def save_config(data: SaveConfigReq, request: Request):
-    user_id = get_current_user(request)
-    try:
-        return save_user_api_config(
-            user_id=user_id, provider=data.provider, api_key=data.api_key,
-            base_url=data.base_url, default_chat_model=data.default_chat_model or data.default_model,
-            default_embedding_model=data.default_embedding_model,
+def _build_chat(cfg):
+    from llm_adapters import create_llm_adapter
+    return create_llm_adapter(
+        interface_format="OpenAI", base_url=cfg.base_url, model_name=cfg.model,
+        api_key=cfg.api_key, temperature=cfg.temperature or 0.7,
+        max_tokens=cfg.max_tokens or 8192, timeout=600,
+    )
+
+
+def _update_model_health(profile_id: str, status: str, error: str, now: str) -> None:
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE model_profile SET health_status=?, last_error=?, last_tested_at=?, updated_at=? WHERE id=?",
+            (status, error[:500], now, now, profile_id),
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.put("/api/user/api-config")
-def update_config(data: UpdateConfigReq, request: Request):
-    user_id = get_current_user(request)
-    try:
-        return update_user_api_config(user_id, data.model_dump(exclude_none=True))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+def _check_project_owner(project_id: str, user_id: str) -> None:
+    from backend.app.services.project_service import get_project
+    if not get_project(project_id, user_id):
+        raise HTTPException(status_code=404, detail="项目不存在或你没有权限访问。")
 
 
-@router.post("/api/user/api-config/test")
-def test_config(request: Request):
-    user_id = get_current_user(request)
-    from backend.app.services.user_api_config_service import test_user_api_config
-    return test_user_api_config(user_id)
+def _check_model_ownership(conn, profile_id: str, user_id: str) -> None:
+    row = conn.execute(
+        "SELECT id, user_id FROM model_profile WHERE id=? AND user_id=?", (profile_id, user_id)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=400, detail=f"模型配置 {profile_id} 不存在或不属于你")
+
+def _check_credential_ownership(conn, cred_id: str, user_id: str) -> None:
+    row = conn.execute(
+        "SELECT id FROM api_credential WHERE id=? AND user_id=?", (cred_id, user_id)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=400, detail=f"API 凭证 {cred_id} 不存在或不属于你")
 
 
-@router.delete("/api/user/api-config")
-def delete_config(request: Request):
-    user_id = get_current_user(request)
-    from backend.app.services.user_api_config_service import delete_user_api_config
-    if not delete_user_api_config(user_id):
-        raise HTTPException(status_code=404, detail="没有已保存的配置")
-    return {"message": "已删除"}
-
-
-# ── 新版：API 凭证 CRUD ──
+# ── API 凭证 CRUD ──
 
 @router.get("/api/user/api-credentials")
 def list_api_credentials(request: Request):
@@ -213,7 +193,7 @@ def disable_credential(cred_id: str, request: Request):
     return set_status(cred_id, get_current_user(request), "disabled")
 
 
-# ── 新版：ModelProfile CRUD ──
+# ── ModelProfile CRUD ──
 
 @router.get("/api/user/model-profiles")
 def list_model_profiles(request: Request):
@@ -237,18 +217,16 @@ def get_model_profile(profile_id: str, request: Request):
     return _profile_row(row)
 
 
-def _profile_row(row) -> dict:
-    r = dict(row)
-    for bf in ["is_default", "is_active", "supports_streaming", "supports_json"]:
-        r[bf] = bool(r.get(bf, False))
-    return r
-
-
 @router.post("/api/user/model-profiles")
 def create_model_profile(data: ModelProfileReq, request: Request):
     user_id = get_current_user(request)
     profile_id = uuid.uuid4().hex
     now = datetime.datetime.now().isoformat()
+
+    # 校验凭证归属
+    if data.api_credential_id:
+        with get_db() as conn:
+            _check_credential_ownership(conn, data.api_credential_id, user_id)
 
     if data.is_default:
         with get_db() as conn:
@@ -281,6 +259,12 @@ def update_model_profile(profile_id: str, data: ModelProfileUpdateReq, request: 
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="模型配置不存在")
+        current = dict(row)
+
+    # 校验新凭证归属
+    if data.api_credential_id:
+        with get_db() as conn:
+            _check_credential_ownership(conn, data.api_credential_id, user_id)
 
     now = datetime.datetime.now().isoformat()
     sets = []
@@ -294,13 +278,12 @@ def update_model_profile(profile_id: str, data: ModelProfileUpdateReq, request: 
             params.append(val)
 
     if data.is_default:
+        purpose = current.get("purpose", "general")
         with get_db() as conn:
-            latest = conn.execute("SELECT purpose FROM model_profile WHERE id=?", (profile_id,)).fetchone()
-            if latest:
-                conn.execute(
-                    "UPDATE model_profile SET is_default=0 WHERE user_id=? AND purpose=?",
-                    (user_id, latest[0]),
-                )
+            conn.execute(
+                "UPDATE model_profile SET is_default=0 WHERE user_id=? AND purpose=?",
+                (user_id, purpose),
+            )
 
     sets.append("updated_at=?")
     params.append(now)
@@ -328,6 +311,9 @@ def test_model_profile(profile_id: str, request: Request):
     user_id = get_current_user(request)
     from backend.app.services.model_runtime import _build_runtime, _invoke_chat, _invoke_embedding, ConfigError
 
+    with get_db() as conn:
+        _check_model_ownership(conn, profile_id, user_id)
+
     try:
         cfg = _build_runtime(profile_id, "general")
     except ConfigError as e:
@@ -347,23 +333,6 @@ def test_model_profile(profile_id: str, request: Request):
         err = getattr(adapter, "last_error", "") or "无响应"
         _update_model_health(profile_id, "invalid", err, now)
         return {"success": False, "message": f"测试失败: {err}"}
-
-
-def _build_chat(cfg):
-    from llm_adapters import create_llm_adapter
-    return create_llm_adapter(
-        interface_format="OpenAI", base_url=cfg.base_url, model_name=cfg.model,
-        api_key=cfg.api_key, temperature=cfg.temperature or 0.7,
-        max_tokens=cfg.max_tokens or 8192, timeout=600,
-    )
-
-
-def _update_model_health(profile_id: str, status: str, error: str, now: str) -> None:
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE model_profile SET health_status=?, last_error=?, last_tested_at=?, updated_at=? WHERE id=?",
-            (status, error[:500], now, now, profile_id),
-        )
 
 
 @router.post("/api/user/model-profiles/{profile_id}/set-default")
@@ -391,9 +360,7 @@ def set_default_profile(profile_id: str, request: Request):
 @router.get("/api/projects/{project_id}/model-assignment")
 def get_project_assignment(project_id: str, request: Request):
     user_id = get_current_user(request)
-    from backend.app.services.project_service import get_project
-    if not get_project(project_id, user_id):
-        raise HTTPException(status_code=404, detail="项目不存在")
+    _check_project_owner(project_id, user_id)
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM project_model_assignment WHERE project_id=?", (project_id,)
@@ -404,9 +371,17 @@ def get_project_assignment(project_id: str, request: Request):
 @router.put("/api/projects/{project_id}/model-assignment")
 def save_project_assignment(project_id: str, data: ProjectAssignmentReq, request: Request):
     user_id = get_current_user(request)
-    from backend.app.services.project_service import get_project
-    if not get_project(project_id, user_id):
-        raise HTTPException(status_code=404, detail="项目不存在")
+    _check_project_owner(project_id, user_id)
+
+    # 校验所有指定的 model_profile 都属于当前用户
+    with get_db() as conn:
+        for field_name in ["architecture_profile_id", "worldbuilding_profile_id", "character_profile_id",
+                          "outline_profile_id", "draft_profile_id", "polish_profile_id",
+                          "review_profile_id", "summary_profile_id", "feedback_profile_id",
+                          "embedding_profile_id", "rerank_profile_id"]:
+            val = getattr(data, field_name, None)
+            if val:
+                _check_model_ownership(conn, val, user_id)
 
     now = datetime.datetime.now().isoformat()
     with get_db() as conn:
@@ -452,109 +427,6 @@ def save_project_assignment(project_id: str, data: ProjectAssignmentReq, request
     return get_project_assignment(project_id, request)
 
 
-# ── 迁移旧配置 ──
-
-@router.post("/api/user/migrate-legacy-llm-configs")
-def migrate_legacy(request: Request):
-    user_id = get_current_user(request)
-    migrated = _migrate_legacy(user_id)
-    return {"migrated": migrated, "message": f"已迁移 {migrated} 个旧配置"}
-
-
-@router.get("/api/user/legacy-llm-configs/status")
-def legacy_status(request: Request):
-    user_id = get_current_user(request)
-    with get_db() as conn:
-        llm_count = conn.execute(
-            "SELECT COUNT(*) FROM user_llm_config WHERE user_id=?", (user_id,)
-        ).fetchone()[0]
-        emb_count = conn.execute(
-            "SELECT COUNT(*) FROM user_embedding_config WHERE user_id=?", (user_id,)
-        ).fetchone()[0]
-    return {"total": llm_count + emb_count, "llm": llm_count, "embedding": emb_count}
-
-
-def _migrate_legacy(user_id: str) -> int:
-    count = 0
-    with get_db() as conn:
-        llms = conn.execute("SELECT * FROM user_llm_config WHERE user_id=?", (user_id,)).fetchall()
-        embs = conn.execute("SELECT * FROM user_embedding_config WHERE user_id=?", (user_id,)).fetchall()
-
-    # 为每个旧 LLM 创建 ApiCredential（如果同名不存在）
-    for row in llms:
-        r = dict(row)
-        try:
-            api_key = decrypt(r["api_key"])
-        except Exception:
-            continue
-        cred_id = _ensure_cred(user_id, r["name"], r["interface_format"], api_key, r["base_url"])
-        _ensure_profile(user_id, r["name"], "chat", r["interface_format"], r["base_url"],
-                        r["model_name"], cred_id)
-        count += 1
-
-    for row in embs:
-        r = dict(row)
-        try:
-            api_key = decrypt(r["api_key"])
-        except Exception:
-            continue
-        cred_id = _ensure_cred(user_id, r["name"], r["interface_format"], api_key, r["base_url"])
-        _ensure_profile(user_id, r["name"], "embedding", r["interface_format"], r["base_url"],
-                        r["model_name"], cred_id)
-        count += 1
-
-    return count
-
-
-def _ensure_cred(user_id: str, name: str, provider: str, api_key: str, base_url: str) -> str:
-    kh = __import__("backend.app.utils.crypto", fromlist=["hash_api_key"]).hash_api_key(api_key)
-    now = datetime.datetime.now().isoformat()
-    with get_db() as conn:
-        exist = conn.execute(
-            "SELECT id FROM api_credential WHERE user_id=? AND api_key_hash=?", (user_id, kh)
-        ).fetchone()
-        if exist:
-            return exist[0]
-        cred_id = uuid.uuid4().hex
-        conn.execute(
-            """INSERT INTO api_credential
-               (id, user_id, name, provider, api_key_encrypted, api_key_last4, api_key_hash,
-                base_url, status, is_default, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (cred_id, user_id, f"{name}-migrated", provider.lower(),
-             __import__("backend.app.utils.crypto", fromlist=["encrypt_api_key"]).encrypt_api_key(api_key),
-             api_key[-4:] if len(api_key) > 4 else api_key, kh,
-             base_url, "untested", 0, now, now),
-        )
-        return cred_id
-
-
-def _ensure_profile(user_id: str, name: str, ptype: str, provider: str, base_url: str,
-                    model: str, cred_id: str) -> None:
-    now = datetime.datetime.now().isoformat()
-    with get_db() as conn:
-        exist = conn.execute(
-            "SELECT id FROM model_profile WHERE user_id=? AND name=? AND type=?",
-            (user_id, name, ptype),
-        ).fetchone()
-        if exist:
-            conn.execute(
-                "UPDATE model_profile SET api_credential_id=?, updated_at=? WHERE id=?",
-                (cred_id, now, exist[0]),
-            )
-            return
-        conn.execute(
-            """INSERT INTO model_profile
-               (id, user_id, name, type, purpose, provider, base_url, model,
-                api_credential_id, is_default, is_active, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (uuid.uuid4().hex, user_id, f"{name}-migrated", ptype,
-             "embedding" if ptype == "embedding" else "general",
-             provider.lower(), base_url, model,
-             cred_id, 0, 1, now, now),
-        )
-
-
 # ── 调用日志 ──
 
 @router.get("/api/user/model-invocation-logs")
@@ -576,9 +448,7 @@ def list_invocation_logs(request: Request, limit: int = 50):
 @router.get("/api/projects/{project_id}/model-invocation-logs")
 def list_project_invocation_logs(project_id: str, request: Request, limit: int = 30):
     user_id = get_current_user(request)
-    from backend.app.services.project_service import get_project
-    if not get_project(project_id, user_id):
-        raise HTTPException(status_code=404, detail="项目不存在")
+    _check_project_owner(project_id, user_id)
     with get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM model_invocation_log WHERE project_id=? ORDER BY created_at DESC LIMIT ?",

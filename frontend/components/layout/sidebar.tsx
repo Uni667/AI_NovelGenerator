@@ -62,7 +62,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <Link href="/settings" onClick={onNavigate}>
           <Button variant="ghost" className="w-full justify-start gap-2" size="sm">
             <Settings className="h-4 w-4" />
-            我的 API 配置
+            模型管理中心
           </Button>
         </Link>
         <div className="flex items-center gap-2 px-1 py-1.5 text-sm text-muted-foreground">

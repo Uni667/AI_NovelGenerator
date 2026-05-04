@@ -18,12 +18,6 @@ export interface ProjectConfig {
   language: string
   platform: string
   category: string
-  architecture_llm: string
-  chapter_outline_llm: string
-  prompt_draft_llm: string
-  final_chapter_llm: string
-  consistency_review_llm: string
-  embedding_config: string
 }
 
 export const PLATFORM_CONFIG: Record<string, {
@@ -92,26 +86,6 @@ export interface ChapterContent {
   meta: Chapter | null
 }
 
-export interface LLMConfig {
-  name: string
-  base_url: string
-  model_name: string
-  temperature: number
-  max_tokens: number
-  timeout: number
-  interface_format: string
-  usage: string
-  api_key_masked: string
-}
-
-export interface EmbeddingConfig {
-  name: string
-  base_url: string
-  model_name: string
-  retrieval_k: number
-  interface_format: string
-  api_key_masked: string
-}
 
 export interface SSEProgress {
   step: string

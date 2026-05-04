@@ -323,17 +323,12 @@ def suggest_characters(project_id: str, request: Request):
         ).fetchall()
         existing = [dict(r) for r in rows]
 
-    from backend.app.services.user_service import list_user_llm_configs, get_user_llm_config_raw
-    llm_name = pconfig.get("prompt_draft_llm", "") or pconfig.get("architecture_llm", "")
-    if llm_name:
-        llm_conf = get_user_llm_config_raw(user_id, llm_name)
-    else:
-        configs = list_user_llm_configs(user_id)
-        if not configs:
-            raise HTTPException(status_code=400, detail="没有可用的 LLM 配置，请先在设置中添加 LLM")
-        llm_conf = get_user_llm_config_raw(user_id, next(iter(configs.keys())))
-    if not llm_conf:
-        raise HTTPException(status_code=400, detail="没有可用的 LLM 配置，请检查模型名称和 API Key")
+    from backend.app.services.model_runtime import get_runtime_config, ConfigError
+
+    try:
+        runtime_cfg = get_runtime_config(user_id, "character", project_id)
+    except ConfigError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     architecture_file = os.path.join(project["filepath"], "Novel_architecture.txt")
     architecture = ""
@@ -342,14 +337,22 @@ def suggest_characters(project_id: str, request: Request):
             architecture = f.read()[:5000]
 
     from llm_adapters import create_llm_adapter
+
+    # Map provider to interface format (same mapping as model_runtime._provider_to_interface)
+    _provider_iface_map = {
+        "openai": "OpenAI", "deepseek": "OpenAI", "qwen": "OpenAI",
+        "anthropic": "OpenAI", "custom": "OpenAI", "local": "Ollama",
+    }
+    interface_format = _provider_iface_map.get(runtime_cfg.provider, "OpenAI")
+
     llm = create_llm_adapter(
-        interface_format=llm_conf.get("interface_format", "OpenAI"),
-        base_url=llm_conf.get("base_url", ""),
-        model_name=llm_conf.get("model_name", ""),
-        api_key=llm_conf.get("api_key", ""),
-        temperature=0.8,
-        max_tokens=llm_conf.get("max_tokens", 4096),
-        timeout=llm_conf.get("timeout", 120),
+        interface_format=interface_format,
+        base_url=runtime_cfg.base_url,
+        model_name=runtime_cfg.model,
+        api_key=runtime_cfg.api_key,
+        temperature=runtime_cfg.temperature,
+        max_tokens=runtime_cfg.max_tokens,
+        timeout=600,
     )
 
     prompt = CHARACTER_SUGGESTION_PROMPT.format(

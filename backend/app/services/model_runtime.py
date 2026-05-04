@@ -217,7 +217,7 @@ def call_chat(
 ) -> str:
     """统一聊天模型调用。"""
     cfg = get_runtime_config(user_id, purpose, project_id)
-    return _invoke_chat(cfg, prompt, temperature, max_tokens, cancel_token)
+    return _invoke_chat(user_id, cfg, prompt, temperature, max_tokens, cancel_token)
 
 
 def call_embedding(
@@ -228,7 +228,7 @@ def call_embedding(
 ) -> list[float]:
     """统一向量化调用。"""
     cfg = get_runtime_config(user_id, "embedding", project_id)
-    return _invoke_embedding(cfg, text)
+    return _invoke_embedding(user_id, cfg, text)
 
 
 def create_chat_adapter(
@@ -261,6 +261,7 @@ def get_runtime(user_id: str) -> RuntimeConfig:
 def mark_used(user_id: str, cred_id: str = "", profile_id: str = "") -> None:
     """标记 API 和模型最近使用时间。"""
     now = datetime.datetime.now().isoformat()
+    logger.info("ModelRuntime mark_used [user=%s cred=%s profile=%s]", user_id, cred_id, profile_id)
     with get_db() as conn:
         if cred_id:
             conn.execute(
@@ -338,11 +339,11 @@ def _build_chat_adapter(cfg: RuntimeConfig, temperature: float | None, max_token
     )
 
 
-def _invoke_chat(cfg: RuntimeConfig, prompt: str, temperature: float | None, max_tokens: int | None, cancel_token=None) -> str:
+def _invoke_chat(user_id: str, cfg: RuntimeConfig, prompt: str, temperature: float | None, max_tokens: int | None, cancel_token=None) -> str:
     masked = mask_api_key(cfg.api_key) if cfg.api_key else "N/A"
     logger.info(
         "ModelRuntime chat [user=%s cred=%s profile=%s provider=%s model=%s key=%s]",
-        "user", cfg.api_credential_id, cfg.model_profile_id, cfg.provider, cfg.model, masked,
+        user_id, cfg.api_credential_id, cfg.model_profile_id, cfg.provider, cfg.model, masked,
     )
 
     adapter = _build_chat_adapter(cfg, temperature, max_tokens, cancel_token)
@@ -351,14 +352,14 @@ def _invoke_chat(cfg: RuntimeConfig, prompt: str, temperature: float | None, max
     elapsed = int((time.time() - start) * 1000)
 
     if result:
-        mark_used("", cfg.api_credential_id, cfg.model_profile_id)
-        log_invocation("", cfg,
+        mark_used(user_id, cfg.api_credential_id, cfg.model_profile_id)
+        log_invocation(user_id, cfg,
                        input_chars=len(prompt), output_chars=len(result),
                        latency_ms=elapsed, success=True)
     else:
         err = getattr(adapter, "last_error", "")
         _update_health(cfg.model_profile_id, "invalid", err)
-        log_invocation("", cfg,
+        log_invocation(user_id, cfg,
                        input_chars=len(prompt), latency_ms=elapsed,
                        success=False, error_code="MODEL_CALL_FAILED", error_message=err)
 
@@ -375,7 +376,7 @@ def _build_embedding_adapter(cfg: RuntimeConfig):
     )
 
 
-def _invoke_embedding(cfg: RuntimeConfig, text: str) -> list[float]:
+def _invoke_embedding(user_id: str, cfg: RuntimeConfig, text: str) -> list[float]:
     masked = mask_api_key(cfg.api_key) if cfg.api_key else "N/A"
     logger.info(
         "ModelRuntime embedding [cred=%s profile=%s provider=%s model=%s key=%s]",
@@ -387,13 +388,13 @@ def _invoke_embedding(cfg: RuntimeConfig, text: str) -> list[float]:
     elapsed = int((time.time() - start) * 1000)
 
     if result:
-        mark_used("", cfg.api_credential_id, cfg.model_profile_id)
-        log_invocation("", cfg, input_chars=len(text), output_chars=len(result),
+        mark_used(user_id, cfg.api_credential_id, cfg.model_profile_id)
+        log_invocation(user_id, cfg, input_chars=len(text), output_chars=len(result),
                        latency_ms=elapsed, success=True)
     else:
         err = getattr(adapter, "last_error", "")
         _update_health(cfg.model_profile_id, "invalid", err)
-        log_invocation("", cfg, input_chars=len(text), latency_ms=elapsed,
+        log_invocation(user_id, cfg, input_chars=len(text), latency_ms=elapsed,
                        success=False, error_code="EMBEDDING_FAILED", error_message=err)
 
     return result

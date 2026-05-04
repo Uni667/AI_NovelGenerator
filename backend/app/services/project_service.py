@@ -103,9 +103,7 @@ def update_project_config(project_id: str, data: dict) -> dict:
     if not config:
         raise ValueError(f"项目配置不存在: {project_id}")
     allowed_fields = ["topic", "genre", "num_chapters", "word_number", "user_guidance",
-                      "language", "platform", "category",
-                      "architecture_llm", "chapter_outline_llm", "prompt_draft_llm",
-                      "final_chapter_llm", "consistency_review_llm", "embedding_config"]
+                      "language", "platform", "category"]
     sets = []
     params = []
     for field in allowed_fields:
