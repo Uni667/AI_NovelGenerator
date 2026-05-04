@@ -24,6 +24,24 @@ PROVIDER_DEFAULTS = {
     "local": "http://localhost:11434",
 }
 
+# 各 provider 的默认测试模型名（不是 URL！）
+PROVIDER_DEFAULT_TEST_MODELS = {
+    "openai": "gpt-4o-mini",
+    "deepseek": "deepseek-chat",
+    "qwen": "qwen-plus",
+    "anthropic": "claude-haiku-4-5-20251001",
+    "custom": "",
+    "local": "",
+}
+
+
+def _validate_model_not_url(model: str) -> None:
+    """模型名不能是 URL——通常是 base_url 和 model 字段传反了。"""
+    if model and (model.startswith("http://") or model.startswith("https://")):
+        raise ValueError(
+            f"模型名不能是 URL（{model[:80]}...），请检查字段映射：base_url 和 model 可能传反了。"
+        )
+
 
 def list_credentials(user_id: str) -> list[dict]:
     with get_db() as conn:
@@ -202,13 +220,16 @@ def _test_chat(cred: dict, api_key: str) -> dict:
     masked = mask_api_key(api_key)
     provider = cred["provider"]
     base_url = cred["base_url"] or PROVIDER_DEFAULTS.get(provider, "")
+    test_model = PROVIDER_DEFAULT_TEST_MODELS.get(provider, "") or "gpt-4o-mini"
+
+    # 防御性校验：如果模型名被错误地传成了 URL，立刻报错
+    _validate_model_not_url(test_model)
 
     try:
         adapter = create_llm_adapter(
             interface_format=_provider_to_interface(provider),
             base_url=base_url,
-            model_name=PROVIDER_DEFAULTS.get(provider, "")
-            or "gpt-4o-mini",
+            model_name=test_model,
             api_key=api_key,
             temperature=0.7,
             max_tokens=32,
