@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request
@@ -136,14 +137,20 @@ def _prepare_generation_task(project_id: str, user_id: str, kind: str, task_id: 
             raise HTTPException(status_code=409, detail="该任务标识已在运行，请先取消当前任务后再开始新的生成")
         return resolved_task_id
 
-    active_task = get_active_task(project_id)
-    if active_task and active_task.task_id != resolved_task_id:
-        raise HTTPException(
-            status_code=409,
-            detail=f"项目正在执行{_task_label(active_task.kind)}，请先中断后再开始新的生成",
-        )
+    # register_task internally cleans up stuck cancelling tasks for this project
+    state = register_task(resolved_task_id, project_id, kind, user_id=user_id, metadata=metadata)
+    if state.task_id == resolved_task_id:
+        # New task created successfully — check no other active task on same project
+        active = get_active_task(project_id)
+        if active and active.task_id != resolved_task_id:
+            # Another task is still running; roll back and reject
+            state.status = "cancelled"
+            state.finished_at = time.time()
+            raise HTTPException(
+                status_code=409,
+                detail=f"项目正在执行{_task_label(active.kind)}，请先中断后再开始新的生成",
+            )
 
-    register_task(resolved_task_id, project_id, kind, user_id=user_id, metadata=metadata)
     return resolved_task_id
 
 
