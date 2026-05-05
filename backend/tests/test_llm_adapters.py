@@ -106,8 +106,8 @@ class ApiCredentialServiceTests(unittest.TestCase):
             model_name.startswith("http://") or model_name.startswith("https://"),
             f"model_name={model_name!r} 不应该是 URL！",
         )
-        self.assertEqual(model_name, "deepseek-chat",
-                         f"model_name 应该是 deepseek-chat，实际是 {model_name!r}")
+        self.assertEqual(model_name, "deepseek-v4-flash",
+                         f"model_name 应该是 deepseek-v4-flash，实际是 {model_name!r}")
 
 
 if __name__ == "__main__":

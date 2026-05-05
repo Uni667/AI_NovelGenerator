@@ -49,7 +49,7 @@ PURPOSE_MAP = {
 
 PROVIDER_DEFAULTS = {
     "openai": "https://api.openai.com/v1",
-    "deepseek": "https://api.deepseek.com/v1",
+    "deepseek": "https://api.deepseek.com",
     "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "anthropic": "https://api.anthropic.com",
     "siliconflow": "https://api.siliconflow.cn/v1",

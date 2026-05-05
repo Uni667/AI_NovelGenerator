@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 PROVIDER_DEFAULTS = {
     "openai": "https://api.openai.com/v1",
-    "deepseek": "https://api.deepseek.com/v1",
+    "deepseek": "https://api.deepseek.com",
     "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "anthropic": "https://api.anthropic.com",
     "siliconflow": "https://api.siliconflow.cn/v1",
@@ -28,7 +28,7 @@ PROVIDER_DEFAULTS = {
 # 各 provider 的默认测试模型名（不是 URL！）
 PROVIDER_DEFAULT_TEST_MODELS = {
     "openai": "gpt-4o-mini",
-    "deepseek": "deepseek-chat",
+    "deepseek": "deepseek-v4-flash",
     "qwen": "qwen-plus",
     "anthropic": "claude-3-5-haiku-latest",
     "siliconflow": "deepseek-v4-flash",
@@ -346,9 +346,10 @@ def _validate_provider_url(provider: str, url: str) -> None:
     if provider in ("custom", "local"):
         return
     url_lower = url.lower()
+    # DeepSeek is OpenAI-compatible, so allow deepseek.com↔openai cross-usage.
     conflicts = {
-        "openai": ["deepseek.com", "dashscope.aliyuncs.com", "anthropic.com", "siliconflow.cn"],
-        "deepseek": ["openai.com", "dashscope.aliyuncs.com", "anthropic.com", "siliconflow.cn"],
+        "openai": ["dashscope.aliyuncs.com", "anthropic.com", "siliconflow.cn"],
+        "deepseek": ["dashscope.aliyuncs.com", "anthropic.com", "siliconflow.cn"],
         "qwen": ["openai.com", "deepseek.com", "anthropic.com", "siliconflow.cn"],
         "anthropic": ["openai.com", "deepseek.com", "dashscope.aliyuncs.com", "siliconflow.cn"],
         "siliconflow": ["openai.com", "deepseek.com", "dashscope.aliyuncs.com", "anthropic.com"],

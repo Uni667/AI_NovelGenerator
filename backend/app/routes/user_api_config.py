@@ -175,14 +175,14 @@ FAST_KEYWORDS = {
 }
 STRONG_KEYWORDS = {
     "gpt-5": 8, "gpt5": 8, "gpt-4.1": 7, "gpt-4o": 6, "sonnet": 7, "opus": 8,
-    "max": 6, "pro": 5, "qwen-plus": 5, "qwen-max": 7, "deepseek-chat": 5,
+    "max": 6, "pro": 5, "v4": 5, "qwen-plus": 5, "qwen-max": 7,
     "32b": 3, "70b": 5, "72b": 5, "110b": 6,
 }
 REASONING_KEYWORDS = {
     "reasoner": 8, "r1": 7, "reason": 4, "thinking": 5, "o1": 7, "o3": 8, "o4": 6,
 }
 CREATIVE_KEYWORDS = {
-    "gpt-4o": 5, "sonnet": 6, "qwen-plus": 5, "qwen-max": 6, "deepseek-chat": 5, "pro": 3,
+    "gpt-4o": 5, "sonnet": 6, "qwen-plus": 5, "qwen-max": 6, "v4": 5, "pro": 3,
 }
 
 
@@ -702,7 +702,7 @@ PROVIDER_DISPLAY_NAMES = {
 QUICK_SETUP_CHAT = {
     "siliconflow": {"model": "deepseek-v4-flash"},
     "openai": {"model": "gpt-4o-mini"},
-    "deepseek": {"model": "deepseek-chat"},
+    "deepseek": {"model": "deepseek-v4-flash"},
     "qwen": {"model": "qwen-plus"},
     "anthropic": {"model": "claude-3-5-haiku-latest"},
 }
