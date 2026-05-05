@@ -215,6 +215,10 @@ class OpenAICompatibleAdapter(BaseLLMAdapter):
             timeout=timeout,
             max_retries=1,
         )
+        # DeepSeek v4 models have thinking/reasoning enabled by default.
+        # Disable it for creative writing to avoid wasted reasoning tokens.
+        if "deepseek" in (model_name or "").lower():
+            kwargs["model_kwargs"] = {"thinking": {"type": "disabled"}}
         if cancel_token is not None:
             kwargs["http_client"] = _make_cancel_client(cancel_token, float(timeout or 600))
         self._client = _ChatOpenAI(**kwargs)
@@ -271,6 +275,9 @@ class OpenAIDirectAdapter(BaseLLMAdapter):
     def invoke(self, prompt: str) -> str:
         self._reset_error_state()
         try:
+            extra = {}
+            if "deepseek" in (self.model_name or "").lower():
+                extra["extra_body"] = {"thinking": {"type": "disabled"}}
             response = self._client.chat.completions.create(
                 model=self.model_name,
                 messages=[
@@ -280,6 +287,7 @@ class OpenAIDirectAdapter(BaseLLMAdapter):
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
                 timeout=self.timeout,
+                **extra,
             )
             if response and response.choices:
                 return response.choices[0].message.content
