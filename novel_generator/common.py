@@ -8,6 +8,8 @@ import re
 import time
 import traceback
 
+logger = logging.getLogger(__name__)
+
 from llm_errors import (
     LLMInvocationError,
     build_empty_response_error,
@@ -64,12 +66,7 @@ def invoke_with_cleaning(
         cancel_token = getattr(llm_adapter, "_cancel_token", None)
 
     _raise_if_cancelled(cancel_check, cancel_token)
-
-    print("\n" + "=" * 50)
-    print("发送到 LLM 的提示词:")
-    print("-" * 50)
-    print(prompt)
-    print("=" * 50 + "\n")
+    logger.debug("LLM prompt (%d chars)", len(prompt))
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -78,12 +75,7 @@ def invoke_with_cleaning(
             error_info = coerce_error_info(getattr(llm_adapter, "last_error_info", None))
 
             _raise_if_cancelled(cancel_check, cancel_token)
-
-            print("\n" + "=" * 50)
-            print("LLM 返回的内容:")
-            print("-" * 50)
-            print(result)
-            print("=" * 50 + "\n")
+            logger.debug("LLM response (%d chars)", len(result) if isinstance(result, str) else 0)
 
             cleaned = result.replace("```", "").strip() if isinstance(result, str) else ""
             if cleaned:
