@@ -502,20 +502,21 @@ def get_project_assignment(project_id: str, request: Request):
 def save_project_assignment(project_id: str, data: ProjectAssignmentReq, request: Request):
     user_id = get_current_user(request)
     _require_project(user_id, project_id)
-    payload = data.model_dump()
+    payload = data.model_dump(exclude_unset=True)
     with get_db() as conn:
+        existing = conn.execute(
+            "SELECT * FROM project_model_assignment WHERE project_id=? AND user_id=?",
+            (project_id, user_id),
+        ).fetchone()
+        current = dict(existing) if existing else {}
         for field, expected_type in ASSIGNMENT_FIELDS.items():
-            profile_id = payload.get(field)
+            profile_id = payload.get(field, current.get(field))
             if not profile_id:
                 continue
             profile = _get_profile(conn, user_id, profile_id)
             if profile["type"] != expected_type:
                 raise HTTPException(status_code=400, detail=f"{field} 需要 {expected_type} 模型。")
         now = datetime.datetime.now().isoformat()
-        existing = conn.execute(
-            "SELECT id FROM project_model_assignment WHERE project_id=? AND user_id=?",
-            (project_id, user_id),
-        ).fetchone()
         if existing:
             sets = [f"{field}=?" for field in ASSIGNMENT_FIELDS if field in payload]
             params = [payload[field] for field in ASSIGNMENT_FIELDS if field in payload]

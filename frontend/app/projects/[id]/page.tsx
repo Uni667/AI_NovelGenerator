@@ -1625,10 +1625,10 @@ export default function ProjectDashboard() {
                     <CheckCircle className="h-4 w-4 mr-2" />定稿
                   </Button>
                   {generationTaskId && (
-                    <Button variant="destructive" onClick={handleStopGeneration} disabled={generationStopping || !isConnected}>
-                      {generationStopping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Ban className="h-4 w-4 mr-2" />}
-                      中断生成
-                    </Button>
+                  <Button variant="destructive" onClick={handleStopGeneration} disabled={generationStopping}>
+                    {generationStopping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Ban className="h-4 w-4 mr-2" />}
+                    中断生成
+                  </Button>
                   )}
                 </div>
               </CardContent>
