@@ -67,6 +67,7 @@ class ChapterParams:
     time_constraint: str = ""
     word_number: int = 3000
     user_guidance: str = ""
+    platform: str = "tomato"
 
 
 @dataclass
@@ -89,6 +90,7 @@ class GenerationContext:
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     filepath: str = ""
     project_id: str = ""
+    user_id: str = ""
     cancel_token: object = None  # CancelToken for HTTP-level abort
 
     @property
@@ -102,6 +104,7 @@ class GenerationContext:
         emb_dict: Optional[dict] = None,
         filepath: str = "",
         project_id: str = "",
+        user_id: str = "",
         cancel_token: object = None,
     ) -> "GenerationContext":
         return cls(
@@ -109,5 +112,6 @@ class GenerationContext:
             embedding=EmbeddingConfig.from_dict(emb_dict or {}),
             filepath=filepath,
             project_id=project_id,
+            user_id=user_id,
             cancel_token=cancel_token,
         )

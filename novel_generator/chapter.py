@@ -10,10 +10,12 @@ import os
 import json
 import logging
 import re
-from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter
+from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter, _provider_to_interface
 import prompt_definitions
+from novel_generator.platform_guidance import get_platform_chapter_guidance
 from chapter_directory_parser import get_chapter_info_from_blueprint
 from novel_generator.common import invoke_with_cleaning
+from backend.app.services.model_runtime import get_runtime_config
 from novel_generator.task_manager import TaskCancelledError, raise_if_cancelled
 from utils import read_file, clear_file_content, save_string_to_txt
 from novel_generator.vectorstore_utils import (
@@ -22,6 +24,294 @@ from novel_generator.vectorstore_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def create_specialized_chat_adapter(ctx, purpose: str):
+    if not ctx.project_id or not ctx.user_id:
+        return create_llm_adapter(
+            interface_format=ctx.llm.interface_format,
+            base_url=ctx.llm.base_url,
+            model_name=ctx.llm.model_name,
+            api_key=ctx.llm.api_key,
+            temperature=ctx.llm.temperature,
+            max_tokens=ctx.llm.max_tokens,
+            timeout=ctx.llm.timeout,
+            cancel_token=ctx.cancel_token,
+        )
+
+    try:
+        runtime = get_runtime_config(ctx.user_id, purpose, ctx.project_id)
+    except Exception:
+        runtime = None
+
+    if runtime is None:
+        return create_llm_adapter(
+            interface_format=ctx.llm.interface_format,
+            base_url=ctx.llm.base_url,
+            model_name=ctx.llm.model_name,
+            api_key=ctx.llm.api_key,
+            temperature=ctx.llm.temperature,
+            max_tokens=ctx.llm.max_tokens,
+            timeout=ctx.llm.timeout,
+            cancel_token=ctx.cancel_token,
+        )
+
+    return create_llm_adapter(
+        interface_format=_provider_to_interface(runtime.provider),
+        base_url=runtime.base_url,
+        model_name=runtime.model,
+        api_key=runtime.api_key,
+        temperature=runtime.temperature or ctx.llm.temperature,
+        max_tokens=runtime.max_tokens or ctx.llm.max_tokens,
+        timeout=runtime.timeout or ctx.llm.timeout,
+        cancel_token=ctx.cancel_token,
+    )
+
+
+def analyze_opening_hook(ctx, chapter_text: str, task_id: str | None = None) -> dict:
+    if not chapter_text.strip():
+        return {"score": 0, "issues": ["章节内容为空"], "suggestion": "先生成正文"}
+
+    llm = create_specialized_chat_adapter(ctx, "review")
+
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        return False
+
+    prompt = (
+        "你是一位网络小说编辑。请严格按 JSON 输出以下开篇分析结果。\n\n"
+        "评估标准：\n"
+        "1. 前200字是否快速进入冲突、危机、异样、欲望或强悬念。\n"
+        "2. 是否避免了空泛铺垫、背景说明和模板化解释。\n"
+        "3. 是否让读者自然产生继续读下去的冲动。\n\n"
+        f"待分析文本：\n{chapter_text[:2000]}\n\n"
+        "输出格式：\n"
+        "{\n"
+        '  "score": 1-10,\n'
+        '  "issues": ["问题1", "问题2"],\n'
+        '  "suggestion": "50字以内建议",\n'
+        '  "rewritten_opening": "可选，改写后的开头片段"\n'
+        "}\n"
+        "只输出 JSON。"
+    )
+
+    result = invoke_with_cleaning(
+        llm,
+        prompt,
+        cancel_check=_check_cancel,
+        operation_name="章节开篇质检",
+        step="opening_check",
+    )
+    try:
+        json_start = result.find("{")
+        json_end = result.rfind("}") + 1
+        if json_start != -1 and json_end > json_start:
+            return json.loads(result[json_start:json_end])
+    except Exception:
+        logger.warning("Failed to parse opening analysis", exc_info=True)
+    return {"score": 0, "issues": ["无法解析开篇质检结果"], "suggestion": result[:120]}
+
+
+def analyze_ending_hook(ctx, chapter_text: str, task_id: str | None = None) -> dict:
+    if not chapter_text.strip():
+        return {"has_hook": False, "suggestion": "先生成正文"}
+
+    llm = create_specialized_chat_adapter(ctx, "review")
+
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        return False
+
+    ending = chapter_text[-500:] if len(chapter_text) > 500 else chapter_text
+    prompt = (
+        "你是一位网络小说编辑。请严格按 JSON 输出以下章节结尾钩子分析结果。\n\n"
+        "检查重点：\n"
+        "1. 结尾是否留下危机、揭秘、欲望、反转中的至少一种钩子。\n"
+        "2. 读者是否会自然想点下一章。\n"
+        "3. 结尾是否过于平、收得太死、解释过多。\n\n"
+        f"待分析结尾：\n{ending}\n\n"
+        "输出格式：\n"
+        "{\n"
+        '  "has_hook": true/false,\n'
+        '  "hook_type": "危机型/揭秘型/欲望型/反转型/无",\n'
+        '  "suggestion": "50字以内建议"\n'
+        "}\n"
+        "只输出 JSON。"
+    )
+
+    result = invoke_with_cleaning(
+        llm,
+        prompt,
+        cancel_check=_check_cancel,
+        operation_name="章节结尾质检",
+        step="ending_check",
+    )
+    try:
+        json_start = result.find("{")
+        json_end = result.rfind("}") + 1
+        if json_start != -1 and json_end > json_start:
+            return json.loads(result[json_start:json_end])
+    except Exception:
+        logger.warning("Failed to parse ending analysis", exc_info=True)
+    return {"has_hook": False, "hook_type": "无", "suggestion": result[:120]}
+
+
+def analyze_mid_section_quality(ctx, chapter_text: str, task_id: str | None = None) -> dict:
+    if not chapter_text.strip():
+        return {"score": 0, "issues": ["章节内容为空"], "suggestion": "先生成正文"}
+
+    llm = create_specialized_chat_adapter(ctx, "review")
+
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        return False
+
+    middle_text = chapter_text
+    if len(chapter_text) > 1800:
+        start = min(600, len(chapter_text) // 4)
+        end = max(start + 600, len(chapter_text) - 600)
+        middle_text = chapter_text[start:end]
+
+    result = invoke_with_cleaning(
+        llm,
+        prompt_definitions.mid_section_quality_prompt.format(chapter_text=middle_text[:2500]),
+        cancel_check=_check_cancel,
+        operation_name="章节中段质检",
+        step="mid_check",
+    )
+    try:
+        json_start = result.find("{")
+        json_end = result.rfind("}") + 1
+        if json_start != -1 and json_end > json_start:
+            return json.loads(result[json_start:json_end])
+    except Exception:
+        logger.warning("Failed to parse mid-section analysis", exc_info=True)
+    return {"score": 0, "issues": ["无法解析中段质检结果"], "suggestion": result[:120]}
+
+
+def analyze_dialogue_voice(ctx, chapter_text: str, task_id: str | None = None) -> dict:
+    if not chapter_text.strip():
+        return {"score": 0, "issues": ["章节内容为空"], "suggestion": "先生成正文"}
+
+    llm = create_specialized_chat_adapter(ctx, "review")
+
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        return False
+
+    result = invoke_with_cleaning(
+        llm,
+        prompt_definitions.dialogue_voice_check_prompt.format(chapter_text=chapter_text[:3000]),
+        cancel_check=_check_cancel,
+        operation_name="人物话语质检",
+        step="dialogue_check",
+    )
+    try:
+        json_start = result.find("{")
+        json_end = result.rfind("}") + 1
+        if json_start != -1 and json_end > json_start:
+            return json.loads(result[json_start:json_end])
+    except Exception:
+        logger.warning("Failed to parse dialogue analysis", exc_info=True)
+    return {"score": 0, "issues": ["无法解析人物话语质检结果"], "suggestion": result[:120]}
+
+
+def rewrite_chapter_by_quality_feedback(
+    ctx,
+    params,
+    chapter_info: dict,
+    chapter_text: str,
+    opening_feedback: dict,
+    ending_feedback: dict,
+    mid_feedback: dict | None = None,
+    dialogue_feedback: dict | None = None,
+    task_id: str | None = None,
+) -> str:
+    platform_label, platform_rules = get_platform_chapter_guidance(getattr(params, "platform", "tomato"))
+
+    llm = create_specialized_chat_adapter(ctx, "quality_rewrite")
+
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        return False
+
+    prompt = prompt_definitions.chapter_quality_rewrite_prompt.format(
+        platform_label=platform_label,
+        platform_rules=platform_rules,
+        novel_number=params.chapter_number,
+        chapter_title=chapter_info.get("chapter_title", ""),
+        chapter_role=chapter_info.get("chapter_role", ""),
+        chapter_purpose=chapter_info.get("chapter_purpose", ""),
+        suspense_level=chapter_info.get("suspense_level", ""),
+        foreshadowing=chapter_info.get("foreshadowing", ""),
+        plot_twist_level=chapter_info.get("plot_twist_level", ""),
+        chapter_summary=chapter_info.get("chapter_summary", ""),
+        opening_feedback=json.dumps({
+            "opening": opening_feedback,
+            "middle": mid_feedback or {},
+            "dialogue": dialogue_feedback or {},
+        }, ensure_ascii=False, indent=2),
+        ending_feedback=json.dumps(ending_feedback, ensure_ascii=False, indent=2),
+        chapter_text=chapter_text,
+    )
+
+    revised = invoke_with_cleaning(
+        llm,
+        prompt,
+        cancel_check=_check_cancel,
+        operation_name="章节平台质检返修",
+        step="quality_rewrite",
+    )
+    return revised.strip() or chapter_text
+
+
+def revise_chapter_voice(
+    ctx,
+    params,
+    chapter_info: dict,
+    chapter_text: str,
+    task_id: str | None = None,
+) -> str:
+    if not chapter_text.strip():
+        return chapter_text
+
+    platform_label, platform_rules = get_platform_chapter_guidance(getattr(params, "platform", "tomato"))
+
+    llm = create_specialized_chat_adapter(ctx, "voice_polish")
+
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        return False
+
+    prompt = prompt_definitions.de_ai_style_revision_prompt.format(
+        platform_label=platform_label,
+        platform_rules=platform_rules,
+        novel_number=params.chapter_number,
+        chapter_title=chapter_info.get("chapter_title", ""),
+        chapter_role=chapter_info.get("chapter_role", ""),
+        chapter_purpose=chapter_info.get("chapter_purpose", ""),
+        suspense_level=chapter_info.get("suspense_level", ""),
+        foreshadowing=chapter_info.get("foreshadowing", ""),
+        plot_twist_level=chapter_info.get("plot_twist_level", ""),
+        chapter_summary=chapter_info.get("chapter_summary", ""),
+        word_number=params.word_number,
+        chapter_text=chapter_text,
+    )
+
+    revised = invoke_with_cleaning(
+        llm,
+        prompt,
+        cancel_check=_check_cancel,
+        operation_name="章节去AI味修订",
+        step="voice_polish",
+    )
+    return revised.strip() or chapter_text
 
 
 # ── 历史章节文本 ──
@@ -250,6 +540,11 @@ def build_chapter_prompt(
 
     filepath = ctx.filepath
     novel_number = params.chapter_number
+    platform_label, platform_rules = get_platform_chapter_guidance(getattr(params, "platform", "tomato"))
+    platform_guidance = prompt_definitions.platform_chapter_guidance_prompt.format(
+        platform_label=platform_label,
+        platform_rules=platform_rules,
+    )
 
     # 读取基础文件
     _check_cancel()
@@ -286,6 +581,7 @@ def build_chapter_prompt(
             user_guidance=params.user_guidance,
             novel_setting=arch_text,
             plot_arcs=plot_arcs_text or "（尚未生成伏笔暗线台账，请优先遵守章节目录中的伏笔操作）",
+            platform_guidance=platform_guidance,
         )
 
     # 获取前文摘要
@@ -387,6 +683,7 @@ def build_chapter_prompt(
         character_state=character_state_text,
         plot_arcs=plot_arcs_text or "（尚未生成伏笔暗线台账，请优先遵守章节目录中的伏笔操作）",
         short_summary=short_summary,
+        platform_guidance=platform_guidance,
         novel_number=novel_number,
         chapter_title=chapter_info["chapter_title"],
         chapter_role=chapter_info["chapter_role"],
@@ -418,6 +715,7 @@ def generate_chapter_draft(
     ctx,                  # GenerationContext
     params,               # ChapterParams
     custom_prompt_text: str = None,
+    emitter = None,
     task_id: str | None = None,
 ) -> str:
     """
@@ -458,6 +756,47 @@ def generate_chapter_draft(
     if not chapter_content.strip():
         logger.warning("Generated chapter draft is empty.")
         raise RuntimeError("章节草稿生成为空")
+
+    blueprint_text = read_file(os.path.join(ctx.filepath, "Novel_directory.txt")).strip() or ""
+    chapter_info = get_chapter_info_from_blueprint(blueprint_text, params.chapter_number)
+
+    if emitter is not None:
+        emitter.emit("progress", {"step": "voice_polish", "status": "running", "message": f"正在优化第 {params.chapter_number} 章文风..."})
+    chapter_content = revise_chapter_voice(ctx, params, chapter_info, chapter_content, task_id=task_id)
+    if emitter is not None:
+        emitter.emit("progress", {"step": "voice_polish", "status": "done", "message": "文风优化完成"})
+
+    if emitter is not None:
+        emitter.emit("progress", {"step": "quality_check", "status": "running", "message": "正在执行平台质检..."})
+    opening_feedback = analyze_opening_hook(ctx, chapter_content, task_id=task_id)
+    ending_feedback = analyze_ending_hook(ctx, chapter_content, task_id=task_id)
+    mid_feedback = analyze_mid_section_quality(ctx, chapter_content, task_id=task_id)
+    dialogue_feedback = analyze_dialogue_voice(ctx, chapter_content, task_id=task_id)
+
+    opening_score = int(opening_feedback.get("score", 0) or 0)
+    mid_score = int(mid_feedback.get("score", 0) or 0)
+    dialogue_score = int(dialogue_feedback.get("score", 0) or 0)
+    has_hook = bool(ending_feedback.get("has_hook", False))
+
+    if opening_score < 8 or mid_score < 7 or dialogue_score < 7 or not has_hook:
+        if emitter is not None:
+            emitter.emit("progress", {"step": "quality_rewrite", "status": "running", "message": "平台质检未达标，正在自动返修..."})
+        chapter_content = rewrite_chapter_by_quality_feedback(
+            ctx,
+            params,
+            chapter_info,
+            chapter_content,
+            opening_feedback,
+            ending_feedback,
+            mid_feedback,
+            dialogue_feedback,
+            task_id=task_id,
+        )
+        if emitter is not None:
+            emitter.emit("progress", {"step": "quality_rewrite", "status": "done", "message": "自动返修完成"})
+
+    if emitter is not None:
+        emitter.emit("progress", {"step": "quality_check", "status": "done", "message": "平台质检完成"})
 
     chapter_file = os.path.join(chapters_dir, f"chapter_{params.chapter_number}.txt")
     clear_file_content(chapter_file)

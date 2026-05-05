@@ -1,4 +1,5 @@
 import datetime
+import re
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request
@@ -36,6 +37,7 @@ router = APIRouter(tags=["model-settings"])
 CHAT_PURPOSES = {
     "general", "architecture", "worldbuilding", "character", "outline",
     "draft", "polish", "review", "summary", "feedback",
+    "voice_polish", "quality_rewrite", "blueprint_polish", "architecture_polish",
 }
 ASSIGNMENT_FIELDS = {
     "architecture_profile_id": "chat",
@@ -112,6 +114,10 @@ class ProjectAssignmentReq(BaseModel):
     rerank_profile_id: str | None = None
 
 
+class PlatformPresetReq(BaseModel):
+    platform: str = Field(default="tomato", min_length=1)
+
+
 def _bools(row) -> dict:
     data = dict(row)
     for key in ("is_default", "is_active", "supports_streaming", "supports_json", "success"):
@@ -161,6 +167,134 @@ def _validate_profile_payload(data: dict) -> None:
         raise HTTPException(status_code=400, detail="Rerank 模型的用途必须是 rerank。")
     if model_type == "chat" and purpose not in CHAT_PURPOSES:
         raise HTTPException(status_code=400, detail="Chat 模型不能用于 embedding 或 rerank。")
+
+
+FAST_KEYWORDS = {
+    "mini": 5, "flash": 6, "lite": 5, "haiku": 5, "small": 3, "turbo": 3,
+    "instant": 4, "nano": 4, "8b": 2, "7b": 2, "1.5b": 2,
+}
+STRONG_KEYWORDS = {
+    "gpt-5": 8, "gpt5": 8, "gpt-4.1": 7, "gpt-4o": 6, "sonnet": 7, "opus": 8,
+    "max": 6, "pro": 5, "qwen-plus": 5, "qwen-max": 7, "deepseek-chat": 5,
+    "32b": 3, "70b": 5, "72b": 5, "110b": 6,
+}
+REASONING_KEYWORDS = {
+    "reasoner": 8, "r1": 7, "reason": 4, "thinking": 5, "o1": 7, "o3": 8, "o4": 6,
+}
+CREATIVE_KEYWORDS = {
+    "gpt-4o": 5, "sonnet": 6, "qwen-plus": 5, "qwen-max": 6, "deepseek-chat": 5, "pro": 3,
+}
+
+
+def _profile_text(profile: dict) -> str:
+    return " ".join(str(profile.get(key, "") or "").lower() for key in ("name", "model", "provider", "purpose"))
+
+
+def _keyword_score(text: str, keywords: dict[str, int]) -> int:
+    score = 0
+    for keyword, weight in keywords.items():
+        if keyword in text:
+            score += weight
+    return score
+
+
+def _platform_slot_weights(platform: str, slot: str) -> dict[str, int]:
+    platform = (platform or "tomato").lower()
+    if slot in {"architecture_profile_id", "worldbuilding_profile_id", "character_profile_id"}:
+        return {"strong": 3, "reasoning": 2, "creative": 1, "fast": 0}
+    if slot == "outline_profile_id":
+        if platform == "tomato":
+            return {"fast": 3, "creative": 2, "strong": 1, "reasoning": 0}
+        return {"strong": 2, "creative": 1, "reasoning": 1, "fast": 1}
+    if slot == "draft_profile_id":
+        if platform == "tomato":
+            return {"creative": 3, "fast": 2, "strong": 2, "reasoning": 0}
+        if platform == "qidian":
+            return {"strong": 3, "reasoning": 2, "creative": 1, "fast": 0}
+        if platform == "zongheng":
+            return {"strong": 2, "creative": 2, "reasoning": 2, "fast": 0}
+    if slot == "polish_profile_id":
+        return {"strong": 3, "creative": 2, "reasoning": 1, "fast": 0}
+    if slot == "review_profile_id":
+        return {"strong": 3, "reasoning": 3, "creative": 0, "fast": 0}
+    if slot in {"summary_profile_id", "feedback_profile_id"}:
+        return {"strong": 2, "reasoning": 1, "creative": 0, "fast": 2}
+    return {"strong": 1, "reasoning": 1, "creative": 1, "fast": 1}
+
+
+def _slot_to_expected_purpose(slot: str) -> str:
+    mapping = {
+        "architecture_profile_id": "architecture",
+        "worldbuilding_profile_id": "worldbuilding",
+        "character_profile_id": "character",
+        "outline_profile_id": "outline",
+        "draft_profile_id": "draft",
+        "polish_profile_id": "polish",
+        "review_profile_id": "review",
+        "summary_profile_id": "summary",
+        "feedback_profile_id": "feedback",
+    }
+    return mapping.get(slot, "general")
+
+
+def _score_chat_profile_for_slot(profile: dict, slot: str, platform: str) -> int:
+    text = _profile_text(profile)
+    weights = _platform_slot_weights(platform, slot)
+    score = 0
+
+    health = (profile.get("health_status") or "").lower()
+    if health == "active":
+        score += 30
+    elif health == "untested":
+        score += 5
+    elif health in {"invalid", "disabled"}:
+        return -10**9
+
+    if profile.get("is_default"):
+        score += 6
+    if profile.get("last_tested_at"):
+        score += 4
+
+    purpose = (profile.get("purpose") or "").lower()
+    expected_purpose = _slot_to_expected_purpose(slot)
+    if purpose == expected_purpose:
+        score += 35
+    elif purpose == "general":
+        score += 8
+    elif expected_purpose in {"review", "polish"} and purpose in {"review", "polish"}:
+        score += 18
+
+    score += _keyword_score(text, FAST_KEYWORDS) * weights.get("fast", 0)
+    score += _keyword_score(text, STRONG_KEYWORDS) * weights.get("strong", 0)
+    score += _keyword_score(text, REASONING_KEYWORDS) * weights.get("reasoning", 0)
+    score += _keyword_score(text, CREATIVE_KEYWORDS) * weights.get("creative", 0)
+
+    max_tokens = int(profile.get("max_tokens") or 0)
+    if max_tokens >= 32000:
+        score += 6 * (weights.get("strong", 0) + weights.get("reasoning", 0))
+    elif max_tokens >= 16000:
+        score += 3 * (weights.get("strong", 0) + weights.get("reasoning", 0))
+
+    model = str(profile.get("model", "") or "").lower()
+    if platform == "tomato" and any(k in model for k in ["flash", "mini", "gpt-4o", "sonnet", "deepseek-chat"]):
+        score += 8
+    if platform == "qidian" and any(k in model for k in ["reasoner", "r1", "max", "pro", "sonnet", "gpt-5", "gpt-4.1"]):
+        score += 8
+    if platform == "zongheng" and any(k in model for k in ["sonnet", "qwen-plus", "qwen-max", "gpt-4.1", "gpt-5"]):
+        score += 6
+
+    return score
+
+
+def _pick_best_chat_profile(profiles: list[dict], slot: str, platform: str) -> str | None:
+    best_id = None
+    best_score = -10**9
+    for profile in profiles:
+        score = _score_chat_profile_for_slot(profile, slot, platform)
+        if score > best_score:
+            best_score = score
+            best_id = profile.get("id")
+    return best_id
 
 
 @router.get("/api/user/api-credentials")
@@ -398,6 +532,48 @@ def save_project_assignment(project_id: str, data: ProjectAssignmentReq, request
                 + [now, now],
             )
     return get_project_assignment(project_id, request)
+
+
+@router.post("/api/projects/{project_id}/model-assignment/apply-platform-preset")
+def apply_platform_assignment_preset(project_id: str, data: PlatformPresetReq, request: Request):
+    user_id = get_current_user(request)
+    _require_project(user_id, project_id)
+    platform = (data.platform or "tomato").strip().lower()
+
+    with get_db() as conn:
+        profiles = [
+            dict(row)
+            for row in conn.execute(
+                """SELECT * FROM model_profile
+                   WHERE user_id=? AND type='chat' AND is_active=1
+                   ORDER BY is_default DESC, last_tested_at DESC, updated_at DESC""",
+                (user_id,),
+            ).fetchall()
+        ]
+        if not profiles:
+            raise HTTPException(status_code=400, detail="还没有可用的文本模型，请先完成模型设置。")
+
+        current = conn.execute(
+            "SELECT * FROM project_model_assignment WHERE project_id=? AND user_id=?",
+            (project_id, user_id),
+        ).fetchone()
+        current_data = dict(current) if current else {}
+
+        payload = {
+            "architecture_profile_id": _pick_best_chat_profile(profiles, "architecture_profile_id", platform),
+            "worldbuilding_profile_id": _pick_best_chat_profile(profiles, "worldbuilding_profile_id", platform),
+            "character_profile_id": _pick_best_chat_profile(profiles, "character_profile_id", platform),
+            "outline_profile_id": _pick_best_chat_profile(profiles, "outline_profile_id", platform),
+            "draft_profile_id": _pick_best_chat_profile(profiles, "draft_profile_id", platform),
+            "polish_profile_id": _pick_best_chat_profile(profiles, "polish_profile_id", platform),
+            "review_profile_id": _pick_best_chat_profile(profiles, "review_profile_id", platform),
+            "summary_profile_id": _pick_best_chat_profile(profiles, "summary_profile_id", platform),
+            "feedback_profile_id": _pick_best_chat_profile(profiles, "feedback_profile_id", platform),
+            "embedding_profile_id": current_data.get("embedding_profile_id"),
+            "rerank_profile_id": current_data.get("rerank_profile_id"),
+        }
+
+    return save_project_assignment(project_id, ProjectAssignmentReq(**payload), request)
 
 
 @router.get("/api/user/model-invocation-logs")

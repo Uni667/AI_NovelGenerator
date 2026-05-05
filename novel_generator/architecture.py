@@ -13,8 +13,9 @@ import logging
 import traceback
 from llm_errors import LLMInvocationError, build_empty_response_error
 from novel_generator.common import invoke_with_cleaning
+from novel_generator.platform_guidance import get_platform_story_rhythm_guidance
 from novel_generator.task_manager import raise_if_cancelled
-from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter
+from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter, get_runtime_config, _provider_to_interface
 import prompt_definitions
 from utils import clear_file_content, save_string_to_txt
 
@@ -53,6 +54,75 @@ def save_architecture_section(filepath: str, filename: str, title: str, content:
     section_file = os.path.join(filepath, filename)
     clear_file_content(section_file)
     save_string_to_txt(f"# {title}\n\n{content.strip()}\n", section_file)
+
+
+def polish_architecture_section(
+    ctx,
+    platform: str,
+    section_label: str,
+    section_text: str,
+    task_id: str | None = None,
+) -> str:
+    if not section_text.strip():
+        return section_text
+
+    platform_label, platform_story_guidance = get_platform_story_rhythm_guidance(platform)
+    purpose_map = {
+        "核心种子": "architecture_polish",
+        "角色架构": "architecture_polish",
+        "世界观": "architecture_polish",
+        "三幕式情节架构": "architecture_polish",
+    }
+    purpose = purpose_map.get(section_label, "architecture_polish")
+    try:
+        runtime = get_runtime_config(ctx.user_id, purpose, ctx.project_id) if getattr(ctx, "user_id", "") and ctx.project_id else None
+    except Exception:
+        runtime = None
+
+    if runtime:
+        llm = create_llm_adapter(
+            interface_format=_provider_to_interface(runtime.provider),
+            base_url=runtime.base_url,
+            model_name=runtime.model,
+            api_key=runtime.api_key,
+            temperature=runtime.temperature or max(0.2, min(ctx.llm.temperature, 0.6)),
+            max_tokens=runtime.max_tokens or ctx.llm.max_tokens,
+            timeout=runtime.timeout or ctx.llm.timeout,
+            cancel_token=ctx.cancel_token,
+        )
+    else:
+        llm = create_llm_adapter(
+            interface_format=ctx.llm.interface_format,
+            base_url=ctx.llm.base_url,
+            model_name=ctx.llm.model_name,
+            api_key=ctx.llm.api_key,
+            temperature=max(0.2, min(ctx.llm.temperature, 0.6)),
+            max_tokens=ctx.llm.max_tokens,
+            timeout=ctx.llm.timeout,
+            cancel_token=ctx.cancel_token,
+        )
+
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        if ctx.cancel_token is not None:
+            ctx.cancel_token.raise_if_set()
+        return False
+
+    prompt = prompt_definitions.architecture_section_polish_prompt.format(
+        platform_label=platform_label,
+        platform_story_guidance=platform_story_guidance,
+        section_label=section_label,
+        section_text=section_text,
+    )
+    polished = invoke_with_cleaning(
+        llm,
+        prompt,
+        cancel_check=_check_cancel,
+        operation_name=f"{section_label}去策划腔重写",
+        step="architecture_polish",
+    )
+    return polished.strip() or section_text
 
 
 def save_tracking_file(filepath: str, filename: str, content: str):
@@ -130,10 +200,12 @@ def Novel_architecture_generate(
     topic = project.topic
     genre = project.genre
     category = project.category
+    platform = project.platform
     num_chapters = project.num_chapters
     word_number = project.word_number
     user_guidance = project.user_guidance
     knowledge_context = getattr(project, "knowledge_context", "")
+    _, platform_story_guidance = get_platform_story_rhythm_guidance(platform)
 
     # ── Step 1: 核心种子 ──
     if "core_seed_result" not in partial_data:
@@ -156,6 +228,9 @@ def Novel_architecture_generate(
         if not core_seed_result.strip():
             logger.warning("core_seed_prompt generation failed and returned empty.")
             _fail("core_seed", _failure_message("核心种子生成"))
+        _emit("progress", {"step": "architecture_polish", "status": "running", "message": "正在优化核心种子文风..."})
+        core_seed_result = polish_architecture_section(ctx, platform, "核心种子", core_seed_result, task_id=task_id)
+        _emit("progress", {"step": "architecture_polish", "status": "done", "message": "核心种子优化完成"})
         partial_data["core_seed_result"] = core_seed_result
         save_partial_architecture_data(filepath, partial_data)
         save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["core_seed_result"], "核心种子", core_seed_result)
@@ -184,6 +259,9 @@ def Novel_architecture_generate(
         if not character_dynamics_result.strip():
             logger.warning("character_dynamics_prompt generation failed.")
             _fail("character", _failure_message("角色架构生成"))
+        _emit("progress", {"step": "architecture_polish", "status": "running", "message": "正在优化角色架构文风..."})
+        character_dynamics_result = polish_architecture_section(ctx, platform, "角色架构", character_dynamics_result, task_id=task_id)
+        _emit("progress", {"step": "architecture_polish", "status": "done", "message": "角色架构优化完成"})
         partial_data["character_dynamics_result"] = character_dynamics_result
         save_partial_architecture_data(filepath, partial_data)
         save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["character_dynamics_result"], "角色架构", character_dynamics_result)
@@ -237,6 +315,9 @@ def Novel_architecture_generate(
         if not world_building_result.strip():
             logger.warning("world_building_prompt generation failed.")
             _fail("world", _failure_message("世界观生成"))
+        _emit("progress", {"step": "architecture_polish", "status": "running", "message": "正在优化世界观文风..."})
+        world_building_result = polish_architecture_section(ctx, platform, "世界观", world_building_result, task_id=task_id)
+        _emit("progress", {"step": "architecture_polish", "status": "done", "message": "世界观优化完成"})
         partial_data["world_building_result"] = world_building_result
         save_partial_architecture_data(filepath, partial_data)
         save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["world_building_result"], "世界观", world_building_result)
@@ -254,7 +335,8 @@ def Novel_architecture_generate(
             core_seed=partial_data["core_seed_result"].strip(),
             character_dynamics=partial_data["character_dynamics_result"].strip(),
             world_building=partial_data["world_building_result"].strip(),
-            user_guidance=user_guidance
+            user_guidance=user_guidance,
+            platform_story_guidance=platform_story_guidance,
         )
         plot_arch_result = invoke_with_cleaning(
             llm,
@@ -266,6 +348,9 @@ def Novel_architecture_generate(
         if not plot_arch_result.strip():
             logger.warning("plot_architecture_prompt generation failed.")
             _fail("plot", _failure_message("三幕式情节架构生成"))
+        _emit("progress", {"step": "architecture_polish", "status": "running", "message": "正在优化情节架构文风..."})
+        plot_arch_result = polish_architecture_section(ctx, platform, "三幕式情节架构", plot_arch_result, task_id=task_id)
+        _emit("progress", {"step": "architecture_polish", "status": "done", "message": "情节架构优化完成"})
         partial_data["plot_arch_result"] = plot_arch_result
         save_partial_architecture_data(filepath, partial_data)
         save_architecture_section(filepath, ARCHITECTURE_SECTION_FILES["plot_arch_result"], "三幕式情节架构", plot_arch_result)

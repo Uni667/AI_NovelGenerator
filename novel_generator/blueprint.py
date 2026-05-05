@@ -10,12 +10,79 @@ import os
 import re
 import logging
 from novel_generator.common import invoke_with_cleaning
+from novel_generator.platform_guidance import get_platform_story_rhythm_guidance
 from novel_generator.task_manager import raise_if_cancelled, TaskCancelledError
-from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter
+from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter, _provider_to_interface
 import prompt_definitions
 from utils import read_file, clear_file_content, save_string_to_txt
 
 logger = logging.getLogger(__name__)
+
+
+def create_blueprint_specialized_adapter(ctx, project, purpose: str):
+    if ctx.project_id and getattr(ctx, "user_id", ""):
+        try:
+            from backend.app.services.model_runtime import get_runtime_config
+
+            runtime = get_runtime_config(ctx.user_id, purpose, ctx.project_id)
+            return create_llm_adapter(
+                interface_format=_provider_to_interface(runtime.provider),
+                base_url=runtime.base_url,
+                model_name=runtime.model,
+                api_key=runtime.api_key,
+                temperature=runtime.temperature or ctx.llm.temperature,
+                max_tokens=runtime.max_tokens or ctx.llm.max_tokens,
+                timeout=runtime.timeout or ctx.llm.timeout,
+                cancel_token=ctx.cancel_token,
+            )
+        except Exception:
+            pass
+
+    return create_llm_adapter(
+        interface_format=ctx.llm.interface_format,
+        base_url=ctx.llm.base_url,
+        model_name=ctx.llm.model_name,
+        api_key=ctx.llm.api_key,
+        temperature=ctx.llm.temperature,
+        max_tokens=ctx.llm.max_tokens,
+        timeout=ctx.llm.timeout,
+        cancel_token=ctx.cancel_token,
+    )
+
+
+def polish_blueprint_text(
+    ctx,
+    project,
+    blueprint_text: str,
+    task_id: str | None = None,
+) -> str:
+    if not blueprint_text.strip():
+        return blueprint_text
+
+    platform_label, platform_story_guidance = get_platform_story_rhythm_guidance(project.platform)
+
+    llm = create_blueprint_specialized_adapter(ctx, project, "blueprint_polish")
+
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        if ctx.cancel_token is not None:
+            ctx.cancel_token.raise_if_set()
+        return False
+
+    prompt = prompt_definitions.blueprint_polish_prompt.format(
+        platform_label=platform_label,
+        platform_story_guidance=platform_story_guidance,
+        blueprint_text=blueprint_text,
+    )
+    polished = invoke_with_cleaning(
+        llm,
+        prompt,
+        cancel_check=_check_cancel,
+        operation_name="章节蓝图去提纲腔重写",
+        step="blueprint_polish",
+    )
+    return polished.strip() or blueprint_text
 
 
 def compute_chunk_size(number_of_chapters: int, max_tokens: int) -> int:
@@ -68,6 +135,7 @@ def Chapter_blueprint_generate(
     filepath = ctx.filepath
     number_of_chapters = project.num_chapters
     user_guidance = project.user_guidance
+    _, platform_story_guidance = get_platform_story_rhythm_guidance(project.platform)
 
     _check_cancel()
     arch_file = os.path.join(filepath, "Novel_architecture.txt")
@@ -121,7 +189,8 @@ def Chapter_blueprint_generate(
                 chapter_list=limited_blueprint,
                 number_of_chapters=number_of_chapters,
                 n=current_start, m=current_end,
-                user_guidance=user_guidance
+                user_guidance=user_guidance,
+                platform_story_guidance=platform_story_guidance,
             )
             logger.info(f"Generating chapters [{current_start}..{current_end}] in a chunk...")
             _check_cancel()
@@ -139,6 +208,11 @@ def Chapter_blueprint_generate(
             save_string_to_txt(final_blueprint.strip(), filename_dir)
             current_start = current_end + 1
 
+        _emit("progress", {"step": "blueprint_polish", "status": "running", "message": "正在优化章节目录文风..."})
+        final_blueprint = polish_blueprint_text(ctx, project, final_blueprint, task_id=task_id)
+        _emit("progress", {"step": "blueprint_polish", "status": "done", "message": "章节目录优化完成"})
+        clear_file_content(filename_dir)
+        save_string_to_txt(final_blueprint.strip(), filename_dir)
         _emit("progress", {"step": "blueprint", "status": "done", "message": "章节目录生成完成"})
         logger.info("All chapters blueprint have been generated (resumed chunked).")
         return
@@ -147,7 +221,8 @@ def Chapter_blueprint_generate(
         prompt = prompt_definitions.chapter_blueprint_prompt.format(
             novel_architecture=architecture_text,
             number_of_chapters=number_of_chapters,
-            user_guidance=user_guidance
+            user_guidance=user_guidance,
+            platform_story_guidance=platform_story_guidance,
         )
         _check_cancel()
         blueprint_text = invoke_with_cleaning(llm, prompt, cancel_check=_check_cancel)
@@ -155,6 +230,9 @@ def Chapter_blueprint_generate(
             logger.warning("Chapter blueprint generation result is empty.")
             _emit("error", {"step": "blueprint", "message": "章节目录生成为空"})
             raise RuntimeError("章节目录生成为空")
+        _emit("progress", {"step": "blueprint_polish", "status": "running", "message": "正在优化章节目录文风..."})
+        blueprint_text = polish_blueprint_text(ctx, project, blueprint_text, task_id=task_id)
+        _emit("progress", {"step": "blueprint_polish", "status": "done", "message": "章节目录优化完成"})
         clear_file_content(filename_dir)
         save_string_to_txt(blueprint_text, filename_dir)
         _emit("progress", {"step": "blueprint", "status": "done", "message": "章节目录生成完成"})
@@ -172,7 +250,8 @@ def Chapter_blueprint_generate(
             chapter_list=limited_blueprint,
             number_of_chapters=number_of_chapters,
             n=current_start, m=current_end,
-            user_guidance=user_guidance
+            user_guidance=user_guidance,
+            platform_story_guidance=platform_story_guidance,
         )
         logger.info(f"Generating chapters [{current_start}..{current_end}] in a chunk...")
         _check_cancel()
@@ -193,5 +272,10 @@ def Chapter_blueprint_generate(
         save_string_to_txt(final_blueprint.strip(), filename_dir)
         current_start = current_end + 1
 
+    _emit("progress", {"step": "blueprint_polish", "status": "running", "message": "正在优化章节目录文风..."})
+    final_blueprint = polish_blueprint_text(ctx, project, final_blueprint, task_id=task_id)
+    _emit("progress", {"step": "blueprint_polish", "status": "done", "message": "章节目录优化完成"})
+    clear_file_content(filename_dir)
+    save_string_to_txt(final_blueprint.strip(), filename_dir)
     _emit("progress", {"step": "blueprint", "status": "done", "message": "章节目录生成完成"})
     logger.info("Novel_directory.txt (chapter blueprint) has been generated successfully (chunked).")

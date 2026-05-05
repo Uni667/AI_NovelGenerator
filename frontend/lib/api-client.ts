@@ -192,6 +192,8 @@ export const api = {
     get: (projectId: string) => request<any>(`/api/projects/${projectId}/model-assignment`),
     save: (projectId: string, data: any) =>
       request<any>(`/api/projects/${projectId}/model-assignment`, { method: "PUT", body: JSON.stringify(data) }),
+    applyPlatformPreset: (projectId: string, platform: string) =>
+      request<any>(`/api/projects/${projectId}/model-assignment/apply-platform-preset`, { method: "POST", body: JSON.stringify({ platform }) }),
   },
   knowledge: {
     upload: (projectId: string, file: File) => {

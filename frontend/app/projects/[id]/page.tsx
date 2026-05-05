@@ -97,6 +97,10 @@ const GENERATION_STEP_META: Record<string, { label: string; description: string 
     label: "三幕式情节架构",
     description: "把整本书拆成开局立钩子、中段冲突升级、后段爆发收束三段主线",
   },
+  architecture_polish: {
+    label: "架构优化",
+    description: "压低上游工作文档的策划腔和会议纪要腔，减少对目录与正文的污染",
+  },
   global_summary_init: {
     label: "初始全局摘要",
     description: "在架构完成后生成整本书的初始全局摘要，作为后续写作的连续性底稿",
@@ -125,6 +129,10 @@ const GENERATION_STEP_META: Record<string, { label: string; description: string 
     label: "章节目录",
     description: "把全书架构拆成章节标题、章节作用和每章推进目标",
   },
+  blueprint_polish: {
+    label: "目录优化",
+    description: "压低章节蓝图的提纲腔和策划腔，减少对正文的反向污染",
+  },
   build_prompt: {
     label: "章节提示词",
     description: "根据架构、目录和上下文构建当前章节写作提示",
@@ -132,6 +140,26 @@ const GENERATION_STEP_META: Record<string, { label: string; description: string 
   draft: {
     label: "章节草稿",
     description: "生成当前章节正文草稿",
+  },
+  voice_polish: {
+    label: "文风优化",
+    description: "压低 AI 腔，收紧表达，保留剧情事实并增强现场感",
+  },
+  quality_check: {
+    label: "平台质检",
+    description: "按平台标准检查开篇抓力、信息密度和结尾钩子",
+  },
+  mid_check: {
+    label: "中段质检",
+    description: "检查正文中段是否发散、解释过多、剧情推进不足",
+  },
+  dialogue_check: {
+    label: "对话质检",
+    description: "检查人物台词是否同质化，是否都像作者在说话",
+  },
+  quality_rewrite: {
+    label: "自动返修",
+    description: "平台质检未达标时，自动强化开篇和结尾，并修正文风问题",
   },
   finalize: {
     label: "章节定稿",
@@ -243,6 +271,7 @@ export default function ProjectDashboard() {
   const [modelProfiles, setModelProfiles] = useState<any[]>([])
   const [modelAssignment, setModelAssignment] = useState<Record<string, string | null>>({})
   const [modelAssignmentSaving, setModelAssignmentSaving] = useState(false)
+  const [platformPresetApplying, setPlatformPresetApplying] = useState(false)
   const [showProjectModelAdvanced, setShowProjectModelAdvanced] = useState(false)
   const [selectedOutputFile, setSelectedOutputFile] = useState<(typeof GENERATED_FILES)[number]["filename"]>(GENERATED_FILES[0].filename)
   const [outputFileContent, setOutputFileContent] = useState("")
@@ -645,6 +674,21 @@ export default function ProjectDashboard() {
       toast.error(e?.message || "保存失败")
     } finally {
       setModelAssignmentSaving(false)
+    }
+  }
+
+  const handleApplyPlatformPreset = async () => {
+    const platform = config?.platform || "tomato"
+    setPlatformPresetApplying(true)
+    try {
+      const assignment = await api.modelAssignment.applyPlatformPreset(id, platform)
+      setModelAssignment(assignment || {})
+      setShowProjectModelAdvanced(true)
+      toast.success("已按当前平台自动换挡模型分配")
+    } catch (error: any) {
+      toast.error(error?.message || "平台换挡失败")
+    } finally {
+      setPlatformPresetApplying(false)
     }
   }
 
@@ -2361,6 +2405,12 @@ export default function ProjectDashboard() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="flex items-end">
+                  <Button variant="outline" onClick={handleApplyPlatformPreset} disabled={platformPresetApplying}>
+                    {platformPresetApplying ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
+                    按平台自动换挡
+                  </Button>
                 </div>
                 <div>
                   <Label>分类</Label>

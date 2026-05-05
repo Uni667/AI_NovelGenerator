@@ -83,6 +83,7 @@ def _make_ctx(
     emb_conf: dict,
     filepath: str,
     project_id: str = "",
+    user_id: str = "",
     cancel_token: CancelToken | None = None,
 ) -> GenerationContext:
     return GenerationContext.from_dicts(
@@ -90,6 +91,7 @@ def _make_ctx(
         emb_dict=emb_conf,
         filepath=filepath,
         project_id=project_id,
+        user_id=user_id,
         cancel_token=cancel_token,
     )
 
@@ -112,6 +114,7 @@ def _make_chapter_params(pconfig: dict, chapter_number: int) -> ChapterParams:
         chapter_number=chapter_number,
         word_number=pconfig.get("word_number", 3000),
         user_guidance=pconfig.get("user_guidance", ""),
+        platform=pconfig.get("platform", "tomato"),
     )
 
 
@@ -360,7 +363,7 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict, user_id
     if task_id:
         _log_llm_selection(task_id, project, llm_conf, "architecture")
 
-    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], cancel_token=cancel_token)
+    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], user_id=user_id, cancel_token=cancel_token)
     proj_cfg = _make_project_cfg(pconfig)
 
     try:
@@ -425,7 +428,7 @@ def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: s
     llm_conf = _runtime_to_llm_conf(rt)
     if task_id:
         _log_llm_selection(task_id, project, llm_conf, "blueprint")
-    ctx = _make_ctx(llm_conf, {}, project["filepath"], project_id=project["id"], cancel_token=cancel_token)
+    ctx = _make_ctx(llm_conf, {}, project["filepath"], project_id=project["id"], user_id=user_id, cancel_token=cancel_token)
     proj_cfg = _make_project_cfg(pconfig)
 
     try:
@@ -575,7 +578,7 @@ def _run_chapter_generation(
         if task_id:
             _log_llm_selection(task_id, project, llm_conf, "chapter")
 
-        ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], cancel_token=cancel_token)
+        ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], user_id=user_id, cancel_token=cancel_token)
         params = _make_chapter_params(pconfig, chapter_number)
 
         emitter.emit(
@@ -586,7 +589,7 @@ def _run_chapter_generation(
         emitter.emit("progress", {"step": "build_prompt", "status": "done", "message": "提示词构建完成"})
 
         emitter.emit("progress", {"step": "draft", "status": "running", "message": f"正在生成第 {chapter_number} 章草稿..."})
-        draft_text = generate_chapter_draft(ctx, params, custom_prompt_text=prompt_text, task_id=task_id)
+        draft_text = generate_chapter_draft(ctx, params, custom_prompt_text=prompt_text, emitter=emitter, task_id=task_id)
 
         if draft_text:
             if task_id:
@@ -653,7 +656,7 @@ def _run_finalize(
         if task_id:
             _log_llm_selection(task_id, project, llm_conf, "finalize")
 
-        ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], cancel_token=cancel_token)
+        ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], user_id=user_id, cancel_token=cancel_token)
         params = _make_chapter_params(pconfig, chapter_number)
 
         emitter.emit("progress", {"step": "finalize", "status": "running", "message": f"正在定稿第 {chapter_number} 章..."})
