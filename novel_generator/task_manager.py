@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 TERMINAL_STATUSES = {"done", "failed", "cancelled"}
 ACTIVE_STATUSES = {"running", "cancelling"}
+CANCELLING_GRACE_SECONDS = 30
 
 
 class TaskCancelledError(RuntimeError):
@@ -133,6 +134,22 @@ def _cleanup_finished_tasks_locked(max_age_seconds: int = 86400) -> None:
         _TASKS.pop(task_id, None)
 
 
+def _force_finish_stuck_cancelling_locked(project_id: str | None = None) -> None:
+    """将长时间卡在 cancelling 状态的任务强制标记为 cancelled。"""
+    now = time.time()
+    for state in list(_TASKS.values()):
+        if state.status != "cancelling":
+            continue
+        if project_id and state.project_id != project_id:
+            continue
+        if now - state.updated_at < CANCELLING_GRACE_SECONDS:
+            continue
+        state.status = "cancelled"
+        state.message = state.message or "任务中断超时"
+        state.finished_at = now
+        _persist_task_to_db(state)
+
+
 def register_task(
     task_id: str,
     project_id: str,
@@ -143,6 +160,7 @@ def register_task(
     now = time.time()
     with _LOCK:
         _cleanup_finished_tasks_locked()
+        _force_finish_stuck_cancelling_locked(project_id)
         existing = _TASKS.get(task_id)
         if existing and existing.status in ACTIVE_STATUSES:
             return existing
@@ -169,6 +187,7 @@ def get_task(task_id: str) -> Optional[TaskState]:
 def get_active_task(project_id: str, kind: str | None = None) -> Optional[TaskState]:
     with _LOCK:
         _cleanup_finished_tasks_locked()
+        _force_finish_stuck_cancelling_locked(project_id)
         for state in _TASKS.values():
             if state.project_id != project_id:
                 continue

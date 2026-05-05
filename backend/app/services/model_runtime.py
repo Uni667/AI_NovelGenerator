@@ -59,7 +59,7 @@ PROVIDER_DEFAULTS = {
 
 PROVIDER_DEFAULT_CHAT_MODELS = {
     "siliconflow": "deepseek-v4-flash",
-    "deepseek": "deepseek-chat",
+    "deepseek": "deepseek-v4-flash",
     "openai": "gpt-4o-mini",
     "qwen": "qwen-plus",
     "anthropic": "claude-3-5-haiku-latest",
