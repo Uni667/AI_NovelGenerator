@@ -275,15 +275,16 @@ class OpenAIDirectAdapter(BaseLLMAdapter):
     def invoke(self, prompt: str) -> str:
         self._reset_error_state()
         try:
+            messages = []
+            if self.system_prompt:
+                messages.append({"role": "system", "content": self.system_prompt})
+            messages.append({"role": "user", "content": prompt})
             extra = {}
             if "deepseek" in (self.model_name or "").lower():
                 extra["extra_body"] = {"thinking": {"type": "disabled"}}
             response = self._client.chat.completions.create(
                 model=self.model_name,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
+                messages=messages,
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
                 timeout=self.timeout,
@@ -568,6 +569,19 @@ def create_llm_adapter(
         raise ValueError("Base URL 必须以 http:// 或 https:// 开头。")
 
     if fmt in {"deepseek", "openai", "ollama", "ml studio", "阿里云百炼", "alibaba bailian"}:
+        # DeepSeek models go through the direct OpenAI SDK adapter so that
+        # extra_body={"thinking": {"type": "disabled"}} is reliably forwarded.
+        if "deepseek" in (model_name or "").lower():
+            return OpenAIDirectAdapter(
+                api_key,
+                base_url,
+                model_name,
+                max_tokens,
+                temperature,
+                timeout,
+                system_prompt="",
+                cancel_token=cancel_token,
+            )
         return OpenAICompatibleAdapter(
             api_key,
             base_url,
