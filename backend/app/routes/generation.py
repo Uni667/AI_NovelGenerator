@@ -248,9 +248,9 @@ def _run_in_thread(emitter: SSEEmitter, task_id: str, func, *args, **kwargs):
         finish_task(task_id, "failed", message)
         emitter.emit("error", _build_terminal_error_payload(task_id, "request", message))
         emitter.emit("done", _build_terminal_error_payload(task_id, "request", message))
-    except Exception as exc:
+    except Exception:
         logger.exception("Generation task failed")
-        message = f"{func.__name__} 执行失败: {exc}"
+        message = "生成任务执行失败，请稍后重试"
         finish_task(task_id, "failed", message)
         emitter.emit("error", _build_terminal_error_payload(task_id, "server", message))
         emitter.emit("done", _build_terminal_error_payload(task_id, "server", message))
@@ -605,6 +605,7 @@ def _run_chapter_generation(
                 "error",
                 _build_terminal_error_payload(task_id or "", "draft", "草稿生成返回空内容"),
             )
+            raise RuntimeError("草稿生成返回空内容")
     finally:
         if own_token and task_id:
             unbind_cancel_token(task_id)

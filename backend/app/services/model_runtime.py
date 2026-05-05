@@ -137,9 +137,6 @@ def _validate_base_url(base_url: str) -> None:
 def _validate_provider(provider: str) -> None:
     if provider not in SUPPORTED_CHAT_PROVIDERS:
         raise ConfigError("当前模型配置不完整，建议清空后重新配置。")
-    return
-    if provider not in SUPPORTED_CHAT_PROVIDERS:
-        raise ConfigError("模型配置异常，请重新测试或清空后重配。")
 
 
 def _select_chat_profile(user_id: str, project_id: str | None = None) -> dict | None:
@@ -295,16 +292,11 @@ def get_runtime_config(
     raise ConfigError("当前没有可用的模型配置，请先完成模型设置。")
 
 
-def _build_runtime(profile_id: str, purpose: str, user_id: str = "", allow_unhealthy: bool = False) -> RuntimeConfig:
+def _build_runtime(profile_id: str, purpose: str, user_id: str, allow_unhealthy: bool = False) -> RuntimeConfig:
     with get_db() as conn:
-        if user_id:
-            profile = conn.execute(
-                "SELECT * FROM model_profile WHERE id=? AND user_id=? AND is_active=1", (profile_id, user_id)
-            ).fetchone()
-        else:
-            profile = conn.execute(
-                "SELECT * FROM model_profile WHERE id=?", (profile_id,)
-            ).fetchone()
+        profile = conn.execute(
+            "SELECT * FROM model_profile WHERE id=? AND user_id=? AND is_active=1", (profile_id, user_id)
+        ).fetchone()
         if not profile:
             raise ConfigError("模型配置不存在")
         profile = dict(profile)
@@ -327,14 +319,9 @@ def _build_runtime(profile_id: str, purpose: str, user_id: str = "", allow_unhea
         raise ConfigError(f"模型配置「{profile['name']}」没有绑定 API 凭证")
 
     with get_db() as conn:
-        if user_id:
-            cred = conn.execute(
-                "SELECT * FROM api_credential WHERE id=? AND user_id=?", (cred_id, user_id)
-            ).fetchone()
-        else:
-            cred = conn.execute(
-                "SELECT * FROM api_credential WHERE id=?", (cred_id,)
-            ).fetchone()
+        cred = conn.execute(
+            "SELECT * FROM api_credential WHERE id=? AND user_id=?", (cred_id, user_id)
+        ).fetchone()
         if not cred:
             raise ConfigError(f"API 凭证不存在或已被删除")
         cred = dict(cred)
@@ -363,7 +350,7 @@ def _build_runtime(profile_id: str, purpose: str, user_id: str = "", allow_unhea
             raw = decrypt_api_key(cred["headers_encrypted"])
             extra_headers = json.loads(raw) if raw else {}
         except Exception:
-            pass
+            logger.warning("Failed to decrypt headers for credential %s", cred.get("id", "?"), exc_info=True)
 
     provider_source = (cred.get("provider", "") or "").strip()
     raw_base_url = (cred.get("base_url", "") or "").strip().rstrip("/")
@@ -507,7 +494,7 @@ def log_invocation(
                  now),
             )
     except Exception:
-        pass
+        logger.warning("Failed to log invocation", exc_info=True)
 
 
 # ── 内部实现 ──

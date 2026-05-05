@@ -47,15 +47,6 @@ def get_project(project_id: str, user_id: str) -> dict | None:
         return dict(row)
 
 
-def get_project_unscoped(project_id: str) -> dict | None:
-    """内部使用：不验证所有权的项目查询。仅用于已通过其他方式验证的场景。"""
-    with get_db() as conn:
-        row = conn.execute("SELECT * FROM project WHERE id = ?", (project_id,)).fetchone()
-        if not row:
-            return None
-        return dict(row)
-
-
 def list_projects(user_id: str) -> list[dict]:
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM project WHERE user_id = ? ORDER BY updated_at DESC", (user_id,)).fetchall()

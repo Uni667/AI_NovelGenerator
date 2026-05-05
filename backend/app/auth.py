@@ -51,9 +51,11 @@ def create_token(user_id: str) -> str:
     if jwt is None:
         raise ImportError("pyjwt not installed")
     secret = _get_or_create_secret()
+    now = datetime.datetime.now(datetime.timezone.utc)
     payload = {
         "user_id": user_id,
-        "iat": datetime.datetime.now(datetime.timezone.utc)
+        "iat": now,
+        "exp": now + datetime.timedelta(hours=24),
     }
     return jwt.encode(payload, secret, algorithm="HS256")
 

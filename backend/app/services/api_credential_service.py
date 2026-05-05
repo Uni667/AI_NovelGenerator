@@ -12,18 +12,9 @@ from backend.app.utils.crypto import (
     last4,
     mask_api_key,
 )
+from backend.app.services.model_runtime import PROVIDER_DEFAULTS
 
 logger = logging.getLogger(__name__)
-
-PROVIDER_DEFAULTS = {
-    "openai": "https://api.openai.com/v1",
-    "deepseek": "https://api.deepseek.com",
-    "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "anthropic": "https://api.anthropic.com",
-    "siliconflow": "https://api.siliconflow.cn/v1",
-    "custom": "",
-    "local": "http://localhost:11434",
-}
 
 # 各 provider 的默认测试模型名（不是 URL！）
 PROVIDER_DEFAULT_TEST_MODELS = {

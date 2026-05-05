@@ -1,10 +1,13 @@
 import os
 import json
+import logging
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from backend.app.services import project_service, chapter_service
 
 from backend.app.auth import get_current_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["番茄平台工具"])
 
@@ -154,7 +157,8 @@ def _get_llm_and_config(user_id: str, project_id: str):
     try:
         rt = get_runtime_config(user_id, "draft", project_id)
     except ConfigError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.exception("Platform tool failed")
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
     adapter = _build_chat_adapter(rt, None, None)
     return adapter, rt
@@ -198,7 +202,8 @@ def generate_titles(project_id: str, request: Request):
         titles = [t.strip() for t in result.split("\n") if t.strip() and not t.strip().startswith("#")]
         return {"titles": titles[:10]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")
+        logger.exception("Platform tool generation failed")
+        raise HTTPException(status_code=500, detail="生成失败，请稍后重试")
 
 
 # ── 2. 简介生成 ─────────────────────────────────────────────────────
@@ -229,7 +234,8 @@ def generate_blurb(project_id: str, request: Request):
         versions = [v.strip() for v in result.split("---") if v.strip()]
         return {"blurbs": versions[:3]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")
+        logger.exception("Platform tool generation failed")
+        raise HTTPException(status_code=500, detail="生成失败，请稍后重试")
 
 
 # ── 3. 开篇钩子检测 ─────────────────────────────────────────────────
@@ -264,7 +270,8 @@ def check_opening_hook(project_id: str, request: Request, chapter_number: int = 
             analysis = {"score": 0, "issues": ["无法解析结果"], "suggestion": result}
         return {"analysis": analysis}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"检测失败: {str(e)}")
+        logger.exception("Platform tool detection failed")
+        raise HTTPException(status_code=500, detail="检测失败，请稍后重试")
 
 
 # ── 4. 章节结尾钩子检测 ─────────────────────────────────────────────
@@ -298,7 +305,8 @@ def check_chapter_ending_hook(project_id: str, chapter_number: int, request: Req
         analysis = json.loads(result[json_start:json_end]) if json_start != -1 else {"has_hook": False, "suggestion": "无法解析"}
         return {"analysis": analysis}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"检测失败: {str(e)}")
+        logger.exception("Platform tool detection failed")
+        raise HTTPException(status_code=500, detail="检测失败，请稍后重试")
 
 
 # ── 5. 批量章节钩子检测 ─────────────────────────────────────────────
@@ -374,7 +382,8 @@ def generate_tags(project_id: str, request: Request):
         tags = json.loads(result[json_start:json_end]) if json_start != -1 else {"main_tags": [], "search_keywords": []}
         return {"tags": tags}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")
+        logger.exception("Platform tool generation failed")
+        raise HTTPException(status_code=500, detail="生成失败，请稍后重试")
 
 
 # ── 7. 章节标题生成 ─────────────────────────────────────────────────
@@ -405,4 +414,5 @@ def generate_chapter_title(project_id: str, chapter_number: int, request: Reques
         titles = [t.strip() for t in result.split("\n") if t.strip() and len(t.strip()) > 5]
         return {"titles": titles[:3]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")
+        logger.exception("Platform tool generation failed")
+        raise HTTPException(status_code=500, detail="生成失败，请稍后重试")

@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request
 from backend.app.database import get_db
@@ -371,7 +372,8 @@ def suggest_characters(project_id: str, request: Request):
             })
         return {"characters": suggestions[:8]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"人物建议生成失败: {str(e)}")
+        logger.exception("Character suggestion generation failed")
+        raise HTTPException(status_code=500, detail="人物建议生成失败，请稍后重试")
 
 
 # ── 角色库全景视图 ──

@@ -72,6 +72,7 @@ def delete_file(project_id: str, filename: str, request: Request):
 # ── 新增：文件导入、列表、设为当前、获取当前架构/目录 ──
 
 ALLOWED_IMPORT_EXTENSIONS = {".txt", ".md", ".json"}
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 @router.post("/api/v1/projects/{project_id}/files/import")
@@ -97,7 +98,10 @@ async def import_file(
     if ext not in ALLOWED_IMPORT_EXTENSIONS:
         raise HTTPException(status_code=400, detail="仅支持 .txt、.md、.json 文件")
 
-    content = (await file.read()).decode("utf-8", errors="replace")
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail=f"文件过大，最大支持 {MAX_UPLOAD_BYTES // 1024 // 1024} MB")
+    content = raw.decode("utf-8", errors="replace")
     if not content.strip():
         raise HTTPException(status_code=400, detail="文件内容为空")
 

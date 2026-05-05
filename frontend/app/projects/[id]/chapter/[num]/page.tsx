@@ -30,9 +30,13 @@ export default function ChapterPage() {
   }, [chapterData])
 
   const handleSave = async () => {
-    await api.chapters.update(projectId, chapterNum, { content })
-    toast.success("已保存")
-    setIsEditing(false)
+    try {
+      await api.chapters.update(projectId, chapterNum, { content })
+      toast.success("已保存")
+      setIsEditing(false)
+    } catch {
+      toast.error("保存失败，请重试")
+    }
   }
 
   const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"

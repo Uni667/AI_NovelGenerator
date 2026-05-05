@@ -131,15 +131,21 @@ def list_knowledge_files(project_id: str, request: Request):
     return _list_files(project_id, user_id)
 
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
 @router.post("/api/v1/projects/{project_id}/knowledge/upload")
 async def upload_knowledge(project_id: str, request: Request, file: UploadFile = File(...)):
     project, user_id = _check_project(project_id, request)
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail=f"文件过大，最大支持 {MAX_UPLOAD_BYTES // 1024 // 1024} MB")
     knowledge_dir = os.path.join(project["filepath"], "knowledge")
     os.makedirs(knowledge_dir, exist_ok=True)
     file_path = os.path.join(knowledge_dir, file.filename)
 
     with open(file_path, "wb") as output:
-        output.write(await file.read())
+        output.write(raw)
 
     now = datetime.datetime.now().isoformat()
     with get_db() as conn:

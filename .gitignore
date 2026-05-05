@@ -46,6 +46,7 @@ Thumbs.db
 *.log
 # Data
 data/
+.jwt_secret
 
 # Claude Code
 .claude/

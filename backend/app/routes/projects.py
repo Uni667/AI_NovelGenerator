@@ -1,10 +1,13 @@
 import os
+import logging
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from backend.app.services import project_service, chapter_service
 from backend.app.auth import get_current_user
 from backend.app.models.project import ProjectCreate, ProjectUpdate, ConfigUpdate
 from utils import read_file
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["项目管理"])
 
@@ -21,7 +24,8 @@ def create_project(data: ProjectCreate, request: Request):
     try:
         return project_service.create_project(data.model_dump(), user_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to create project")
+        raise HTTPException(status_code=500, detail="创建项目失败")
 
 
 @router.get("/api/v1/projects/{project_id}")
@@ -70,8 +74,8 @@ def update_project_config(project_id: str, data: ConfigUpdate, request: Request)
         raise HTTPException(status_code=404, detail="项目不存在")
     try:
         return project_service.update_project_config(project_id, data.model_dump(exclude_none=True))
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="项目配置不存在")
 
 
 @router.get("/api/v1/projects/{project_id}/export")

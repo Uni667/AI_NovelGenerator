@@ -1,4 +1,5 @@
 import datetime
+import logging
 import re
 import uuid
 
@@ -23,6 +24,8 @@ from backend.app.errors import (
     MODEL_CONFIG_INVALID,
     api_error,
 )
+
+logger = logging.getLogger(__name__)
 from backend.app.services.model_runtime import (
     get_chat_model_status,
     normalize_base_url,
@@ -656,7 +659,8 @@ def fetch_provider_models(cred_id: str, request: Request):
             raise HTTPException(status_code=400, detail="该服务商不支持模型列表接口，请手动填写模型名。")
         resp.raise_for_status()
     except req.RequestException as e:
-        raise HTTPException(status_code=400, detail=f"请求模型列表失败: {str(e)[:200]}")
+        logger.warning("Model list fetch failed: %s", e)
+        raise HTTPException(status_code=400, detail="请求模型列表失败，请检查网络连接和服务地址")
 
     data = resp.json()
 
@@ -885,100 +889,6 @@ def repair_model_settings(request: Request):
     """修复当前用户的脏数据：provider、baseUrl、model URL、孤儿 ModelProfile。"""
     user_id = get_current_user(request)
     return repair_user_model_settings(user_id)
-    fixes = []
-    now = datetime.datetime.now().isoformat()
-
-    with get_db() as conn:
-        # 1. provider=custom 且 baseUrl 包含已知服务商域名 → 修正 provider
-        domain_provider_map = [
-            ("siliconflow.cn", "siliconflow"),
-            ("openai.com", "openai"),
-            ("deepseek.com", "deepseek"),
-            ("dashscope.aliyuncs.com", "qwen"),
-            ("anthropic.com", "anthropic"),
-        ]
-        custom_rows = conn.execute(
-            "SELECT * FROM api_credential WHERE user_id=? AND provider='custom'",
-            (user_id,),
-        ).fetchall()
-
-        for row in custom_rows:
-            cred = dict(row)
-            old_base = cred["base_url"] or ""
-            for domain, correct_provider in domain_provider_map:
-                if domain in old_base.lower():
-                    conn.execute(
-                        "UPDATE api_credential SET provider=?, updated_at=? WHERE id=? AND user_id=?",
-                        (correct_provider, now, cred["id"], user_id),
-                    )
-                    fixes.append(f"修正 provider: custom→{correct_provider} (ID: {cred['id'][:8]}...)")
-                    break
-
-        # 2. 修复 baseUrl 里的错误路径
-        all_creds = conn.execute(
-            "SELECT * FROM api_credential WHERE user_id=?", (user_id,)
-        ).fetchall()
-
-        for row in all_creds:
-            cred = dict(row)
-            old_url = cred["base_url"] or ""
-            new_url = old_url.rstrip("/")
-            changed = False
-
-            for suffix in ["/embeddings", "/chat/completions", "/v1/v1"]:
-                if new_url.endswith(suffix):
-                    new_url = new_url[: -len(suffix)]
-                    changed = True
-
-            # 确保非空 URL 以 /v1 结尾（除了 Anthropic）
-            if new_url and not new_url.endswith("/v1") and "anthropic.com" not in new_url:
-                if "/v1" not in new_url:
-                    new_url = new_url.rstrip("/") + "/v1"
-                    changed = True
-
-            if changed:
-                conn.execute(
-                    "UPDATE api_credential SET base_url=?, updated_at=? WHERE id=? AND user_id=?",
-                    (new_url, now, cred["id"], user_id),
-                )
-                fixes.append(f"修正 baseUrl: {old_url}→{new_url}")
-
-        # 3. ModelProfile.model 是 URL → 标记 invalid
-        url_models = conn.execute(
-            """SELECT * FROM model_profile
-               WHERE user_id=? AND (model LIKE 'http://%' OR model LIKE 'https://%')""",
-            (user_id,),
-        ).fetchall()
-
-        for mp_row in url_models:
-            mp = dict(mp_row)
-            conn.execute(
-                "UPDATE model_profile SET health_status='invalid', last_error='模型名是 URL，请修正。', updated_at=? WHERE id=? AND user_id=?",
-                (now, mp["id"], user_id),
-            )
-            fixes.append(f"标记无效模型: {mp['name']} (模型名是 URL)")
-
-        # 4. 删除孤儿 ModelProfile（绑定的 ApiCredential 不存在）
-        orphans = conn.execute(
-            """SELECT mp.id, mp.name FROM model_profile mp
-               WHERE mp.user_id=? AND mp.api_credential_id IS NOT NULL
-               AND mp.api_credential_id != ''
-               AND NOT EXISTS (
-                   SELECT 1 FROM api_credential ac
-                   WHERE ac.id = mp.api_credential_id AND ac.user_id = mp.user_id
-               )""",
-            (user_id,),
-        ).fetchall()
-
-        for orphan in orphans:
-            conn.execute("DELETE FROM model_profile WHERE id=? AND user_id=?", (orphan[0], user_id))
-            fixes.append(f"删除孤儿模型配置: {orphan[1]} (凭证已不存在)")
-
-    return {
-        "success": True,
-        "message": f"修复完成，共处理 {len(fixes)} 项。",
-        "details": fixes,
-    }
 
 
 # ── 兼容旧接口（转发到 repair）──

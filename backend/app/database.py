@@ -42,8 +42,10 @@ def init_db():
                 conn.execute("DROP TABLE IF EXISTS model_profile")
                 conn.execute("DROP TABLE IF EXISTS project_model_assignment")
                 conn.execute("DROP TABLE IF EXISTS model_invocation_log")
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
+            except Exception:
+                logger.exception("Unexpected migration error")
 
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS user (
@@ -326,26 +328,36 @@ def init_db():
         # ── 迁移：project_config 新增 platform 和 category 列 ──
         try:
             conn.execute("ALTER TABLE project_config ADD COLUMN platform TEXT DEFAULT 'tomato'")
-        except Exception:
+        except sqlite3.OperationalError:
             pass
+        except Exception:
+            logger.warning("Migration step failed", exc_info=True)
         try:
             conn.execute("ALTER TABLE project_config ADD COLUMN category TEXT DEFAULT ''")
-        except Exception:
+        except sqlite3.OperationalError:
             pass
+        except Exception:
+            logger.warning("Migration step failed", exc_info=True)
 
         # ── 迁移：character_profile 新增字段 ──
         try:
             conn.execute("ALTER TABLE character_profile ADD COLUMN status TEXT DEFAULT 'appeared'")
-        except Exception:
+        except sqlite3.OperationalError:
             pass
+        except Exception:
+            logger.warning("Migration step failed", exc_info=True)
         try:
             conn.execute("ALTER TABLE character_profile ADD COLUMN source TEXT DEFAULT 'user'")
-        except Exception:
+        except sqlite3.OperationalError:
             pass
+        except Exception:
+            logger.warning("Migration step failed", exc_info=True)
         try:
             conn.execute("ALTER TABLE character_profile ADD COLUMN first_appearance_chapter INTEGER")
-        except Exception:
+        except sqlite3.OperationalError:
             pass
+        except Exception:
+            logger.exception("Unexpected error during project_config migration")
 
         # ── 迁移：model_profile 新增字段 ──
         for col, defn in [
@@ -364,8 +376,10 @@ def init_db():
         ]:
             try:
                 conn.execute(f"ALTER TABLE model_profile ADD COLUMN {col} {defn}")
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
+            except Exception:
+                logger.exception("Unexpected error during model_profile migration")
 
         # ── 迁移：project_model_assignment 新增阶段字段 ──
         for col in ["worldbuilding_profile_id", "character_profile_id", "summary_profile_id",
@@ -374,8 +388,10 @@ def init_db():
                 conn.execute(
                     f"ALTER TABLE project_model_assignment ADD COLUMN {col} TEXT REFERENCES model_profile(id) ON DELETE SET NULL"
                 )
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
+            except Exception:
+                logger.exception("Unexpected migration error")
 
         # ── 迁移：generation_task 新增 model/credential 追踪字段 ──
         for col, defn in [
@@ -389,14 +405,18 @@ def init_db():
         ]:
             try:
                 conn.execute(f"ALTER TABLE generation_task ADD COLUMN {col} {defn}")
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
+            except Exception:
+                logger.exception("Unexpected migration error")
 
         for table in ["chapter", "knowledge_file", "project_file", "project_model_assignment"]:
             try:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT REFERENCES user(id) ON DELETE CASCADE")
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
+            except Exception:
+                logger.exception("Unexpected migration error")
 
         for table in ["chapter", "knowledge_file", "project_file", "project_model_assignment", "generation_task"]:
             try:
@@ -408,8 +428,10 @@ def init_db():
                         WHERE (user_id IS NULL OR user_id = '')
                           AND project_id IN (SELECT id FROM project)"""
                 )
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
+            except Exception:
+                logger.exception("Unexpected migration error")
 
         for index_sql in [
             "CREATE INDEX IF NOT EXISTS idx_project_file_user ON project_file(user_id)",
@@ -418,8 +440,10 @@ def init_db():
         ]:
             try:
                 conn.execute(index_sql)
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
+            except Exception:
+                logger.exception("Unexpected migration error")
 
         # ── 迁移：api_credential provider CHECK 约束增加 'siliconflow' ──
         try:

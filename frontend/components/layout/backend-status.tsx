@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Wifi, WifiOff } from "lucide-react"
 
-const API_BASE = "https://ai-novel-backend-production.up.railway.app"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 const CHECK_INTERVAL = 30000
 
 export function BackendStatus() {
