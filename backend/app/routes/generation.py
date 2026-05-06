@@ -692,6 +692,44 @@ def _run_finalize(
             unbind_cancel_token(task_id)
 
 
+# ── 同步生成端点（绕过 SSE/线程池，用于调试和直接调用）──
+
+@router.post("/api/v1/projects/{project_id}/generate/sync/architecture")
+def generate_architecture_sync(project_id: str, request: Request):
+    """直接同步生成架构，返回结果文本。不依赖 SSE/线程池。"""
+    project, pconfig, user_id = _check_project(project_id, request)
+
+    from novel_generator.architecture import Novel_architecture_generate
+    from backend.app.services.model_runtime import get_runtime_config
+    from backend.app.services import file_service, project_service
+    from utils import read_file as _read_file
+
+    rt = _get_runtime_config(user_id, "architecture", project_id)
+    llm_conf = _runtime_to_llm_conf(rt)
+    emb_conf = _optional_embedding_conf(user_id, project_id)
+
+    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project_id, user_id=user_id)
+    proj_cfg = _make_project_cfg(pconfig)
+
+    project_service.update_project(project_id, {"status": "generating"}, user_id)
+
+    try:
+        Novel_architecture_generate(ctx, proj_cfg)
+        arch_path = os.path.join(project["filepath"], "Novel_architecture.txt")
+        content = _read_file(arch_path) if os.path.exists(arch_path) else ""
+        file_service.create_project_file(
+            project_id=project_id, user_id=user_id, type="architecture",
+            title="架构", filename="Novel_architecture.txt", content=content,
+            source="ai_generated", is_current=True,
+        )
+        project_service.update_project(project_id, {"status": "ready"}, user_id)
+        return {"success": True, "message": "架构生成完成", "length": len(content)}
+    except Exception as exc:
+        project_service.update_project(project_id, {"status": "draft"}, user_id)
+        logger.exception("Sync architecture generation failed")
+        raise HTTPException(status_code=500, detail="架构生成失败，请稍后重试")
+
+
 # ── 新增：任务列表、任务重试 ──
 
 @router.get("/api/v1/projects/{project_id}/generate/tasks")
