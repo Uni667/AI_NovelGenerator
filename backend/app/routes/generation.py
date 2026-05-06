@@ -727,7 +727,7 @@ def generate_architecture_sync(project_id: str, request: Request):
     except Exception as exc:
         project_service.update_project(project_id, {"status": "draft"}, user_id)
         logger.exception("Sync architecture generation failed")
-        raise HTTPException(status_code=500, detail="架构生成失败，请稍后重试")
+        raise HTTPException(status_code=500, detail=f"架构生成失败: {exc}")
 
 
 # ── 新增：任务列表、任务重试 ──
