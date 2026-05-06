@@ -291,13 +291,20 @@ def _make_streaming_response(
     target_func,
     *args,
 ) -> StreamingResponse:
+    import threading
     loop = asyncio.get_event_loop()
     attach_task_stream(task_id, queue, loop)
 
+    # Use raw threading.Thread instead of loop.run_in_executor to avoid
+    # thread-pool starvation issues in constrained container environments.
+    t = threading.Thread(
+        target=_run_in_thread,
+        args=(SSEEmitter(task_id), task_id, target_func, *args),
+        daemon=True,
+    )
+    t.start()
+
     async def event_gen():
-        if not _is_active_task(task_id):
-            reset_task_stream(task_id)
-            loop.run_in_executor(None, _run_in_thread, SSEEmitter(task_id), task_id, target_func, *args)
         hb = asyncio.create_task(_heartbeat(queue))
         try:
             async for sse_data in sse_event_generator(queue):
