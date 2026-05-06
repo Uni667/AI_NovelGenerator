@@ -84,6 +84,7 @@ class RuntimeConfig:
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = 8192
     top_p: Optional[float] = None
+    timeout: int = 600
     supports_streaming: bool = True
     supports_json: bool = True
     purpose: str = "general"
