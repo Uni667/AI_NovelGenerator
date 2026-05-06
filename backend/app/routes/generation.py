@@ -201,6 +201,8 @@ def _is_active_task(task_id: str) -> bool:
 
 
 def _run_in_thread(emitter: SSEEmitter, task_id: str, func, *args, **kwargs):
+    from novel_generator.task_manager import update_task_status
+    update_task_status(task_id, "running")
     try:
         func(emitter, *args, task_id=task_id, **kwargs)
     except TaskCancelledError as exc:

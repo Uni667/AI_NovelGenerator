@@ -22,7 +22,7 @@ class TaskState:
     user_id: str
     project_id: str
     kind: str
-    status: str = "running"
+    status: str = "pending"
     message: str = ""
     cancel_requested: bool = False
     created_at: float = field(default_factory=time.time)
@@ -267,6 +267,17 @@ def raise_if_cancelled(task_id: Optional[str]) -> None:
         state = get_task(task_id)
         label = state.kind if state else "任务"
         raise TaskCancelledError(f"{label}已取消")
+
+
+def update_task_status(task_id: str, status: str) -> Optional[TaskState]:
+    with _LOCK:
+        state = _TASKS.get(task_id)
+        if not state:
+            return None
+        state.status = status
+        state.updated_at = time.time()
+        _persist_task_to_db(state)
+        return state
 
 
 def finish_task(task_id: str, status: str, message: str) -> Optional[TaskState]:
