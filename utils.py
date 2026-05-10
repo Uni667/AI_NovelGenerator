@@ -29,6 +29,7 @@ def append_text_to_file(text_to_append: str, file_path: str):
 def clear_file_content(filename: str):
     """清空指定文件内容。"""
     try:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, 'w', encoding='utf-8') as file:
             pass
     except IOError as e:
@@ -37,6 +38,7 @@ def clear_file_content(filename: str):
 def save_string_to_txt(content: str, filename: str):
     """将字符串保存为 txt 文件（覆盖写）。"""
     try:
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
         with open(filename, 'w', encoding='utf-8') as file:
             file.write(content)
     except Exception as e:
