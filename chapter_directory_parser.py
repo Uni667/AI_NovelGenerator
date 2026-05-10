@@ -21,19 +21,18 @@ def parse_chapter_blueprint(blueprint_text: str):
     chunks = re.split(r'\n\s*\n', blueprint_text.strip())
     results = []
 
-    # 兼容是否使用方括号包裹章节标题
+    # 兼容 markdown 加粗 (**text**) 和方括号包裹
     # 例如：
     #   第1章 - 紫极光下的预兆
-    # 或
-    #   第1章 - [紫极光下的预兆]
-    chapter_number_pattern = re.compile(r'^第\s*(\d+)\s*章\s*-\s*\[?(.*?)\]?$')
+    #   **第1章 - [紫极光下的预兆]**
+    chapter_number_pattern = re.compile(r'^(?:\*\*)?第\s*(\d+)\s*章\s*-\s*\[?(.*?)\]?\*?\*?$')
 
-    role_pattern     = re.compile(r'^本章定位：\s*\[?(.*)\]?$')
-    purpose_pattern  = re.compile(r'^核心作用：\s*\[?(.*)\]?$')
-    suspense_pattern = re.compile(r'^悬念密度：\s*\[?(.*)\]?$')
-    foreshadow_pattern = re.compile(r'^伏笔操作：\s*\[?(.*)\]?$')
-    twist_pattern       = re.compile(r'^认知颠覆：\s*\[?(.*)\]?$')
-    summary_pattern = re.compile(r'^本章简述：\s*\[?(.*)\]?$')
+    role_pattern     = re.compile(r'^(?:\*\*)?本章定位：\s*\[?(.*?)\]?\*?\*?$')
+    purpose_pattern  = re.compile(r'^(?:\*\*)?核心作用：\s*\[?(.*?)\]?\*?\*?$')
+    suspense_pattern = re.compile(r'^(?:\*\*)?悬念密度：\s*\[?(.*?)\]?\*?\*?$')
+    foreshadow_pattern = re.compile(r'^(?:\*\*)?伏笔操作：\s*\[?(.*?)\]?\*?\*?$')
+    twist_pattern       = re.compile(r'^(?:\*\*)?认知颠覆：\s*\[?(.*?)\]?\*?\*?$')
+    summary_pattern = re.compile(r'^(?:\*\*)?本章简述：\s*\[?(.*?)\]?\*?\*?$')
 
     for chunk in chunks:
         lines = chunk.strip().splitlines()
