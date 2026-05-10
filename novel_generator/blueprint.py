@@ -97,7 +97,9 @@ def compute_chunk_size(number_of_chapters: int, max_tokens: int) -> int:
     return chunk_size
 
 
-def limit_chapter_blueprint(blueprint_text: str, limit_chapters: int = 100) -> str:
+def limit_chapter_blueprint(blueprint_text: str, limit_chapters: int | None = None) -> str:
+    if limit_chapters is None:
+        return blueprint_text
     pattern = r"(第\s*\d+\s*章.*?)(?=第\s*\d+\s*章|$)"
     chapters = re.findall(pattern, blueprint_text, flags=re.DOTALL)
     if not chapters:
@@ -183,7 +185,7 @@ def Chapter_blueprint_generate(
         current_start = max_existing_chap + 1
         while current_start <= number_of_chapters:
             current_end = min(current_start + chunk_size - 1, number_of_chapters)
-            limited_blueprint = limit_chapter_blueprint(final_blueprint, 100)
+            limited_blueprint = limit_chapter_blueprint(final_blueprint)
             chunk_prompt = prompt_definitions.chunked_chapter_blueprint_prompt.format(
                 novel_architecture=architecture_text,
                 chapter_list=limited_blueprint,
@@ -244,7 +246,7 @@ def Chapter_blueprint_generate(
     current_start = 1
     while current_start <= number_of_chapters:
         current_end = min(current_start + chunk_size - 1, number_of_chapters)
-        limited_blueprint = limit_chapter_blueprint(final_blueprint, 100)
+        limited_blueprint = limit_chapter_blueprint(final_blueprint)
         chunk_prompt = prompt_definitions.chunked_chapter_blueprint_prompt.format(
             novel_architecture=architecture_text,
             chapter_list=limited_blueprint,
