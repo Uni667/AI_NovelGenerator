@@ -59,6 +59,15 @@ def polish_blueprint_text(
     if not blueprint_text.strip():
         return blueprint_text
 
+    chapter_count = len(re.findall(r"\*\*第\s*\d+\s*章", blueprint_text))
+    est_output_tokens = chapter_count * 80
+    if est_output_tokens > ctx.llm.max_tokens * 0.85:
+        logger.info(
+            "Skipping blueprint polish: estimated %d output tokens exceeds %.0f%% of max_tokens=%d",
+            est_output_tokens, 85, ctx.llm.max_tokens,
+        )
+        return blueprint_text
+
     platform_label, platform_story_guidance = get_platform_story_rhythm_guidance(project.platform)
 
     llm = create_blueprint_specialized_adapter(ctx, project, "blueprint_polish")
