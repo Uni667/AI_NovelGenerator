@@ -252,17 +252,20 @@ def _run_in_thread(emitter: SSEEmitter, task_id: str, func, *args, **kwargs):
                 error_category=payload.get("category"),
             ),
         )
+        return  # 阻止落入 else 再次 emit done
     except HTTPException as exc:
         message = str(exc.detail)
         finish_task(task_id, "failed", message)
         emitter.emit("error", _build_terminal_error_payload(task_id, "request", message))
         emitter.emit("done", _build_terminal_error_payload(task_id, "request", message))
+        return
     except Exception:
         logger.exception("Generation task failed")
         message = "生成任务执行失败，请稍后重试"
         finish_task(task_id, "failed", message)
         emitter.emit("error", _build_terminal_error_payload(task_id, "server", message))
         emitter.emit("done", _build_terminal_error_payload(task_id, "server", message))
+        return
     else:
         finish_task(task_id, "done", "完成")
         emitter.emit("done", {"message": "完成", "status": "done", "task_id": task_id})
@@ -312,6 +315,7 @@ def _make_streaming_response(
                     break
                 yield sse_data
         finally:
+            # asyncio.Task.cancel() 对已完成 task 是幂等安全的，无需预检 done()
             hb.cancel()
             detach_task_stream(task_id, queue, loop)
 

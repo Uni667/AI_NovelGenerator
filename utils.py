@@ -4,16 +4,21 @@ import os
 import json
 
 def read_file(filename: str) -> str:
-    """读取文件的全部内容，若文件不存在或异常则返回空字符串。"""
-    try:
-        with open(filename, 'r', encoding='utf-8') as file:
-            content = file.read()
-        return content
-    except FileNotFoundError:
-        return ""
-    except Exception as e:
-        print(f"[read_file] 读取文件时发生错误: {e}")
-        return ""
+    """读取文件的全部内容，若文件不存在或异常则返回空字符串。
+    优先 UTF-8，失败时尝试 GBK/GB18030 等常见编码。
+    """
+    for enc in ("utf-8", "gbk", "gb18030", "utf-16", "latin-1"):
+        try:
+            with open(filename, "r", encoding=enc) as file:
+                return file.read()
+        except FileNotFoundError:
+            return ""
+        except UnicodeDecodeError:
+            continue
+        except Exception as e:
+            print(f"[read_file] 读取文件时发生错误 ({enc}): {e}")
+            return ""
+    return ""
 
 def append_text_to_file(text_to_append: str, file_path: str):
     """在文件末尾追加文本(带换行)。若文本非空且无换行，则自动加换行。"""

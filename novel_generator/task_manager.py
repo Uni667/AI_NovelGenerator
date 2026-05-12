@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import threading
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 TERMINAL_STATUSES = {"done", "failed", "cancelled"}
 ACTIVE_STATUSES = {"running", "cancelling"}
@@ -34,6 +38,7 @@ class TaskState:
 _TASKS: dict[str, TaskState] = {}
 _CANCEL_TOKENS: dict[str, object] = {}  # task_id → CancelToken
 _LOCK = threading.RLock()
+_MAX_TASKS = 1000  # 内存中最大任务数，超过时清理最早的非活跃任务
 
 
 def _persist_task_to_db(state: TaskState) -> None:
@@ -54,7 +59,8 @@ def _persist_task_to_db(state: TaskState) -> None:
         error_code = state.metadata.get("error_code") if state.metadata else None
         error_category = state.metadata.get("error_category") if state.metadata else None
         retryable = 1 if (state.metadata or {}).get("retryable") else 0
-        input_snapshot = (state.metadata or {}).get("input_snapshot", "")
+        raw_input_snapshot = (state.metadata or {}).get("input_snapshot", "")
+        input_snapshot = json.dumps(raw_input_snapshot, ensure_ascii=False) if not isinstance(raw_input_snapshot, str) else raw_input_snapshot
         output_file_id = (state.metadata or {}).get("output_file_id")
 
         with get_db() as conn:
@@ -82,7 +88,7 @@ def _persist_task_to_db(state: TaskState) -> None:
                 ),
             )
     except Exception:
-        pass  # 持久化失败不阻断内存操作
+        logger.warning("Task persistence failed for %s/%s", state.task_id, state.kind, exc_info=True)
 
 
 def load_tasks_from_db() -> None:
@@ -118,11 +124,13 @@ def load_tasks_from_db() -> None:
             )
             _TASKS[state.task_id] = state
     except Exception:
-        pass
+        logger.warning("Failed to load tasks from DB on startup", exc_info=True)
 
 
 def _cleanup_finished_tasks_locked(max_age_seconds: int = 86400) -> None:
     now = time.time()
+
+    # 1) 按过期时间清理
     stale_ids = [
         task_id
         for task_id, state in _TASKS.items()
@@ -132,6 +140,21 @@ def _cleanup_finished_tasks_locked(max_age_seconds: int = 86400) -> None:
     ]
     for task_id in stale_ids:
         _TASKS.pop(task_id, None)
+        _CANCEL_TOKENS.pop(task_id, None)
+
+    # 2) 若仍然超过上限，按 finish 时间升序驱逐已结束任务
+    if len(_TASKS) > _MAX_TASKS:
+        overflow = len(_TASKS) - _MAX_TASKS
+        finished = [
+            (task_id, state)
+            for task_id, state in _TASKS.items()
+            if state.status in TERMINAL_STATUSES
+        ]
+        # 用 float('inf') 兜底 None，防止 finished_at 未设置的任务被优先驱逐
+        finished.sort(key=lambda x: x[1].finished_at or float('inf'))
+        for task_id, _ in finished[:overflow]:
+            _TASKS.pop(task_id, None)
+            _CANCEL_TOKENS.pop(task_id, None)
 
 
 def _force_finish_stuck_cancelling_locked(project_id: str | None = None) -> None:
@@ -276,6 +299,8 @@ def update_task_status(task_id: str, status: str) -> Optional[TaskState]:
             return None
         state.status = status
         state.updated_at = time.time()
+        if status in TERMINAL_STATUSES and state.finished_at is None:
+            state.finished_at = state.updated_at
         _persist_task_to_db(state)
         return state
 
