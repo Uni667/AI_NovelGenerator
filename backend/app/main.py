@@ -1,9 +1,9 @@
 import os
 import logging
+from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from backend.app.database import init_db
 from backend.app.routes import auth, chapters, character_appearances, character_conflicts, character_relationships, characters, files, generation, knowledge, platform_tools, projects, user_api_config
 from backend.app.rate_limiter import limiter, rate_limit_exceeded_handler
@@ -41,7 +41,15 @@ ALLOWED_ORIGINS = os.getenv(
     "http://localhost:3000,http://127.0.0.1:3000"
 ).split(",")
 
-app = FastAPI(title="AI 小说生成器 API", version="1.0", docs_url="/docs")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_db()
+    from novel_generator.task_manager import load_tasks_from_db
+    load_tasks_from_db()
+    yield
+
+
+app = FastAPI(title="AI 小说生成器 API", version="1.0", docs_url="/docs", lifespan=lifespan)
 
 # 注册速率限制错误处理器
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
@@ -71,13 +79,6 @@ app.include_router(character_relationships.router)
 app.include_router(character_conflicts.router)
 app.include_router(character_appearances.router)
 app.include_router(user_api_config.router)
-
-
-@app.on_event("startup")
-def startup():
-    init_db()
-    from novel_generator.task_manager import load_tasks_from_db
-    load_tasks_from_db()
 
 
 @app.get("/api/v1/health")

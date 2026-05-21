@@ -3,7 +3,7 @@
 import uuid
 import datetime
 from backend.app.database import get_db
-from backend.app.auth import hash_password, verify_password, create_token
+from backend.app.auth import hash_password, verify_password, create_access_token, create_refresh_token
 
 
 def register_user(username: str, password: str) -> dict:
@@ -18,8 +18,9 @@ def register_user(username: str, password: str) -> dict:
             "INSERT INTO user (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
             (user_id, username, pw_hash, now)
         )
-    token = create_token(user_id)
-    return {"user_id": user_id, "username": username, "token": token}
+    access_token = create_access_token(user_id)
+    refresh_token = create_refresh_token(user_id)
+    return {"user_id": user_id, "username": username, "token": access_token, "refresh_token": refresh_token}
 
 
 def login_user(username: str, password: str) -> dict:
@@ -30,8 +31,18 @@ def login_user(username: str, password: str) -> dict:
         user = dict(row)
     if not verify_password(password, user["password_hash"]):
         raise ValueError("用户名或密码错误")
-    token = create_token(user["id"])
-    return {"user_id": user["id"], "username": user["username"], "token": token}
+    access_token = create_access_token(user["id"])
+    refresh_token = create_refresh_token(user["id"])
+    return {"user_id": user["id"], "username": user["username"], "token": access_token, "refresh_token": refresh_token}
+
+
+def refresh_access_token(refresh_token: str) -> dict:
+    """使用 refresh token 获取新的 access token。"""
+    from backend.app.auth import verify_refresh_token, create_access_token
+    payload = verify_refresh_token(refresh_token)
+    user_id = payload["user_id"]
+    new_access_token = create_access_token(user_id)
+    return {"token": new_access_token}
 
 
 def get_user(user_id: str) -> dict | None:

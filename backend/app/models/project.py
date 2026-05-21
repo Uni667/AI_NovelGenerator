@@ -1,19 +1,26 @@
-from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 
 class ProjectCreate(BaseModel):
-    name: str = Field(default="未命名作品", max_length=100, description="项目名称")
+    name: str = Field(..., min_length=1, max_length=100, description="Project name")
     description: str = ""
     topic: str = ""
     genre: str = ""
-    platform: str = Field(default="tomato", description="目标平台")
-    category: str = Field(default="", description="平台内分类")
-    num_chapters: int = Field(default=0, ge=0, description="章节总数")
-    word_number: int = Field(default=3000, ge=500, le=50000, description="每章目标字数")
+    platform: str = Field(default="tomato", description="Target platform")
+    category: str = Field(default="", description="Platform category")
+    num_chapters: int = Field(default=0, ge=0, description="Chapter count")
+    word_number: int = Field(default=3000, ge=500, le=50000, description="Target words per chapter")
     user_guidance: str = ""
     language: str = "zh"
+    target_reader: str = ""
+    reader_direction: str = ""
+    trend_key: str = ""
+    custom_trend: str = ""
+    trend_translation: str = ""
+    forbidden: str = ""
+    style_requirement: str = ""
 
 
 class ProjectUpdate(BaseModel):
@@ -41,7 +48,13 @@ class ConfigUpdate(BaseModel):
     language: Optional[str] = None
     platform: Optional[str] = None
     category: Optional[str] = None
-    # 旧版 LLM 名称字段已废弃，请使用 /api/projects/{id}/model-assignment
+    target_reader: Optional[str] = None
+    reader_direction: Optional[str] = None
+    trend_key: Optional[str] = None
+    custom_trend: Optional[str] = None
+    trend_translation: Optional[str] = None
+    forbidden: Optional[str] = None
+    style_requirement: Optional[str] = None
 
 
 class ConfigResponse(BaseModel):
@@ -54,6 +67,13 @@ class ConfigResponse(BaseModel):
     language: str
     platform: str
     category: str
+    target_reader: str = ""
+    reader_direction: str = ""
+    trend_key: str = ""
+    custom_trend: str = ""
+    trend_translation: str = ""
+    forbidden: str = ""
+    style_requirement: str = ""
 
 
 class ProjectFileResponse(BaseModel):

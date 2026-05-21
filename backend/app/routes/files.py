@@ -88,8 +88,8 @@ async def import_file(
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    if file_type not in ("architecture", "outline"):
-        raise HTTPException(status_code=400, detail="file_type 必须是 architecture 或 outline")
+    if file_type not in ("architecture", "outline", "summary", "character_state", "plot_arcs"):
+        raise HTTPException(status_code=400, detail="file_type 必须是 architecture / outline / summary / character_state / plot_arcs")
 
     if file.filename:
         ext = os.path.splitext(file.filename)[1].lower()
@@ -132,6 +132,21 @@ async def import_file(
         clear_file_content(dir_file)
         save_string_to_txt(content, dir_file)
         chapter_service.sync_chapters_from_directory(project_id, project["filepath"], user_id)
+    elif file_type == "summary":
+        from utils import clear_file_content, save_string_to_txt
+        summary_file = os.path.join(project["filepath"], "global_summary.txt")
+        clear_file_content(summary_file)
+        save_string_to_txt(content, summary_file)
+    elif file_type == "character_state":
+        from utils import clear_file_content, save_string_to_txt
+        cs_file = os.path.join(project["filepath"], "character_state.txt")
+        clear_file_content(cs_file)
+        save_string_to_txt(content, cs_file)
+    elif file_type == "plot_arcs":
+        from utils import clear_file_content, save_string_to_txt
+        pa_file = os.path.join(project["filepath"], "plot_arcs.txt")
+        clear_file_content(pa_file)
+        save_string_to_txt(content, pa_file)
 
     return result
 
@@ -167,6 +182,21 @@ def set_file_as_current(project_id: str, file_id: str, request: Request):
         clear_file_content(dir_file)
         save_string_to_txt(result["content"], dir_file)
         chapter_service.sync_chapters_from_directory(project_id, project["filepath"], user_id)
+    elif result["type"] == "summary":
+        from utils import clear_file_content, save_string_to_txt
+        summary_file = os.path.join(project["filepath"], "global_summary.txt")
+        clear_file_content(summary_file)
+        save_string_to_txt(result["content"], summary_file)
+    elif result["type"] == "character_state":
+        from utils import clear_file_content, save_string_to_txt
+        cs_file = os.path.join(project["filepath"], "character_state.txt")
+        clear_file_content(cs_file)
+        save_string_to_txt(result["content"], cs_file)
+    elif result["type"] == "plot_arcs":
+        from utils import clear_file_content, save_string_to_txt
+        pa_file = os.path.join(project["filepath"], "plot_arcs.txt")
+        clear_file_content(pa_file)
+        save_string_to_txt(result["content"], pa_file)
 
     return result
 

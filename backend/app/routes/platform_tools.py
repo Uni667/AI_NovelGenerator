@@ -414,5 +414,207 @@ def generate_chapter_title(project_id: str, chapter_number: int, request: Reques
         titles = [t.strip() for t in result.split("\n") if t.strip() and len(t.strip()) > 5]
         return {"titles": titles[:3]}
     except Exception as e:
-        logger.exception("Platform tool generation failed")
+        logger.exception("Chapter title generation failed")
         raise HTTPException(status_code=500, detail="生成失败，请稍后重试")
+
+
+# ── 8. 章节诊断 ───────────────────────────────────────────────────────
+
+DIAGNOSIS_SYSTEM_PROMPT = """你是一位网文平台主编 + 商业化编辑 + 连载节奏医生。你的任务是诊断一章小说内容，从平台适配、爽点、钩子、节奏、人物、设定释放等多个维度给出专业诊断和改进建议。
+
+你必须：
+1. 先理解目标平台读者偏好。
+2. 再分析本章的实际表现。
+3. 只给诊断和建议，不替作者修改世界观、人物关系或主线立意。
+4. 不直接照搬现实新闻做类比。
+5. 诊断要具体到段落和情节，不要空泛概括。
+
+按以下格式输出：
+【总体评分】1-100分
+【平台适配】
+【本章最大问题】
+【最该保留的亮点】
+【需要压缩的内容】
+【需要新增的冲突】
+【建议强化的爽点】
+【结尾钩子建议】
+【改写示范】给出1-2句改写示例"""
+
+
+@router.post("/api/v1/projects/{project_id}/tools/diagnose")
+def diagnose_chapter(project_id: str, chapter_number: int, request: Request):
+    """诊断章节质量：从平台适配、爽点、钩子、节奏等多维度评分和建议。"""
+    user_id = get_current_user(request)
+    llm, rt = _get_llm_and_config(user_id, project_id)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    pconfig = project_service.get_project_config(project_id)
+    if not pconfig:
+        raise HTTPException(status_code=404, detail="项目配置不存在")
+
+    chapter_content = chapter_service.get_chapter_content(project_id, chapter_number, project["filepath"])
+    if not chapter_content:
+        raise HTTPException(status_code=404, detail=f"第{chapter_number}章内容不存在")
+
+    chapter_meta = chapter_service.get_chapter(project_id, chapter_number)
+
+    from novel_generator.commercial_profiles import format_profile_for_prompt
+    from novel_generator.commercial_prompts import chapter_diagnosis_dimensions, safety_prompt
+
+    platform_key = pconfig.get("platform", "tomato")
+    platform_text = format_profile_for_prompt(platform_key)
+    dimensions_text = chapter_diagnosis_dimensions(platform_key)
+    safety_text = safety_prompt()
+
+    diagnosis_prompt = "\n\n".join([
+        DIAGNOSIS_SYSTEM_PROMPT,
+        platform_text,
+        dimensions_text,
+        "---",
+        f"小说名称：{pconfig.get('topic', '未指定')}",
+        f"小说类型：{pconfig.get('genre', '未指定')}",
+        f"读者方向：{pconfig.get('reader_direction', '未指定')}",
+        f"禁止改动设定：{pconfig.get('forbidden', '未指定')}",
+        f"文风要求：{pconfig.get('style_requirement', '未指定')}",
+        f"当前章节：第{chapter_number}章 {chapter_meta.get('chapter_title', '') if chapter_meta else ''}",
+        f"章节定位：{chapter_meta.get('chapter_role', '') if chapter_meta else ''}",
+        f"章节简述：{chapter_meta.get('chapter_summary', '') if chapter_meta else ''}",
+        "---",
+        "待诊断章节正文：",
+        chapter_content[:6000],
+        safety_text,
+    ])
+
+    try:
+        result = llm.invoke(diagnosis_prompt)
+        return {
+            "chapter_number": chapter_number,
+            "diagnosis": result,
+            "platform": platform_key,
+        }
+    except Exception as e:
+        logger.exception("Chapter diagnosis failed")
+        raise HTTPException(status_code=500, detail="诊断失败，请稍后重试")
+
+
+# ── 9. 多模式商业生成（章节改写/大纲/名场面/短剧分镜/平台重写）───
+
+@router.post("/api/v1/projects/{project_id}/tools/commercial-generate")
+def commercial_generate(
+    project_id: str,
+    request: Request,
+    mode: str = "diagnose",
+    chapter_number: int = 0,
+    chapter_text: str = "",
+    novel_name: str = "",
+    novel_type: str = "",
+    target_reader: str = "",
+    reader_direction: str = "",
+    previous_summary: str = "",
+    world_setting: str = "",
+    character_setting: str = "",
+    protagonist_goal: str = "",
+    main_conflict: str = "",
+    chapter_task: str = "",
+    chapter_selling_point: str = "",
+    chapter_emotion: str = "",
+    chapter_hook: str = "",
+    trend_key: str = "",
+    custom_trend: str = "",
+    trend_translation: str = "",
+    forbidden: str = "",
+    style_requirement: str = "",
+    word_range: str = "",
+    output_revision_notes: bool = True,
+):
+    """多模式商业小说生成：支持章节诊断/改写/大纲/名场面/短剧分镜/平台重写。
+
+    核心模式：diagnose, rewrite_chapter, platform_rewrite, outline,
+    volume_outline, character_bio, platform_opening, selling_points,
+    ending_hook, set_piece, short_drama, generate_chapter
+    """
+    user_id = get_current_user(request)
+    llm, rt = _get_llm_and_config(user_id, project_id)
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    pconfig = project_service.get_project_config(project_id)
+    if not pconfig:
+        raise HTTPException(status_code=404, detail="项目配置不存在")
+
+    from novel_generator.commercial_prompts import CommercialPromptInput, build_commercial_prompt
+
+    resolved_text = chapter_text
+    if not resolved_text.strip() and chapter_number > 0:
+        resolved_text = chapter_service.get_chapter_content(
+            project_id, chapter_number, project["filepath"]
+        ) or ""
+
+    resolved_summary = previous_summary
+    if not resolved_summary.strip():
+        import os
+        summ_path = os.path.join(project["filepath"], "global_summary.txt")
+        if os.path.exists(summ_path):
+            with open(summ_path, "r", encoding="utf-8") as f:
+                resolved_summary = f.read()[:3000]
+
+    resolved_world = world_setting
+    if not resolved_world.strip():
+        import os
+        arch_path = os.path.join(project["filepath"], "Novel_architecture.txt")
+        if os.path.exists(arch_path):
+            with open(arch_path, "r", encoding="utf-8") as f:
+                resolved_world = f.read()[:3000]
+
+    data = CommercialPromptInput(
+        mode=mode,
+        novel_name=novel_name or pconfig.get("topic", ""),
+        novel_type=novel_type or pconfig.get("genre", ""),
+        platform=pconfig.get("platform", "tomato"),
+        target_reader=target_reader or pconfig.get("target_reader", ""),
+        reader_direction=reader_direction or pconfig.get("reader_direction", ""),
+        current_chapter=f"第{chapter_number}章" if chapter_number > 0 else "",
+        previous_summary=resolved_summary,
+        world_setting=resolved_world,
+        character_setting=character_setting or pconfig.get("user_guidance", ""),
+        protagonist_goal=protagonist_goal,
+        main_conflict=main_conflict,
+        chapter_task=chapter_task,
+        chapter_selling_point=chapter_selling_point,
+        chapter_emotion=chapter_emotion,
+        chapter_hook=chapter_hook,
+        trend_key=trend_key or pconfig.get("trend_key", ""),
+        custom_trend=custom_trend or pconfig.get("custom_trend", ""),
+        trend_translation=trend_translation or pconfig.get("trend_translation", ""),
+        forbidden=forbidden or pconfig.get("forbidden", ""),
+        style_requirement=style_requirement or pconfig.get("style_requirement", ""),
+        word_range=word_range or f"{pconfig.get('word_number', 3000)}字",
+        chapter_text=resolved_text,
+        output_revision_notes=output_revision_notes,
+    )
+
+    full_prompt = build_commercial_prompt(data)
+
+    try:
+        result = llm.invoke(full_prompt)
+        return {
+            "mode": mode,
+            "result": result,
+            "platform": pconfig.get("platform", "tomato"),
+        }
+    except Exception as e:
+        logger.exception("Commercial generation failed")
+        raise HTTPException(status_code=500, detail="生成失败，请稍后重试")
+
+
+# ── 10. 获取平台画像和热点转译规则 ──
+
+@router.get("/api/v1/platform/profiles")
+def get_platform_profiles():
+    """获取所有支持的平台画像配置和热点转译规则。"""
+    from novel_generator.commercial_profiles import list_platform_profiles, list_trend_translators
+    return {
+        "platforms": list_platform_profiles(),
+        "trends": list_trend_translators(),
+    }

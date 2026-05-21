@@ -12,22 +12,67 @@ export interface ProjectConfig {
   project_id: string
   topic: string
   genre: string
+  category: string
   num_chapters: number
   word_number: number
   user_guidance: string
   language: string
   platform: string
-  category: string
+  target_reader: string
+  reader_direction: string
+  trend_key: string
+  custom_trend: string
+  trend_translation: string
+  forbidden: string
+  style_requirement: string
 }
+
+export const READER_DIRECTIONS = [
+  { value: "male", label: "男频" },
+  { value: "female", label: "女频" },
+  { value: "dual", label: "双强" },
+  { value: "shuangwen", label: "爽文" },
+  { value: "ensemble", label: "群像" },
+  { value: "plot_driven", label: "剧情流" },
+  { value: "romance_driven", label: "感情流" },
+  { value: "short_drama", label: "短剧向" },
+] as const
+
+export const TREND_KEYS = [
+  { value: "resource_anxiety", label: "资源焦虑" },
+  { value: "rule_pressure", label: "规则压迫" },
+  { value: "fairness_anxiety", label: "公平焦虑" },
+  { value: "labor_discipline", label: "打工人规训" },
+  { value: "ai_humanity", label: "AI/人性焦虑" },
+  { value: "female_agency", label: "女性主体性" },
+  { value: "anti_involution", label: "反内卷情绪" },
+] as const
+
+export const GENERATION_MODES = [
+  { value: "generate_chapter", label: "生成新章节" },
+  { value: "rewrite_chapter", label: "改写已有章节" },
+  { value: "diagnose", label: "诊断章节问题" },
+  { value: "outline", label: "生成章节大纲" },
+  { value: "volume_outline", label: "生成卷纲" },
+  { value: "character_bio", label: "生成角色小传" },
+  { value: "platform_opening", label: "生成平台化开篇" },
+  { value: "selling_points", label: "生成爽点设计" },
+  { value: "ending_hook", label: "生成结尾钩子" },
+  { value: "set_piece", label: "生成名场面" },
+  { value: "short_drama", label: "生成短剧化分镜" },
+  { value: "platform_rewrite", label: "根据平台重写同一章" },
+] as const
 
 export const PLATFORM_CONFIG: Record<string, {
   label: string
   icon: string
+  description: string
   categories: string[]
 }> = {
   tomato: {
-    label: "番茄小说",
+    label: "番茄 / 七猫免费阅读",
     icon: "🍅",
+    description: "强开局、强冲突、强反转、短章爽点、情绪刺激、结尾钩子",
     categories: [
       "玄幻", "都市", "科幻", "仙侠", "悬疑", "历史",
       "言情", "武侠", "轻小说", "游戏", "竞技", "同人",
@@ -35,25 +80,37 @@ export const PLATFORM_CONFIG: Record<string, {
     ],
   },
   qidian: {
-    label: "起点中文网",
+    label: "起点 / QQ 阅读男频",
     icon: "📖",
+    description: "世界观清晰、升级体系明确、长线伏笔、阶段性胜利、智斗和秩序感",
     categories: [
       "玄幻", "奇幻", "武侠", "仙侠", "都市", "现实",
       "历史", "军事", "游戏", "竞技", "科幻", "悬疑",
       "轻小说", "同人"
     ],
   },
-  zongheng: {
-    label: "纵横中文网",
-    icon: "✒️",
+  jjwxc: {
+    label: "晋江 / 女频仙侠",
+    icon: "🌸",
+    description: "人物关系、情绪张力、双强拉扯、女主主体性、宿命感、感情递进",
     categories: [
-      "玄幻", "奇幻", "武侠", "仙侠", "都市", "历史",
-      "军事", "科幻", "悬疑", "游戏", "竞技"
+      "仙侠", "古言", "现言", "奇幻", "科幻", "悬疑",
+      "武侠", "历史", "都市", "轻小说"
+    ],
+  },
+  short_drama: {
+    label: "短剧 / IP 改编向",
+    icon: "🎬",
+    description: "名场面、视觉冲突、强反转、爆点台词、节奏密集、可剪辑爆点",
+    categories: [
+      "都市", "言情", "悬疑", "仙侠", "武侠", "科幻",
+      "历史", "奇幻", "现实"
     ],
   },
   other: {
-    label: "其他平台",
+    label: "自定义平台",
     icon: "🌐",
+    description: "自由设定读者偏好和创作约束",
     categories: [
       "玄幻", "都市", "科幻", "仙侠", "悬疑", "历史",
       "言情", "武侠", "轻小说", "奇幻", "现实"

@@ -16,6 +16,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
 @router.post("/api/v1/auth/register")
 def register(data: RegisterRequest):
     try:
@@ -28,6 +32,14 @@ def register(data: RegisterRequest):
 def login(data: LoginRequest):
     try:
         return user_service.login_user(data.username, data.password)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+@router.post("/api/v1/auth/refresh")
+def refresh(data: RefreshRequest):
+    try:
+        return user_service.refresh_access_token(data.refresh_token)
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
 

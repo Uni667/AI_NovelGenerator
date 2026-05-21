@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useCreateProject } from "@/lib/hooks/use-projects"
-import { PLATFORM_CONFIG, PLATFORMS } from "@/lib/types"
+import { PLATFORM_CONFIG, PLATFORMS, READER_DIRECTIONS, TREND_KEYS } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -29,6 +29,11 @@ export default function NewProjectPage() {
     num_chapters: 10,
     word_number: 3000,
     user_guidance: "",
+    target_reader: "",
+    reader_direction: "",
+    trend_key: "",
+    forbidden: "",
+    style_requirement: "",
   })
 
   const validateStep1 = (): boolean => {
@@ -210,6 +215,60 @@ export default function NewProjectPage() {
                 提示：创建项目后，你还可以通过「导入知识库」功能上传更详细的设定文档（如 TXT 文件），AI 在写章节时会自动检索相关内容。
               </p>
             </div>
+
+            <Separator />
+            <p className="text-sm font-medium text-muted-foreground">高级设置（可选，创建后可随时修改）</p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>读者方向</Label>
+                <Select value={form.reader_direction} onValueChange={(v) => v && setForm({ ...form, reader_direction: v === "__none" ? "" : v })}>
+                  <SelectTrigger><SelectValue placeholder="不限制" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">不限制</SelectItem>
+                    {READER_DIRECTIONS.map((d) => (
+                      <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>目标读者</Label>
+                <Input value={form.target_reader} onChange={e => setForm({ ...form, target_reader: e.target.value })} placeholder="例如：25-35岁上班族" />
+              </div>
+            </div>
+
+            <div>
+              <Label>热点情绪参考</Label>
+              <Select value={form.trend_key} onValueChange={(v) => v && setForm({ ...form, trend_key: v === "__none" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="不指定（AI 按平台默认处理）" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">不指定</SelectItem>
+                  {TREND_KEYS.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                将现实情绪抽象转译为小说世界内部矛盾，不会直接引用真实事件
+              </p>
+            </div>
+
+            <div>
+              <Label>文风要求</Label>
+              <Input value={form.style_requirement} onChange={e => setForm({ ...form, style_requirement: e.target.value })} placeholder="例如：冷峻克制、轻松幽默、热血少年感" />
+            </div>
+
+            <div>
+              <Label>禁止改动设定</Label>
+              <Textarea
+                value={form.forbidden}
+                onChange={e => setForm({ ...form, forbidden: e.target.value })}
+                placeholder="告诉 AI 哪些设定绝对不能改：&#10;例如：主角性别不可变、不可加入系统流、不可洗白反派..."
+                rows={3}
+              />
+            </div>
+
             <div className="flex gap-3">
               <Button variant="outline" onClick={() => setStep(1)}>上一步</Button>
               <Button onClick={handleCreate} disabled={createProject.isPending} className="flex-1">

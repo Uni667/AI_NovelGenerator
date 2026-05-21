@@ -68,6 +68,13 @@ class ChapterParams:
     word_number: int = 3000
     user_guidance: str = ""
     platform: str = "tomato"
+    target_reader: str = ""
+    reader_direction: str = ""
+    trend_key: str = ""
+    custom_trend: str = ""
+    trend_translation: str = ""
+    forbidden: str = ""
+    style_requirement: str = ""
 
 
 @dataclass
@@ -81,6 +88,13 @@ class ProjectConfig:
     word_number: int = 3000
     language: str = "zh"
     user_guidance: str = ""
+    target_reader: str = ""
+    reader_direction: str = ""
+    trend_key: str = ""
+    custom_trend: str = ""
+    trend_translation: str = ""
+    forbidden: str = ""
+    style_requirement: str = ""
 
 
 @dataclass

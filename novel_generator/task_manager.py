@@ -180,6 +180,9 @@ def register_task(
     user_id: str = "",
     metadata: Optional[dict[str, Any]] = None,
 ) -> TaskState:
+    if isinstance(user_id, dict) and metadata is None:
+        metadata = user_id
+        user_id = ""
     now = time.time()
     with _LOCK:
         _cleanup_finished_tasks_locked()

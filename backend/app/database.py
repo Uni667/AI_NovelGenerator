@@ -5,7 +5,7 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
-DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+DB_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data"))
 DB_PATH = os.path.join(DB_DIR, "projects.db")
 
 os.makedirs(DB_DIR, exist_ok=True)
@@ -37,7 +37,7 @@ def init_db():
         # 修复旧版 model_profile 表：如果存在但缺少 api_credential_id 列则删除重建
         try:
             cur = conn.execute("SELECT api_credential_id FROM model_profile LIMIT 0")
-        except Exception:
+        except sqlite3.OperationalError:
             try:
                 conn.execute("DROP TABLE IF EXISTS model_profile")
                 conn.execute("DROP TABLE IF EXISTS project_model_assignment")
@@ -45,7 +45,7 @@ def init_db():
             except sqlite3.OperationalError:
                 pass
             except Exception:
-                logger.exception("Unexpected migration error")
+                logger.exception("Unexpected migration error during table drop")
 
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS user (
@@ -76,7 +76,14 @@ def init_db():
                 user_guidance TEXT DEFAULT '',
                 language TEXT DEFAULT 'zh',
                 platform TEXT DEFAULT 'tomato',
-                category TEXT DEFAULT ''
+                category TEXT DEFAULT '',
+                target_reader TEXT DEFAULT '',
+                reader_direction TEXT DEFAULT '',
+                trend_key TEXT DEFAULT '',
+                custom_trend TEXT DEFAULT '',
+                trend_translation TEXT DEFAULT '',
+                forbidden TEXT DEFAULT '',
+                style_requirement TEXT DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS chapter (
@@ -339,6 +346,22 @@ def init_db():
         except Exception:
             logger.warning("Migration step failed", exc_info=True)
 
+        for col in [
+            "target_reader",
+            "reader_direction",
+            "trend_key",
+            "custom_trend",
+            "trend_translation",
+            "forbidden",
+            "style_requirement",
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE project_config ADD COLUMN {col} TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+            except Exception:
+                logger.warning("Migration step failed", exc_info=True)
+
         # ── 迁移：character_profile 新增字段 ──
         try:
             conn.execute("ALTER TABLE character_profile ADD COLUMN status TEXT DEFAULT 'appeared'")
@@ -481,3 +504,18 @@ def init_db():
                 logger.info("api_credential migration complete.")
         except Exception as e:
             logger.warning("api_credential siliconflow migration skipped: %s", e)
+
+        # ── 迁移：修正项目 filepath 指向持久卷 /app/data/projects/ ──
+        try:
+            old_prefix = "/app/backend/projects/"
+            new_prefix = os.path.join(DB_DIR, "projects") + "/"
+            conn.execute(
+                "UPDATE project SET filepath = REPLACE(filepath, ?, ?) WHERE filepath LIKE ?",
+                (old_prefix, new_prefix, old_prefix + "%")
+            )
+            # 创建项目目录
+            for row in conn.execute("SELECT filepath FROM project WHERE filepath LIKE ?", (new_prefix + "%",)):
+                os.makedirs(row["filepath"], exist_ok=True)
+                os.makedirs(os.path.join(row["filepath"], "chapters"), exist_ok=True)
+        except Exception as e:
+            logger.warning("project filepath migration skipped: %s", e)

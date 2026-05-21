@@ -137,6 +137,28 @@ export const api = {
     list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/chapters`),
     get: (projectId: string, num: number) => request<any>(`/api/v1/projects/${projectId}/chapters/${num}`),
     update: (projectId: string, num: number, data: any) => request<any>(`/api/v1/projects/${projectId}/chapters/${num}`, { method: "PUT", body: JSON.stringify(data) }),
+    upload: (projectId: string, files: File[]) => {
+      const formData = new FormData()
+      files.forEach((f) => formData.append("files", f))
+      return fetch(`${BASE_URL}/api/v1/projects/${projectId}/chapters/upload`, {
+        method: "POST",
+        body: formData,
+        headers: authHeaders(),
+      }).then(async (res) => {
+        if (!res.ok) {
+          let message = res.statusText
+          try {
+            const body = await res.json()
+            const formatted = formatErrorDetail(body.detail, res.status)
+            message = formatted.message || sanitizeMessage(body.message || message, res.status)
+          } catch {
+            message = sanitizeMessage("", res.status)
+          }
+          throw new Error(`批量上传失败: ${message}`)
+        }
+        return res.json()
+      })
+    },
   },
   files: {
     get: (projectId: string, filename: string) => request<string>(`/api/v1/projects/${projectId}/files/${encodeURIComponent(filename)}`),
@@ -326,5 +348,8 @@ export const api = {
     batchHookCheck: (projectId: string) => request<{ chapters: any[] }>(`/api/v1/projects/${projectId}/tools/batch-hook-check`, { method: "POST" }),
     tags: (projectId: string) => request<{ tags: any }>(`/api/v1/projects/${projectId}/tools/tags`, { method: "POST" }),
     chapterTitle: (projectId: string, chapterNumber: number) => request<{ titles: string[] }>(`/api/v1/projects/${projectId}/tools/chapter-title?chapter_number=${chapterNumber}`, { method: "POST" }),
+    diagnose: (projectId: string, chapterNumber: number) => request<{ chapter_number: number; diagnosis: string; platform: string }>(`/api/v1/projects/${projectId}/tools/diagnose?chapter_number=${chapterNumber}`, { method: "POST" }),
+    commercialGenerate: (projectId: string, params: Record<string, any>) => request<{ mode: string; result: string; platform: string }>(`/api/v1/projects/${projectId}/tools/commercial-generate?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])).toString()}`, { method: "POST" }),
+    profiles: () => request<{ platforms: Record<string, any>; trends: Record<string, any> }>(`/api/v1/platform/profiles`),
   },
 }

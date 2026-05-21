@@ -29,7 +29,7 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectId: string
-  defaultFileType?: "architecture" | "outline"
+  defaultFileType?: "architecture" | "outline" | "summary" | "character_state" | "plot_arcs"
   onImportSuccess: () => void
 }
 
@@ -70,9 +70,14 @@ export function FileImportDialog({
     setImporting(true)
     try {
       await api.projectFiles.import(projectId, file, fileType, setCurrent)
-      toast.success(
-        `${fileType === "architecture" ? "架构" : "章节目录"}导入成功`
-      )
+      const typeLabels: Record<string, string> = {
+        architecture: "小说架构",
+        outline: "章节目录",
+        summary: "全局摘要",
+        character_state: "角色状态",
+        plot_arcs: "伏笔台账",
+      }
+      toast.success(`${typeLabels[fileType] || fileType} 导入成功`)
       onImportSuccess()
       onOpenChange(false)
       setFile(null)
@@ -104,6 +109,9 @@ export function FileImportDialog({
               <SelectContent>
                 <SelectItem value="architecture">小说架构</SelectItem>
                 <SelectItem value="outline">章节目录</SelectItem>
+                <SelectItem value="summary">全局摘要</SelectItem>
+                <SelectItem value="character_state">角色状态</SelectItem>
+                <SelectItem value="plot_arcs">伏笔台账</SelectItem>
               </SelectContent>
             </Select>
           </div>

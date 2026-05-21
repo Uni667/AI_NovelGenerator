@@ -47,38 +47,92 @@ def verify_password(password: str, hash: str) -> bool:
         return False
 
 
-def create_token(user_id: str) -> str:
+def create_access_token(user_id: str) -> str:
+    """创建短期访问令牌（2 小时）。"""
     if jwt is None:
         raise ImportError("pyjwt not installed")
     secret = _get_or_create_secret()
     now = datetime.datetime.now(datetime.timezone.utc)
     payload = {
         "user_id": user_id,
+        "type": "access",
         "iat": now,
-        "exp": now + datetime.timedelta(hours=24),
+        "exp": now + datetime.timedelta(hours=2),
     }
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
-def verify_token(token: str) -> dict:
+def create_refresh_token(user_id: str) -> str:
+    """创建长期刷新令牌（7 天）。"""
+    if jwt is None:
+        raise ImportError("pyjwt not installed")
+    secret = _get_or_create_secret()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    payload = {
+        "user_id": user_id,
+        "type": "refresh",
+        "iat": now,
+        "exp": now + datetime.timedelta(days=7),
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def verify_access_token(token: str) -> dict:
+    """验证访问令牌。"""
     if jwt is None:
         raise ImportError("pyjwt not installed")
     secret = _get_or_create_secret()
     try:
-        return jwt.decode(token, secret, algorithms=["HS256"])
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="令牌类型错误")
+        return payload
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=401, detail="无效或过期的认证令牌")
 
 
+def verify_refresh_token(token: str) -> dict:
+    """验证刷新令牌。"""
+    if jwt is None:
+        raise ImportError("pyjwt not installed")
+    secret = _get_or_create_secret()
+    try:
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="令牌类型错误")
+        return payload
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="无效或过期的刷新令牌")
+
+
+def create_token(user_id: str) -> str:
+    """兼容旧版，返回 access token。"""
+    return create_access_token(user_id)
+
+
+def verify_token(token: str) -> dict:
+    """兼容旧版，验证 access token。"""
+    return verify_access_token(token)
+
+
 def get_current_user(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        # SSE 端点从 query param 传 token
-        token = request.query_params.get("token", "")
-        if token:
-            payload = verify_token(token)
-            return payload["user_id"]
-        raise HTTPException(status_code=401, detail="缺少认证令牌")
-    token = auth.removeprefix("Bearer ")
-    payload = verify_token(token)
-    return payload["user_id"]
+    if auth.startswith("Bearer "):
+        token = auth.removeprefix("Bearer ")
+        payload = verify_token(token)
+        return payload["user_id"]
+    # SSE 端点从 query param 传 token（EventSource API 限制）
+    token = request.query_params.get("token", "")
+    if token:
+        import logging
+        logging.getLogger(__name__).warning(
+            "SSE authentication via query param (token in URL). "
+            "Consider using short-lived tokens for SSE connections."
+        )
+        payload = verify_token(token)
+        return payload["user_id"]
+    raise HTTPException(status_code=401, detail="缺少认证令牌")

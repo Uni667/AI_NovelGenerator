@@ -12,6 +12,7 @@ import logging
 import re
 from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter, _provider_to_interface
 import prompt_definitions
+from novel_generator.commercial_prompts import build_generation_context_block
 from novel_generator.platform_guidance import get_platform_chapter_guidance
 from chapter_directory_parser import get_chapter_info_from_blueprint
 from novel_generator.common import invoke_with_cleaning
@@ -545,6 +546,20 @@ def build_chapter_prompt(
         platform_label=platform_label,
         platform_rules=platform_rules,
     )
+    commercial_guidance = build_generation_context_block(
+        platform=getattr(params, "platform", "tomato"),
+        trend_key=getattr(params, "trend_key", ""),
+        custom_trend=getattr(params, "custom_trend", ""),
+        forbidden=getattr(params, "forbidden", ""),
+        reader_direction=getattr(params, "reader_direction", ""),
+    )
+    if getattr(params, "trend_translation", ""):
+        commercial_guidance += "\n用户指定热点转译方式：" + getattr(params, "trend_translation", "")
+    if getattr(params, "style_requirement", ""):
+        commercial_guidance += "\n文风要求：" + getattr(params, "style_requirement", "")
+    if getattr(params, "target_reader", ""):
+        commercial_guidance += "\n目标读者：" + getattr(params, "target_reader", "")
+    platform_guidance = f"{commercial_guidance}\n\n{platform_guidance}"
 
     # 读取基础文件
     _check_cancel()

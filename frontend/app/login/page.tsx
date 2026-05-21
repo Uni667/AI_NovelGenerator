@@ -61,16 +61,16 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label>用户名</Label>
-              <Input value={username} onChange={e => setUsername(e.target.value)} placeholder="输入用户名" autoFocus />
+              <Input aria-label="用户名" value={username} onChange={e => setUsername(e.target.value)} placeholder="输入用户名" autoFocus />
             </div>
             <div>
               <Label>密码</Label>
-              <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="输入密码" />
+              <Input aria-label="密码" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="输入密码" />
             </div>
             {isRegister && (
               <div>
                 <Label>确认密码</Label>
-                <Input type="password" value={password2} onChange={e => setPassword2(e.target.value)} placeholder="再次输入密码" />
+                <Input aria-label="确认密码" type="password" value={password2} onChange={e => setPassword2(e.target.value)} placeholder="再次输入密码" />
               </div>
             )}
             {error && <p className="text-sm text-destructive">{error}</p>}

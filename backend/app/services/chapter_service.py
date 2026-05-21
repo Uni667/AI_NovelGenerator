@@ -106,6 +106,44 @@ def mark_chapter_draft(project_id: str, chapter_number: int, word_count: int = 0
         )
 
 
+def batch_upsert_from_upload(project_id: str, filepath: str, chapters_data: list[dict], user_id: str | None = None):
+    """批量从上传写入章节文件并更新数据库。
+    chapters_data: [{"chapter_number": int, "content": str}, ...]
+    """
+    from utils import save_string_to_txt, clear_file_content, get_word_count
+    now = datetime.datetime.now().isoformat()
+    chapters_dir = os.path.join(filepath, "chapters")
+    os.makedirs(chapters_dir, exist_ok=True)
+    results = []
+
+    with get_db() as conn:
+        for ch in chapters_data:
+            cn = ch["chapter_number"]
+            content = ch["content"]
+            chapter_file = os.path.join(chapters_dir, f"chapter_{cn}.txt")
+            clear_file_content(chapter_file)
+            save_string_to_txt(content, chapter_file)
+            wc = get_word_count(content)
+
+            existing = conn.execute(
+                "SELECT id FROM chapter WHERE project_id=? AND chapter_number=?",
+                (project_id, cn)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE chapter SET word_count=?, status='draft', updated_at=? WHERE project_id=? AND chapter_number=?",
+                    (wc, now, project_id, cn)
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO chapter (user_id, project_id, chapter_number, status, word_count, created_at, updated_at)
+                       VALUES (?,?,?,'draft',?,?,?)""",
+                    (user_id, project_id, cn, wc, now, now)
+                )
+            results.append({"chapter_number": cn, "word_count": wc, "status": "ok"})
+    return results
+
+
 def mark_chapter_final(project_id: str, chapter_number: int, word_count: int = 0):
     now = datetime.datetime.now().isoformat()
     with get_db() as conn:

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException, Request
+import re
+
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from backend.app.services import project_service, chapter_service
 from backend.app.auth import get_current_user
 from backend.app.models.chapter import ChapterUpdate
@@ -40,3 +42,71 @@ def update_chapter(project_id: str, chapter_number: int, data: ChapterUpdate, re
         result = chapter_service.update_chapter_content(project_id, chapter_number, project["filepath"], data.content)
         return {"message": "已保存", "meta": result}
     raise HTTPException(status_code=400, detail="未提供内容")
+
+
+def _parse_chapter_number(filename: str) -> int | None:
+    """从文件名提取章节号。支持: chapter_0001.txt, chapter_1.txt, 第1章.txt"""
+    name = filename.rsplit(".", 1)[0]  # 去掉扩展名
+    # chapter_0001 / chapter_1
+    m = re.match(r"^chapter_0*(\d+)$", name, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # 第1章
+    m = re.match(r"^第\s*(\d+)\s*章$", name)
+    if m:
+        return int(m.group(1))
+    # 纯数字 0001 / 1
+    m = re.match(r"^0*(\d+)$", name)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB per file
+MAX_BATCH_FILES = 100
+
+
+@router.post("/api/v1/projects/{project_id}/chapters/upload")
+async def upload_chapters(
+    project_id: str,
+    request: Request,
+    files: list[UploadFile] = File(...),
+):
+    project, user_id = _check_project(project_id, request)
+
+    if len(files) > MAX_BATCH_FILES:
+        raise HTTPException(status_code=400, detail=f"单次最多上传 {MAX_BATCH_FILES} 个文件")
+
+    chapters_data: list[dict] = []
+    skipped: list[str] = []
+    for f in files:
+        if not f.filename:
+            skipped.append("(unnamed)")
+            continue
+        cn = _parse_chapter_number(f.filename)
+        if cn is None or cn < 1:
+            skipped.append(f.filename)
+            continue
+        raw = await f.read()
+        if len(raw) > MAX_UPLOAD_BYTES:
+            skipped.append(f"{f.filename} (过大)")
+            continue
+        content = raw.decode("utf-8", errors="replace").strip()
+        if not content:
+            skipped.append(f"{f.filename} (空)")
+            continue
+        chapters_data.append({"chapter_number": cn, "content": content})
+
+    if not chapters_data:
+        raise HTTPException(status_code=400, detail="未识别到有效章节文件，请确认文件名格式为 chapter_0001.txt 或 第1章.txt")
+
+    chapters_data.sort(key=lambda x: x["chapter_number"])
+    results = chapter_service.batch_upsert_from_upload(project_id, project["filepath"], chapters_data, user_id)
+
+    return {
+        "message": f"成功导入 {len(results)} 章",
+        "uploaded": len(results),
+        "skipped": len(skipped),
+        "skipped_files": skipped[:20],
+        "chapters": results,
+    }

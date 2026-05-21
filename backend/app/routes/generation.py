@@ -107,6 +107,13 @@ def _make_project_cfg(pconfig: dict) -> ProjectConfig:
         word_number=pconfig.get("word_number", 3000),
         language=pconfig.get("language", "zh"),
         user_guidance=pconfig.get("user_guidance", ""),
+        target_reader=pconfig.get("target_reader", ""),
+        reader_direction=pconfig.get("reader_direction", ""),
+        trend_key=pconfig.get("trend_key", ""),
+        custom_trend=pconfig.get("custom_trend", ""),
+        trend_translation=pconfig.get("trend_translation", ""),
+        forbidden=pconfig.get("forbidden", ""),
+        style_requirement=pconfig.get("style_requirement", ""),
     )
 
 
@@ -116,16 +123,23 @@ def _make_chapter_params(pconfig: dict, chapter_number: int) -> ChapterParams:
         word_number=pconfig.get("word_number", 3000),
         user_guidance=pconfig.get("user_guidance", ""),
         platform=pconfig.get("platform", "tomato"),
+        target_reader=pconfig.get("target_reader", ""),
+        reader_direction=pconfig.get("reader_direction", ""),
+        trend_key=pconfig.get("trend_key", ""),
+        custom_trend=pconfig.get("custom_trend", ""),
+        trend_translation=pconfig.get("trend_translation", ""),
+        forbidden=pconfig.get("forbidden", ""),
+        style_requirement=pconfig.get("style_requirement", ""),
     )
 
 
 def _task_label(kind: str) -> str:
     return {
-        "architecture": "架构生成",
-        "blueprint": "章节目录生成",
-        "chapter": "章节草稿生成",
-        "chapter_batch": "批量章节生成",
-        "finalize": "章节定稿",
+        "generate_architecture": "架构生成",
+        "generate_outline": "章节目录生成",
+        "generate_chapter": "章节草稿生成",
+        "generate_chapter_batch": "批量章节生成",
+        "finalize_chapter": "章节定稿",
     }.get(kind, kind)
 
 
@@ -354,7 +368,7 @@ async def generate_architecture(project_id: str, request: Request, task_id: str 
     resolved_task_id = _prepare_generation_task(
         project_id,
         user_id,
-        "architecture",
+        "generate_architecture",
         task_id,
         {"project_name": project.get("name", ""), "chapter_count": pconfig.get("num_chapters", 0)},
     )
@@ -421,7 +435,7 @@ async def generate_blueprint(project_id: str, request: Request, task_id: str | N
     resolved_task_id = _prepare_generation_task(
         project_id,
         user_id,
-        "blueprint",
+        "generate_outline",
         task_id,
         {"project_name": project.get("name", ""), "chapter_count": pconfig.get("num_chapters", 0)},
     )
@@ -483,7 +497,7 @@ async def generate_chapter(project_id: str, chapter_number: int, request: Reques
     resolved_task_id = _prepare_generation_task(
         project_id,
         user_id,
-        "chapter",
+        "generate_chapter",
         task_id,
         {"project_name": project.get("name", ""), "chapter_number": chapter_number},
     )
@@ -516,7 +530,7 @@ async def generate_chapter_batch(
     resolved_task_id = _prepare_generation_task(
         project_id,
         user_id,
-        "chapter_batch",
+        "generate_chapter_batch",
         task_id,
         {"project_name": project.get("name", ""), "start_chapter": start_chapter, "count": count},
     )
@@ -638,7 +652,7 @@ async def finalize_chapter_route(project_id: str, chapter_number: int, request: 
     resolved_task_id = _prepare_generation_task(
         project_id,
         user_id,
-        "finalize",
+        "finalize_chapter",
         task_id,
         {"project_name": project.get("name", ""), "chapter_number": chapter_number},
     )
@@ -760,17 +774,17 @@ async def retry_generation_task(project_id: str, task_id: str, request: Request)
 
     kind = task.kind
     metadata = task.metadata or {}
-    if kind == "architecture":
+    if kind == "generate_architecture":
         return await generate_architecture(project_id, request, task_id=task_id)
-    elif kind == "blueprint":
+    elif kind == "generate_outline":
         return await generate_blueprint(project_id, request, task_id=task_id)
-    elif kind == "finalize":
+    elif kind == "finalize_chapter":
         chapter_num = metadata.get("chapter_number", 1)
         return await finalize_chapter_route(project_id, chapter_num, request, task_id=task_id)
-    elif kind == "chapter":
+    elif kind == "generate_chapter":
         chapter_num = metadata.get("chapter_number", 1)
         return await generate_chapter(project_id, chapter_num, request, task_id=task_id)
-    elif kind == "chapter_batch":
+    elif kind == "generate_chapter_batch":
         start = metadata.get("start_chapter", 1)
         count = metadata.get("count", 1)
         return await generate_chapter_batch(project_id, request, start_chapter=start, count=count, task_id=task_id)

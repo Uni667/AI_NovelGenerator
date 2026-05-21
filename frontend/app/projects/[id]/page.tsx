@@ -237,7 +237,7 @@ export default function ProjectDashboard() {
   const id = params.id as string
   const { data: project, isLoading, error: projectError } = useProject(id)
   const { data: config } = useProjectConfig(id)
-  const { data: chapters } = useChapters(id)
+  const { data: chapters, refetch: refetchChapters } = useChapters(id)
   const updateConfig = useUpdateProjectConfig(id)
   const { events, isConnected, error: sseError, connect } = useSSE()
   const queryClient = useQueryClient()
@@ -288,6 +288,8 @@ export default function ProjectDashboard() {
   const [chapterEditorSaving, setChapterEditorSaving] = useState(false)
   const [readerChapterNum, setReaderChapterNum] = useState(1)
   const [chapterHookResult, setChapterHookResult] = useState<any>(null)
+  const [diagnosisResult, setDiagnosisResult] = useState("")
+  const [diagnosisLoading, setDiagnosisLoading] = useState(false)
   const [sseAction, setSseAction] = useState<"architecture" | "blueprint" | "chapter" | "chapterBatch" | "finalize" | null>(null)
   const [generationTaskId, setGenerationTaskId] = useState<string | null>(null)
   const [generationTaskLabel, setGenerationTaskLabel] = useState("")
@@ -309,7 +311,9 @@ export default function ProjectDashboard() {
   const [outlineFile, setOutlineFile] = useState<ProjectFile | null>(null)
   const [archOutlineLoading, setArchOutlineLoading] = useState(true)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
-  const [importDialogFileType, setImportDialogFileType] = useState<"architecture" | "outline">("architecture")
+  const [importDialogFileType, setImportDialogFileType] = useState<"architecture" | "outline" | "summary" | "character_state" | "plot_arcs">("architecture")
+  const [batchUploading, setBatchUploading] = useState(false)
+  const batchFileRef = useRef<HTMLInputElement>(null)
 
   const loadArchitectureAndOutline = useCallback(async () => {
     if (!id) return
@@ -913,6 +917,12 @@ export default function ProjectDashboard() {
     setChapterTitles(res.titles)
   })
 
+  const handleDiagnoseChapter = () => withLoading("diagnosis", async () => {
+    setDiagnosisResult("")
+    const res = await api.platform.diagnose(id, selectedChapterNumber)
+    setDiagnosisResult(res.diagnosis)
+  })
+
   const handleReaderOpeningCheck = () => withLoading("readerOpening", async () => {
     const res = await api.platform.hookCheck(id, readerChapterNum)
     setHookResult(res.analysis)
@@ -1161,6 +1171,31 @@ export default function ProjectDashboard() {
       }
     } catch (error: any) {
       toast.error(error?.message || "删除失败")
+    }
+  }
+
+  const handleBatchUploadChapters = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    if (files.length > 100) {
+      toast.error("单次最多上传 100 个文件")
+      if (batchFileRef.current) batchFileRef.current.value = ""
+      return
+    }
+    setBatchUploading(true)
+    try {
+      const result = await api.chapters.upload(id, files)
+      toast.success(result.message || `成功导入 ${result.uploaded} 章`)
+      if (result.skipped > 0) {
+        toast.warning(`跳过 ${result.skipped} 个文件`)
+      }
+      refetchChapters()
+      loadArchitectureAndOutline()
+    } catch (err: any) {
+      toast.error(err.message || "批量上传失败")
+    } finally {
+      setBatchUploading(false)
+      if (batchFileRef.current) batchFileRef.current.value = ""
     }
   }
 
@@ -1521,7 +1556,28 @@ export default function ProjectDashboard() {
           <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">章节目录</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">章节目录</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      ref={batchFileRef}
+                      className="hidden"
+                      multiple
+                      accept=".txt"
+                      onChange={handleBatchUploadChapters}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={batchUploading}
+                      onClick={() => batchFileRef.current?.click()}
+                    >
+                      {batchUploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+                      导入章节
+                    </Button>
+                  </div>
+                </div>
                 <CardDescription>{completedChapters} 定稿 / {draftChapters} 草稿 / {pendingChapters} 待生成</CardDescription>
               </CardHeader>
               <CardContent className="p-0">
@@ -1692,6 +1748,28 @@ export default function ProjectDashboard() {
                         </Badge>
                       </div>
                       {chapterHookResult.suggestion && <p className="text-muted-foreground">{chapterHookResult.suggestion}</p>}
+                    </div>
+                  )}
+
+                  <Separator />
+                  <Button className="w-full justify-start" variant="outline" onClick={handleDiagnoseChapter} disabled={platformLoading === "diagnosis"}>
+                    {platformLoading === "diagnosis" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Gauge className="h-4 w-4 mr-2" />}
+                    诊断本章质量
+                  </Button>
+
+                  {diagnosisResult && (
+                    <div className="space-y-2 rounded-lg border p-3 text-sm max-h-96 overflow-auto">
+                      <p className="text-xs text-muted-foreground mb-2">诊断结果</p>
+                      {diagnosisResult.split("\n").map((line, index) => {
+                        const isHeader = line.startsWith("【")
+                        if (isHeader) {
+                          return <p key={index} className="font-bold text-xs mt-2 mb-1 border-b pb-1">{line}</p>
+                        }
+                        if (line.trim()) {
+                          return <p key={index} className="text-xs leading-relaxed text-muted-foreground">{line}</p>
+                        }
+                        return <div key={index} className="h-1" />
+                      })}
                     </div>
                   )}
                 </CardContent>
