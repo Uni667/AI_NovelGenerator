@@ -152,7 +152,7 @@ export function SettingsTab() {
         </CardContent>
       </Card>
 
-      <Accordion type="single" collapsible defaultValue="advanced-rules" className="w-full space-y-4">
+      <Accordion defaultValue={["advanced-rules"]} className="w-full space-y-4">
         {/* 高级全局指令 */}
         <AccordionItem value="advanced-rules" className="border-none">
           <Card className="glass-panel border-border/40 hover:shadow-[0_0_30px_oklch(0.68_0.19_285/0.1)] transition-all duration-500 overflow-hidden">
