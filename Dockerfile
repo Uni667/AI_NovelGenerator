@@ -10,7 +10,6 @@ RUN pip install --no-cache-dir -r requirements-cloud.txt
 COPY backend/ backend/
 COPY llm_adapters.py .
 COPY embedding_adapters.py .
-COPY prompt_definitions.py .
 COPY utils.py .
 COPY chapter_directory_parser.py .
 COPY consistency_checker.py .
