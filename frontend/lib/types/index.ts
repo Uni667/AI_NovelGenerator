@@ -371,3 +371,94 @@ export interface ProjectOverview {
   has_outline: boolean
   outline_source: FileSource | null
 }
+
+// ── 新增补充类型 (Refactoring Additions) ──
+
+export interface ApiCredential {
+  id: string;
+  name: string;
+  provider: string;
+  base_url: string;
+  is_default: boolean;
+  created_at: string;
+  status: string;
+  api_key_last4?: string;
+  last_tested_at?: string;
+}
+
+export interface ModelProfile {
+  id: string;
+  name: string;
+  type: string;
+  provider: string;
+  is_default: boolean;
+  api_credential_id?: string;
+  model: string;
+  health_status: string;
+  is_active?: boolean;
+  credential_name?: string;
+  last_tested_at?: string;
+}
+
+export interface ModelAssignment {
+  [key: string]: string | null;
+}
+
+export interface KnowledgeFile {
+  id: number;
+  project_id: string;
+  filename: string;
+  original_name: string;
+  file_size: number;
+  status: "pending" | "processing" | "ready" | "failed";
+  chunk_count: number;
+  error_message?: string;
+  created_at: string;
+}
+
+export interface PlatformHookResult {
+  score?: number;
+  issues?: string[];
+  suggestion?: string;
+  rewrite_suggestion?: string;
+  has_hook?: boolean;
+  hook_type?: string;
+  hook_strength?: string;
+  hook_description?: string;
+  rewritten_opening?: string;
+}
+
+export interface PlatformTitlesResult {
+  titles: string[];
+}
+
+export interface PlatformBlurbResult {
+  blurbs: string[];
+}
+
+export interface PlatformTagsResult {
+  tags: any;
+}
+
+export interface PlatformDiagnosisResult {
+  chapter_number: number;
+  diagnosis: string;
+  platform: string;
+}
+
+export interface MaterialEntity {
+  id: string
+  type: 'character' | 'world_rule' | 'plot_arc' | 'hook'
+  title: string
+  content: string
+  tags: string[]
+}
+
+export interface DiagnosisReport {
+  score: number
+  is_compliant: boolean
+  has_toxic_tropes: boolean
+  issues: string[]
+  missing_elements: string[]
+  suggestion: string
+}

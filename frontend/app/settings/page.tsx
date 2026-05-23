@@ -10,12 +10,15 @@ import {
   ShieldCheck,
   Trash2,
   Wifi,
+  Database,
+  Cpu,
+  Fingerprint
 } from "lucide-react"
 import { toast } from "sonner"
-
 import { api } from "@/lib/api-client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import type { ApiCredential, ModelProfile } from "@/lib/types"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -60,26 +63,6 @@ interface ModelStatus {
   message?: string
 }
 
-interface Credential {
-  id: string
-  name: string
-  provider: string
-  status: string
-  api_key_last4?: string
-  last_tested_at?: string
-}
-
-interface ModelProfile {
-  id: string
-  name: string
-  type: string
-  provider: string
-  model: string
-  health_status: string
-  credential_name?: string
-  last_tested_at?: string
-}
-
 interface InvocationLog {
   id: string
   created_at: string
@@ -117,7 +100,7 @@ function providerLabel(provider?: string) {
 
 export default function SettingsPage() {
   const [status, setStatus] = useState<ModelStatus | null>(null)
-  const [credentials, setCredentials] = useState<Credential[]>([])
+  const [credentials, setCredentials] = useState<ApiCredential[]>([])
   const [profiles, setProfiles] = useState<ModelProfile[]>([])
   const [logs, setLogs] = useState<InvocationLog[]>([])
   const [loading, setLoading] = useState(true)
@@ -205,67 +188,77 @@ export default function SettingsPage() {
   const state = status?.chatReady ? "ready" : status?.state || (status?.hasCredential || status?.hasChatProfile ? "invalid" : "empty")
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-5 p-4 md:p-6">
-      <div className="flex items-center justify-between gap-3">
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 md:p-8 min-h-[calc(100vh-2rem)]">
+      {/* Background ambient gradient to match projects */}
+      <div className="absolute top-0 left-0 w-full h-[50vh] bg-gradient-to-b from-primary/5 via-primary/5 to-transparent pointer-events-none -z-10" />
+      
+      <div className="flex items-center justify-between gap-3 bg-card/40 border border-border/50 p-6 rounded-2xl backdrop-blur-xl shadow-lg">
         <div>
-          <h1 className="text-2xl font-semibold">模型设置</h1>
-          <p className="text-sm text-muted-foreground">配置文本生成模型后，就可以回到项目页生成小说。</p>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent flex items-center gap-3">
+            <Database className="w-8 h-8 text-primary" /> 全局大模型节点管理
+          </h1>
+          <p className="text-sm text-muted-foreground mt-2 font-medium">配置底层算力节点引擎，为各个小说项目提供 AI 生成动力。</p>
         </div>
-        <Button variant="outline" onClick={loadAll} disabled={loading}>
-          <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
-          刷新
+        <Button variant="outline" onClick={loadAll} disabled={loading} className="shadow-glow hover:text-primary">
+          <RefreshCw className={`size-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+          刷新节点状态
         </Button>
       </div>
 
-      {loading ? (
-        <Card>
-          <CardContent className="p-6 text-center text-sm text-muted-foreground">正在加载模型状态...</CardContent>
-        </Card>
-      ) : state === "ready" ? (
-        <ReadyState
-          status={status}
-          working={working}
-          showAdvanced={showAdvanced}
-          onChangeKey={() => setShowKeyForm((value) => !value)}
-          onRetest={handleRetest}
-          onReset={handleReset}
-          onToggleAdvanced={() => setShowAdvanced((value) => !value)}
-        />
-      ) : state === "invalid" ? (
-        <InvalidState
-          status={status}
-          working={working}
-          showAdvanced={showAdvanced}
-          onRetest={handleRetest}
-          onReset={handleReset}
-          onRepair={handleRepair}
-          onToggleAdvanced={() => setShowAdvanced((value) => !value)}
-        />
-      ) : (
-        <EmptyState />
-      )}
+      <div className="space-y-6">
+        {loading ? (
+          <Card className="glass-panel border-border/40">
+            <CardContent className="p-12 flex flex-col items-center justify-center text-sm text-muted-foreground">
+              <RefreshCw className="size-8 animate-spin mb-4 text-primary/50" />
+              正在连接算力节点网络...
+            </CardContent>
+          </Card>
+        ) : state === "ready" ? (
+          <ReadyState
+            status={status}
+            working={working}
+            showAdvanced={showAdvanced}
+            onChangeKey={() => setShowKeyForm((value) => !value)}
+            onRetest={handleRetest}
+            onReset={handleReset}
+            onToggleAdvanced={() => setShowAdvanced((value) => !value)}
+          />
+        ) : state === "invalid" ? (
+          <InvalidState
+            status={status}
+            working={working}
+            showAdvanced={showAdvanced}
+            onRetest={handleRetest}
+            onReset={handleReset}
+            onRepair={handleRepair}
+            onToggleAdvanced={() => setShowAdvanced((value) => !value)}
+          />
+        ) : (
+          <EmptyState />
+        )}
 
-      {(state === "empty" || showKeyForm) && <QuickSetupCard onDone={loadAll} />}
+        {(state === "empty" || showKeyForm) && <QuickSetupCard onDone={loadAll} />}
 
-      {showAdvanced && (
-        <AdvancedSettings
-          credentials={credentials}
-          profiles={profiles}
-          logs={logs}
-          onChanged={loadAll}
-          onRepair={handleRepair}
-        />
-      )}
+        {showAdvanced && (
+          <AdvancedSettings
+            credentials={credentials}
+            profiles={profiles}
+            logs={logs}
+            onChanged={loadAll}
+            onRepair={handleRepair}
+          />
+        )}
+      </div>
     </main>
   )
 }
 
 function EmptyState() {
   return (
-    <Card>
+    <Card className="glass-panel border-border/40">
       <CardHeader>
-        <CardTitle>还没有配置文本生成模型</CardTitle>
-        <CardDescription>填写 API Key 后，就可以开始生成小说。</CardDescription>
+        <CardTitle className="flex items-center gap-2"><Cpu className="text-muted-foreground" /> 节点空闲</CardTitle>
+        <CardDescription>当前未连接任何算力节点，请先配置大模型 API Key 启动引擎。</CardDescription>
       </CardHeader>
     </Card>
   )
@@ -289,33 +282,36 @@ function InvalidState({
   onToggleAdvanced: () => void
 }) {
   return (
-    <Card className="border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20">
+    <Card className="glass-panel border-red-500/30 bg-red-500/5 relative overflow-hidden group">
+      <div className="absolute top-0 left-0 w-1 h-full bg-red-500 animate-pulse" />
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <AlertTriangle className="size-5 text-amber-600" />
-          模型配置异常
+        <CardTitle className="flex items-center gap-2 text-red-500">
+          <AlertTriangle className="size-5" />
+          算力节点连接异常
         </CardTitle>
-        <CardDescription>当前模型配置不完整或不可用，建议重新测试或清空后重配。</CardDescription>
+        <CardDescription className="text-red-400/80">当前模型配置不完整或不可用，建议重新测试或清空后重配。</CardDescription>
         {status?.chatErrors?.[0] ? (
-          <p className="text-sm text-muted-foreground">{status.chatErrors[0]}</p>
+          <div className="mt-2 p-3 bg-red-500/10 border border-red-500/20 rounded font-mono text-xs text-red-400">
+            {status.chatErrors[0]}
+          </div>
         ) : null}
       </CardHeader>
-      <CardContent className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={onRetest} disabled={working === "test"}>
-          {working === "test" ? <RefreshCw className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
-          重新测试
+      <CardContent className="flex flex-wrap gap-3">
+        <Button variant="outline" onClick={onRetest} disabled={working === "test"} className="border-red-500/30 hover:bg-red-500/10 text-red-400">
+          {working === "test" ? <RefreshCw className="size-4 mr-2 animate-spin" /> : <ShieldCheck className="size-4 mr-2" />}
+          重新握手测试
         </Button>
-        <Button variant="outline" onClick={onReset} disabled={working === "reset"}>
-          <Trash2 className="size-4" />
-          清空模型配置
+        <Button variant="outline" onClick={onReset} disabled={working === "reset"} className="border-red-500/30 hover:bg-red-500/10 text-red-400">
+          <Trash2 className="size-4 mr-2" />
+          清除损坏节点
         </Button>
-        <Button variant="outline" onClick={onRepair} disabled={working === "repair"}>
-          {working === "repair" ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-          修复旧配置
+        <Button variant="outline" onClick={onRepair} disabled={working === "repair"} className="border-red-500/30 hover:bg-red-500/10 text-red-400">
+          {working === "repair" ? <RefreshCw className="size-4 mr-2 animate-spin" /> : <RefreshCw className="size-4 mr-2" />}
+          尝试自动修复
         </Button>
-        <Button variant="ghost" onClick={onToggleAdvanced}>
-          {showAdvanced ? "收起高级设置" : "展开高级设置"}
-          <ChevronDown className={`size-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+        <Button variant="ghost" onClick={onToggleAdvanced} className="hover:text-foreground">
+          {showAdvanced ? "收起节点底座配置" : "展开节点底座配置"}
+          <ChevronDown className={`size-4 ml-1 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
         </Button>
       </CardContent>
     </Card>
@@ -343,34 +339,50 @@ function ReadyState({
   const lastTested = status?.lastTestedAt || status?.recentTestedAt
 
   return (
-    <Card className="border-green-200 bg-green-50/60 dark:border-green-900 dark:bg-green-950/20">
+    <Card className="glass-panel border-primary/30 relative overflow-hidden group hover:shadow-[0_0_30px_oklch(0.68_0.19_285/0.15)] transition-all duration-500">
+      <div className="absolute top-0 left-0 w-1 h-full bg-primary shadow-[0_0_10px_oklch(0.68_0.19_285/1)]" />
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <CheckCircle className="size-5 text-green-600" />
-          文本生成已可用
-        </CardTitle>
-        <CardDescription className="space-y-1">
-          <span className="block">当前服务商：{currentProvider}</span>
-          <span className="block">当前文本模型：{status?.chatModel || "未记录"}</span>
-          <span className="block">最近测试时间：{formatTime(lastTested)}</span>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-primary font-bold">
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary rounded-full blur-md opacity-50 animate-pulse" />
+              <CheckCircle className="size-6 relative z-10" />
+            </div>
+            主节点引擎已上线 (Online)
+          </CardTitle>
+          <Badge className="bg-primary/20 text-primary border-primary/30 py-1 px-3">Status: Healthy</Badge>
+        </div>
+        <CardDescription className="space-y-2 mt-4 text-muted-foreground/80 font-mono text-sm">
+          <div className="flex items-center justify-between bg-background/40 p-2 rounded border border-border/50">
+            <span>[PROVIDER_NODE]</span>
+            <span className="text-foreground font-semibold">{currentProvider}</span>
+          </div>
+          <div className="flex items-center justify-between bg-background/40 p-2 rounded border border-border/50">
+            <span>[ACTIVE_MODEL]</span>
+            <span className="text-foreground font-semibold text-primary">{status?.chatModel || "未记录"}</span>
+          </div>
+          <div className="flex items-center justify-between bg-background/40 p-2 rounded border border-border/50">
+            <span>[LAST_HANDSHAKE]</span>
+            <span className="text-foreground font-semibold">{formatTime(lastTested)}</span>
+          </div>
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={onChangeKey}>
-          <KeyRound className="size-4" />
-          更换 API Key
+      <CardContent className="flex flex-wrap gap-3 mt-2">
+        <Button variant="outline" onClick={onChangeKey} className="shadow-glow border-primary/20 hover:bg-primary/10">
+          <KeyRound className="size-4 mr-2 text-primary" />
+          更换权限密钥
         </Button>
-        <Button variant="outline" onClick={onRetest} disabled={working === "test"}>
-          {working === "test" ? <RefreshCw className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
-          重新测试
+        <Button variant="outline" onClick={onRetest} disabled={working === "test"} className="shadow-glow border-primary/20 hover:bg-primary/10">
+          {working === "test" ? <RefreshCw className="size-4 mr-2 animate-spin" /> : <ShieldCheck className="size-4 mr-2 text-primary" />}
+          心跳测试
         </Button>
-        <Button variant="outline" onClick={onReset} disabled={working === "reset"}>
-          <Trash2 className="size-4" />
-          清空模型配置
+        <Button variant="outline" onClick={onReset} disabled={working === "reset"} className="border-border/50 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30">
+          <Trash2 className="size-4 mr-2" />
+          熔断并重置
         </Button>
-        <Button variant="ghost" onClick={onToggleAdvanced}>
-          {showAdvanced ? "收起高级设置" : "展开高级设置"}
-          <ChevronDown className={`size-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+        <Button variant="ghost" onClick={onToggleAdvanced} className="ml-auto">
+          {showAdvanced ? "收起底层控制台" : "展开底层控制台"}
+          <ChevronDown className={`size-4 ml-1 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
         </Button>
       </CardContent>
     </Card>
@@ -401,15 +413,20 @@ function QuickSetupCard({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <Card>
+    <Card className="glass-panel border-border/40 shadow-xl overflow-hidden relative">
+      <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
+        <Fingerprint className="w-32 h-32" />
+      </div>
       <CardHeader>
-        <CardTitle>配置文本生成模型</CardTitle>
-        <CardDescription>选择服务商，填写 API Key，然后测试并保存。</CardDescription>
+        <CardTitle className="text-xl flex items-center gap-2">
+          <KeyRound className="text-primary w-5 h-5" /> 挂载算力节点
+        </CardTitle>
+        <CardDescription>选择服务商并注入 API Key，系统将自动配置 Chat 与 Embedding 路由。</CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-3 md:grid-cols-[180px_1fr_auto]">
-        <Field label="服务商选择">
+      <CardContent className="grid gap-5 md:grid-cols-[200px_1fr_auto] items-end relative z-10">
+        <Field label="云端服务商 (Provider)">
           <Select value={provider} onValueChange={(value) => value && setProvider(value)}>
-            <SelectTrigger>
+            <SelectTrigger className="shadow-sm focus:ring-primary/50">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -421,18 +438,19 @@ function QuickSetupCard({ onDone }: { onDone: () => void }) {
             </SelectContent>
           </Select>
         </Field>
-        <Field label="API Key">
+        <Field label="授权令牌 (API Key)">
           <Input
             autoComplete="off"
             type="password"
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
-            placeholder="粘贴服务商提供的 API Key"
+            placeholder="sk-..."
+            className="shadow-sm focus:ring-primary/50 font-mono"
           />
         </Field>
-        <Button className="self-end" onClick={quickSetup} disabled={saving}>
-          {saving ? <RefreshCw className="size-4 animate-spin" /> : <Wifi className="size-4" />}
-          测试并保存
+        <Button className="w-full md:w-auto shadow-glow" onClick={quickSetup} disabled={saving}>
+          {saving ? <RefreshCw className="size-4 mr-2 animate-spin" /> : <Wifi className="size-4 mr-2" />}
+          {saving ? "验证中..." : "挂载并验证"}
         </Button>
       </CardContent>
     </Card>
@@ -446,68 +464,86 @@ function AdvancedSettings({
   onChanged,
   onRepair,
 }: {
-  credentials: Credential[]
+  credentials: ApiCredential[]
   profiles: ModelProfile[]
   logs: InvocationLog[]
   onChanged: () => void
   onRepair: () => void
 }) {
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-        高级设置仅用于排查问题，普通用户不需要修改。
+    <div className="space-y-6 animate-in slide-in-from-top-4 fade-in duration-500">
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-primary flex items-center gap-3">
+        <AlertTriangle className="w-5 h-5" />
+        <div>
+          <span className="font-bold">底层控制台已解锁。</span>
+          <p className="opacity-80 mt-0.5">普通用户无需修改此处内容。请谨慎操作账号凭证与网络路由。</p>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">模型服务账号</CardTitle>
-          <CardDescription>这里只显示排查所需的账号状态，不显示凭证编号或完整 Key。</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <CredentialList credentials={credentials} onChanged={onChanged} />
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <Card className="glass-panel border-border/40 hover:border-border/80 transition-colors">
+          <CardHeader className="pb-3 border-b border-border/30">
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-muted-foreground" /> 身份凭证池 (Credentials)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <CredentialList credentials={credentials} onChanged={onChanged} />
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">模型配置</CardTitle>
-          <CardDescription>文本生成只需要 Chat 类型；Embedding 未配置不会影响小说生成。</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ProfileList profiles={profiles} onChanged={onChanged} />
-        </CardContent>
-      </Card>
+        <Card className="glass-panel border-border/40 hover:border-border/80 transition-colors">
+          <CardHeader className="pb-3 border-b border-border/30">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-muted-foreground" /> 路由配置矩阵 (Profiles)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <ProfileList profiles={profiles} onChanged={onChanged} />
+          </CardContent>
+        </Card>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">排查记录</CardTitle>
-          <CardDescription>失败记录只显示简要状态，详细错误请查看服务端日志。</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {logs.length ? (
-            logs.map((log) => (
-              <div key={log.id} className="grid gap-2 rounded-md border p-3 text-sm md:grid-cols-[160px_80px_1fr_80px]">
-                <span className="text-muted-foreground">{formatTime(log.created_at)}</span>
-                <Badge variant={log.success ? "default" : "destructive"}>{log.success ? "成功" : "失败"}</Badge>
-                <span>{providerLabel(log.provider)} / {log.model || "未记录"} / {log.purpose || "general"}</span>
-                <span className="text-muted-foreground">{log.success ? `${log.latency_ms || 0}ms` : "调用失败"}</span>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">暂无调用记录。</p>
-          )}
-          <Button variant="outline" size="sm" onClick={onRepair}>
-            <RefreshCw className="size-4" />
-            修复旧配置
+      <Card className="glass-panel border-border/40">
+        <CardHeader className="pb-3 border-b border-border/30 flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Database className="w-4 h-4 text-muted-foreground" /> 调用遥测日志 (Telemetry Logs)
+            </CardTitle>
+            <CardDescription className="mt-1">最近 20 条网络调用记录。</CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={onRepair} className="shadow-glow">
+            <RefreshCw className="size-3 mr-2" />
+            自动修复路由
           </Button>
+        </CardHeader>
+        <CardContent className="pt-4">
+          {logs.length ? (
+            <div className="space-y-2">
+              {logs.map((log) => (
+                <div key={log.id} className="grid gap-3 rounded-lg border border-border/50 bg-background/50 p-3 text-sm md:grid-cols-[160px_80px_1fr_80px] items-center hover:bg-background/80 transition-colors">
+                  <span className="text-muted-foreground font-mono text-xs">{formatTime(log.created_at)}</span>
+                  <Badge variant={log.success ? "default" : "destructive"} className={log.success ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border-none" : ""}>
+                    {log.success ? "Success" : "Failed"}
+                  </Badge>
+                  <span className="font-medium text-foreground/80">{providerLabel(log.provider)} <span className="text-muted-foreground mx-1">/</span> <span className="text-primary/80">{log.model || "未记录"}</span> <span className="text-muted-foreground mx-1">/</span> {log.purpose || "general"}</span>
+                  <span className="text-right font-mono text-xs text-muted-foreground">{log.success ? `${log.latency_ms || 0}ms` : "---"}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-8 text-center text-sm text-muted-foreground border border-dashed border-border/50 rounded-lg">
+              暂无遥测数据
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   )
 }
 
-function CredentialList({ credentials, onChanged }: { credentials: Credential[]; onChanged: () => void }) {
-  const handleDelete = async (credential: Credential) => {
+function CredentialList({ credentials, onChanged }: { credentials: ApiCredential[]; onChanged: () => void }) {
+  const handleDelete = async (credential: ApiCredential) => {
     try {
       await api.config.deleteCredential(credential.id)
       toast.success("模型服务账号已删除。")
@@ -531,33 +567,33 @@ function CredentialList({ credentials, onChanged }: { credentials: Credential[];
     }
   }
 
-  if (!credentials.length) return <p className="text-sm text-muted-foreground">暂无模型服务账号。</p>
+  if (!credentials.length) return <div className="py-6 text-center text-sm text-muted-foreground">暂无凭证数据</div>
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {credentials.map((credential) => (
-        <div key={credential.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={credential.status === "active" ? "default" : credential.status === "invalid" ? "destructive" : "outline"}>
-              {credential.status === "active" ? "可用" : credential.status === "invalid" ? "异常" : "未测试"}
-            </Badge>
-            <span className="font-medium">{credential.name}</span>
-            <span className="text-muted-foreground">{providerLabel(credential.provider)}</span>
-            {credential.api_key_last4 ? <Badge variant="secondary">尾号 {credential.api_key_last4}</Badge> : null}
+        <div key={credential.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/50 p-3 text-sm hover:bg-background/80 transition-colors">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-foreground">{credential.name}</span>
+              <Badge variant="secondary" className="text-xs bg-muted/50">{providerLabel(credential.provider)}</Badge>
+              {credential.api_key_last4 && <span className="font-mono text-xs text-muted-foreground bg-muted/30 px-1.5 py-0.5 rounded border border-border/30">...{credential.api_key_last4}</span>}
+            </div>
+            <div className="flex items-center">
+              <Badge variant={credential.status === "active" ? "default" : credential.status === "invalid" ? "destructive" : "outline"} className={credential.status === "active" ? "bg-emerald-500/20 text-emerald-400 border-none px-2 h-5" : "px-2 h-5"}>
+                {credential.status === "active" ? "Active" : credential.status === "invalid" ? "Error" : "Untested"}
+              </Badge>
+            </div>
           </div>
-          <div className="flex gap-1">
-            <IconButton
-              title="重新测试"
-              onClick={() =>
-                api.config
-                  .testCredential(credential.id)
-                  .then((result) => toast.success(result.message || "测试成功"))
-                  .catch((error) => toast.error(errorMessage(error, "测试失败，请检查 API Key 和服务商是否匹配。")))
-                  .finally(onChanged)
-              }
-              icon={<Wifi className="size-4" />}
-            />
-            <IconButton title="删除" onClick={() => handleDelete(credential)} icon={<Trash2 className="size-4" />} />
+          <div className="flex gap-1.5">
+            <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-primary/20 hover:text-primary" title="重新测试" onClick={() =>
+                api.config.testCredential(credential.id).then((result) => toast.success(result.message || "测试成功")).catch((error) => toast.error(errorMessage(error, "测试失败，请检查 API Key 和服务商是否匹配。"))).finally(onChanged)
+              }>
+              <Wifi className="size-4" />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-destructive/20 hover:text-destructive" title="删除" onClick={() => handleDelete(credential)}>
+              <Trash2 className="size-4" />
+            </Button>
           </div>
         </div>
       ))}
@@ -566,43 +602,39 @@ function CredentialList({ credentials, onChanged }: { credentials: Credential[];
 }
 
 function ProfileList({ profiles, onChanged }: { profiles: ModelProfile[]; onChanged: () => void }) {
-  if (!profiles.length) return <p className="text-sm text-muted-foreground">暂无模型配置。</p>
+  if (!profiles.length) return <div className="py-6 text-center text-sm text-muted-foreground">暂无路由数据</div>
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {profiles.map((profile) => (
-        <div key={profile.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={profile.type === "chat" ? "default" : "outline"}>{profile.type}</Badge>
-            <span className="font-medium">{profile.name}</span>
-            <span className="text-muted-foreground">{providerLabel(profile.provider)} / {profile.model}</span>
-            <Badge variant={profile.health_status === "active" ? "default" : profile.health_status === "invalid" ? "destructive" : "outline"}>
-              {profile.health_status === "active" ? "可用" : profile.health_status === "invalid" ? "异常" : "未测试"}
-            </Badge>
+        <div key={profile.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/50 p-3 text-sm hover:bg-background/80 transition-colors">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <Badge variant={profile.type === "chat" ? "default" : "outline"} className={profile.type === "chat" ? "bg-primary/20 text-primary border-none" : "bg-blue-500/20 text-blue-400 border-none"}>
+                {profile.type.toUpperCase()}
+              </Badge>
+              <span className="font-bold text-foreground">{profile.name}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground text-xs">{providerLabel(profile.provider)} <span className="mx-1">/</span> <span className="font-mono text-primary/80">{profile.model}</span></span>
+            </div>
           </div>
-          <div className="flex gap-1">
-            <IconButton
-              title="重新测试"
-              onClick={() =>
-                api.config
-                  .testProfile(profile.id)
-                  .then((result) => toast.success(result.message || "测试成功"))
-                  .catch((error) => toast.error(errorMessage(error, "测试失败，请检查 API Key 和服务商是否匹配。")))
-                  .finally(onChanged)
-              }
-              icon={<ShieldCheck className="size-4" />}
-            />
-            <IconButton
-              title="删除"
-              onClick={() =>
-                api.config
-                  .deleteProfile(profile.id)
-                  .then(() => toast.success("模型配置已删除。"))
-                  .catch((error) => toast.error(errorMessage(error, "删除失败，请稍后重试。")))
-                  .finally(onChanged)
-              }
-              icon={<Trash2 className="size-4" />}
-            />
+          <div className="flex items-center gap-3">
+            <Badge variant={profile.health_status === "active" ? "default" : profile.health_status === "invalid" ? "destructive" : "outline"} className={profile.health_status === "active" ? "bg-emerald-500/20 text-emerald-400 border-none" : ""}>
+              {profile.health_status === "active" ? "Healthy" : profile.health_status === "invalid" ? "Broken" : "Pending"}
+            </Badge>
+            <div className="flex gap-1.5 border-l border-border/50 pl-3">
+              <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-primary/20 hover:text-primary" title="重新测试" onClick={() =>
+                  api.config.testProfile(profile.id).then((result) => toast.success(result.message || "测试成功")).catch((error) => toast.error(errorMessage(error, "测试失败，请检查 API Key 和服务商是否匹配。"))).finally(onChanged)
+                }>
+                <ShieldCheck className="size-4" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-destructive/20 hover:text-destructive" title="删除" onClick={() =>
+                  api.config.deleteProfile(profile.id).then(() => toast.success("模型配置已删除。")).catch((error) => toast.error(errorMessage(error, "删除失败，请稍后重试。"))).finally(onChanged)
+                }>
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
           </div>
         </div>
       ))}
@@ -612,17 +644,9 @@ function ProfileList({ profiles, onChanged }: { profiles: ModelProfile[]; onChan
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="space-y-1">
-      <Label className="text-xs">{label}</Label>
+    <div className="space-y-1.5 font-medium">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
       {children}
     </div>
-  )
-}
-
-function IconButton({ title, icon, onClick }: { title: string; icon: ReactNode; onClick: () => void }) {
-  return (
-    <Button size="icon" variant="ghost" title={title} aria-label={title} onClick={onClick}>
-      {icon}
-    </Button>
   )
 }

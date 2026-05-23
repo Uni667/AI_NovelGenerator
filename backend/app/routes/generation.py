@@ -15,17 +15,15 @@ from llm_errors import LLMInvocationError, coerce_error_info
 from novel_generator.cancel_token import CancelToken
 from novel_generator.context import ChapterParams, GenerationContext, ProjectConfig
 from novel_generator.task_manager import (
-    TaskCancelledError,
     bind_cancel_token,
-    finish_task,
-    get_active_task,
     get_task,
     raise_if_cancelled,
-    register_task,
     request_cancel,
     task_payload,
     unbind_cancel_token,
 )
+from backend.app.services.sse_manager import make_streaming_response
+from backend.app.services.task_orchestrator import prepare_generation_task, build_terminal_error_payload
 from utils import read_file
 
 router = APIRouter(tags=["AI 生成"])
@@ -133,39 +131,7 @@ def _make_chapter_params(pconfig: dict, chapter_number: int) -> ChapterParams:
     )
 
 
-def _task_label(kind: str) -> str:
-    return {
-        "generate_architecture": "架构生成",
-        "generate_outline": "章节目录生成",
-        "generate_chapter": "章节草稿生成",
-        "generate_chapter_batch": "批量章节生成",
-        "finalize_chapter": "章节定稿",
-    }.get(kind, kind)
 
-
-def _prepare_generation_task(project_id: str, user_id: str, kind: str, task_id: str | None, metadata: dict[str, object]) -> str:
-    resolved_task_id = task_id or uuid.uuid4().hex
-    existing_task = get_task(resolved_task_id)
-    if existing_task and existing_task.status not in {"done", "failed", "cancelled"}:
-        if existing_task.project_id != project_id:
-            raise HTTPException(status_code=409, detail="该任务标识已在运行，请先取消当前任务后再开始新的生成")
-        return resolved_task_id
-
-    # register_task internally cleans up stuck cancelling tasks for this project
-    state = register_task(resolved_task_id, project_id, kind, user_id=user_id, metadata=metadata)
-    if state.task_id == resolved_task_id:
-        # New task created successfully — check no other active task on same project
-        active = get_active_task(project_id)
-        if active and active.task_id != resolved_task_id:
-            # Another task is still running; roll back and reject
-            state.status = "cancelled"
-            state.finished_at = time.time()
-            raise HTTPException(
-                status_code=409,
-                detail=f"项目正在执行{_task_label(active.kind)}，请先中断后再开始新的生成",
-            )
-
-    return resolved_task_id
 
 
 def _mask_api_key(api_key: str) -> str:
@@ -197,147 +163,7 @@ def _log_llm_selection(task_id: str, project: dict, llm_conf: dict, kind: str) -
     )
 
 
-def _build_terminal_error_payload(task_id: str, step: str, message: str, **extra) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "step": step,
-        "message": message,
-        "task_id": task_id,
-        "status": "failed",
-        "terminal": True,
-    }
-    payload.update({key: value for key, value in extra.items() if value is not None})
-    return payload
 
-
-def _is_active_task(task_id: str) -> bool:
-    task = get_task(task_id)
-    return bool(task and task.status not in {"done", "failed", "cancelled"})
-
-
-def _run_in_thread(emitter: SSEEmitter, task_id: str, func, *args, **kwargs):
-    from novel_generator.task_manager import update_task_status
-    update_task_status(task_id, "running")
-    try:
-        func(emitter, *args, task_id=task_id, **kwargs)
-    except TaskCancelledError as exc:
-        finish_task(task_id, "cancelled", str(exc))
-        emitter.emit("cancelled", {"message": str(exc), "status": "cancelled", "task_id": task_id})
-    except LLMInvocationError as exc:
-        payload = exc.to_payload()
-        info = coerce_error_info(payload)
-        logger.warning(
-            "Generation task provider failure [task_id=%s func=%s category=%s code=%s status=%s provider=%s model=%s base_url=%s]: %s",
-            task_id,
-            func.__name__,
-            info.category if info else payload.get("category"),
-            info.code if info else payload.get("code"),
-            info.status_code if info else payload.get("status_code"),
-            info.provider if info else payload.get("provider"),
-            info.model_name if info else payload.get("model_name"),
-            info.base_url if info else payload.get("base_url"),
-            info.detail if info else payload.get("detail"),
-        )
-        message = str(exc)
-        finish_task(task_id, "failed", message)
-        emitter.emit(
-            "error",
-            _build_terminal_error_payload(
-                task_id,
-                payload.get("step") or "llm",
-                message,
-                error_code=payload.get("code"),
-                error_category=payload.get("category"),
-                detail=payload.get("detail"),
-                retryable=payload.get("retryable"),
-                provider=payload.get("provider"),
-                model_name=payload.get("model_name"),
-                base_url=payload.get("base_url"),
-                status_code=payload.get("status_code"),
-                operation=payload.get("operation"),
-            ),
-        )
-        emitter.emit(
-            "done",
-            _build_terminal_error_payload(
-                task_id,
-                payload.get("step") or "llm",
-                message,
-                error_code=payload.get("code"),
-                error_category=payload.get("category"),
-            ),
-        )
-        return  # 阻止落入 else 再次 emit done
-    except HTTPException as exc:
-        message = str(exc.detail)
-        finish_task(task_id, "failed", message)
-        emitter.emit("error", _build_terminal_error_payload(task_id, "request", message))
-        emitter.emit("done", _build_terminal_error_payload(task_id, "request", message))
-        return
-    except Exception:
-        logger.exception("Generation task failed")
-        message = "生成任务执行失败，请稍后重试"
-        finish_task(task_id, "failed", message)
-        emitter.emit("error", _build_terminal_error_payload(task_id, "server", message))
-        emitter.emit("done", _build_terminal_error_payload(task_id, "server", message))
-        return
-    else:
-        finish_task(task_id, "done", "完成")
-        emitter.emit("done", {"message": "完成", "status": "done", "task_id": task_id})
-
-
-def _require_project_file(filepath: str, filename: str, purpose: str) -> str:
-    full_path = os.path.join(filepath, filename)
-    if not os.path.exists(full_path):
-        raise RuntimeError(f"缺少{purpose}文件: {filename}。请先生成对应内容。")
-    content = read_file(full_path).strip()
-    if not content:
-        raise RuntimeError(f"{purpose}文件为空: {filename}。请重新生成对应内容。")
-    return content
-
-
-async def _heartbeat(queue: asyncio.Queue, interval: float = 3.0):
-    while True:
-        await asyncio.sleep(interval)
-        await queue.put(HEARTBEAT)
-
-
-def _make_streaming_response(
-    request: Request,
-    queue: asyncio.Queue,
-    task_id: str,
-    target_func,
-    *args,
-) -> StreamingResponse:
-    import threading
-    loop = asyncio.get_event_loop()
-    attach_task_stream(task_id, queue, loop)
-
-    # Use raw threading.Thread instead of loop.run_in_executor to avoid
-    # thread-pool starvation issues in constrained container environments.
-    t = threading.Thread(
-        target=_run_in_thread,
-        args=(SSEEmitter(task_id), task_id, target_func, *args),
-        daemon=True,
-    )
-    t.start()
-
-    async def event_gen():
-        hb = asyncio.create_task(_heartbeat(queue))
-        try:
-            async for sse_data in sse_event_generator(queue):
-                if await request.is_disconnected():
-                    break
-                yield sse_data
-        finally:
-            # asyncio.Task.cancel() 对已完成 task 是幂等安全的，无需预检 done()
-            hb.cancel()
-            detach_task_stream(task_id, queue, loop)
-
-    return StreamingResponse(
-        event_gen(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Task-ID": task_id},
-    )
 
 
 @router.get("/api/v1/projects/{project_id}/generate/tasks/{task_id}")
@@ -365,17 +191,18 @@ def cancel_generation_task(project_id: str, task_id: str, request: Request):
 @router.get("/api/v1/projects/{project_id}/generate/architecture")
 async def generate_architecture(project_id: str, request: Request, task_id: str | None = None):
     project, pconfig, user_id = _check_project(project_id, request)
-    resolved_task_id = _prepare_generation_task(
+    resolved_task_id = prepare_generation_task(
         project_id,
         user_id,
         "generate_architecture",
         task_id,
         {"project_name": project.get("name", ""), "chapter_count": pconfig.get("num_chapters", 0)},
     )
-    return _make_streaming_response(
+    from backend.app.services.task_orchestrator import run_orchestrated_task
+    return make_streaming_response(
         request,
-        asyncio.Queue(),
         resolved_task_id,
+        run_orchestrated_task,
         _run_architecture,
         project,
         pconfig,
@@ -432,17 +259,18 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict, user_id
 @router.get("/api/v1/projects/{project_id}/generate/blueprint")
 async def generate_blueprint(project_id: str, request: Request, task_id: str | None = None):
     project, pconfig, user_id = _check_project(project_id, request)
-    resolved_task_id = _prepare_generation_task(
+    resolved_task_id = prepare_generation_task(
         project_id,
         user_id,
         "generate_outline",
         task_id,
         {"project_name": project.get("name", ""), "chapter_count": pconfig.get("num_chapters", 0)},
     )
-    return _make_streaming_response(
+    from backend.app.services.task_orchestrator import run_orchestrated_task
+    return make_streaming_response(
         request,
-        asyncio.Queue(),
         resolved_task_id,
+        run_orchestrated_task,
         _run_blueprint,
         project,
         pconfig,
@@ -494,17 +322,18 @@ def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: s
 @router.get("/api/v1/projects/{project_id}/generate/chapter/{chapter_number}")
 async def generate_chapter(project_id: str, chapter_number: int, request: Request, task_id: str | None = None):
     project, pconfig, user_id = _check_project(project_id, request)
-    resolved_task_id = _prepare_generation_task(
+    resolved_task_id = prepare_generation_task(
         project_id,
         user_id,
         "generate_chapter",
         task_id,
         {"project_name": project.get("name", ""), "chapter_number": chapter_number},
     )
-    return _make_streaming_response(
+    from backend.app.services.task_orchestrator import run_orchestrated_task
+    return make_streaming_response(
         request,
-        asyncio.Queue(),
         resolved_task_id,
+        run_orchestrated_task,
         _run_chapter_generation,
         project,
         pconfig,
@@ -527,17 +356,18 @@ async def generate_chapter_batch(
     if count < 1 or count > 20:
         raise HTTPException(status_code=400, detail="本轮生成章节数必须在 1 到 20 之间")
     project, pconfig, user_id = _check_project(project_id, request)
-    resolved_task_id = _prepare_generation_task(
+    resolved_task_id = prepare_generation_task(
         project_id,
         user_id,
         "generate_chapter_batch",
         task_id,
         {"project_name": project.get("name", ""), "start_chapter": start_chapter, "count": count},
     )
-    return _make_streaming_response(
+    from backend.app.services.task_orchestrator import run_orchestrated_task
+    return make_streaming_response(
         request,
-        asyncio.Queue(),
         resolved_task_id,
+        run_orchestrated_task,
         _run_chapter_batch_generation,
         project,
         pconfig,
@@ -649,17 +479,18 @@ def _run_chapter_generation(
 @router.get("/api/v1/projects/{project_id}/generate/finalize/{chapter_number}")
 async def finalize_chapter_route(project_id: str, chapter_number: int, request: Request, task_id: str | None = None):
     project, pconfig, user_id = _check_project(project_id, request)
-    resolved_task_id = _prepare_generation_task(
+    resolved_task_id = prepare_generation_task(
         project_id,
         user_id,
         "finalize_chapter",
         task_id,
         {"project_name": project.get("name", ""), "chapter_number": chapter_number},
     )
-    return _make_streaming_response(
+    from backend.app.services.task_orchestrator import run_orchestrated_task
+    return make_streaming_response(
         request,
-        asyncio.Queue(),
         resolved_task_id,
+        run_orchestrated_task,
         _run_finalize,
         project,
         pconfig,

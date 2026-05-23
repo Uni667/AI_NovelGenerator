@@ -11,7 +11,7 @@ from backend.app.services.model_runtime import (
     create_chat_adapter_from_config as create_llm_adapter,
     create_embedding_adapter_from_config,
 )
-import prompt_definitions
+from novel_generator import prompts as prompt_definitions
 from novel_generator.common import invoke_with_cleaning
 from novel_generator.task_manager import raise_if_cancelled
 from utils import read_file, clear_file_content, save_string_to_txt

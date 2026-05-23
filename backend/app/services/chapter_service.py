@@ -144,6 +144,23 @@ def batch_upsert_from_upload(project_id: str, filepath: str, chapters_data: list
     return results
 
 
+def delete_chapter(project_id: str, chapter_number: int, filepath: str) -> bool:
+    """删除章节数据库记录和文件。返回是否成功。"""
+    import os as _os
+    deleted = False
+    chapter_file = _os.path.join(filepath, "chapters", f"chapter_{chapter_number}.txt")
+    if _os.path.exists(chapter_file):
+        _os.remove(chapter_file)
+        deleted = True
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM chapter WHERE project_id=? AND chapter_number=?",
+            (project_id, chapter_number)
+        )
+        deleted = deleted or conn.total_changes > 0
+    return deleted
+
+
 def mark_chapter_final(project_id: str, chapter_number: int, word_count: int = 0):
     now = datetime.datetime.now().isoformat()
     with get_db() as conn:

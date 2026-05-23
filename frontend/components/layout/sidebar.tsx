@@ -33,24 +33,36 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <ScrollArea className="flex-1">
         <nav className="p-3 space-y-1">
-          <Link href="/" onClick={onNavigate}>
-            <Button variant={pathname === "/" ? "secondary" : "ghost"} className="w-full justify-start gap-2">
+          <Link href="/" onClick={onNavigate} className="block relative">
+            {pathname === "/" && (
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-2/3 bg-primary rounded-r-md shadow-[0_0_10px_var(--primary)]" />
+            )}
+            <Button 
+              variant={pathname === "/" ? "secondary" : "ghost"} 
+              className={`w-full justify-start gap-2 transition-all duration-300 ${pathname === "/" ? "bg-primary/10 text-primary hover:bg-primary/20" : "hover:bg-primary/5"}`}
+            >
               <Home className="h-4 w-4" />
               项目列表
             </Button>
           </Link>
 
-          {projects?.map((p: any) => (
-            <Link key={p.id} href={`/projects/${p.id}`} onClick={onNavigate}>
-              <Button
-                variant={pathname.startsWith(`/projects/${p.id}`) ? "secondary" : "ghost"}
-                className="w-full justify-start gap-2 text-sm"
-              >
-                <BookOpen className="h-4 w-4 shrink-0" />
-                <span className="truncate">{p.name}</span>
-              </Button>
-            </Link>
-          ))}
+          {projects?.map((p: any) => {
+            const isActive = pathname.startsWith(`/projects/${p.id}`)
+            return (
+              <Link key={p.id} href={`/projects/${p.id}`} onClick={onNavigate} className="block relative mt-1">
+                {isActive && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-2/3 bg-primary rounded-r-md shadow-[0_0_10px_var(--primary)] animate-glow-pulse" />
+                )}
+                <Button
+                  variant={isActive ? "secondary" : "ghost"}
+                  className={`w-full justify-start gap-2 text-sm transition-all duration-300 ${isActive ? "bg-primary/10 text-primary hover:bg-primary/20 shadow-[inset_2px_0_0_0_transparent]" : "hover:bg-primary/5"}`}
+                >
+                  <BookOpen className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{p.name}</span>
+                </Button>
+              </Link>
+            )
+          })}
         </nav>
       </ScrollArea>
 
@@ -121,7 +133,7 @@ export function Sidebar() {
       </div>
 
       {/* Desktop: fixed sidebar */}
-      <aside className="hidden lg:flex w-64 h-full border-r bg-sidebar flex-col shrink-0">
+      <aside className="hidden lg:flex w-64 h-full border-r border-sidebar-border bg-sidebar/60 backdrop-blur-3xl flex-col shrink-0 shadow-2xl relative z-10">
         <SidebarContent />
       </aside>
     </>

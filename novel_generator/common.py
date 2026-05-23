@@ -7,8 +7,7 @@ import logging
 import re
 import time
 import traceback
-
-logger = logging.getLogger(__name__)
+import random
 
 from llm_errors import (
     LLMInvocationError,
@@ -51,11 +50,16 @@ def debug_log(prompt: str, response_content: str):
         response_content,
     )
 
+def _get_backoff_time(attempt: int, base_delay: float = 2.0, max_delay: float = 60.0) -> float:
+    """Calculate exponential backoff time with full jitter."""
+    delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
+    return random.uniform(0, delay)
+
 
 def invoke_with_cleaning(
     llm_adapter,
     prompt: str,
-    max_retries: int = 3,
+    max_retries: int = 5,
     cancel_check=None,
     cancel_token=None,
     operation_name: str = "LLM 调用",
@@ -98,7 +102,7 @@ def invoke_with_cleaning(
                 )
 
             if attempt < max_retries and error_info.retryable:
-                wait_seconds = min(2 * attempt, 5)
+                wait_seconds = _get_backoff_time(attempt)
                 logger.warning(
                     "LLM 调用失败，准备重试 [attempt=%s/%s category=%s code=%s wait=%ss detail=%s]",
                     attempt,
@@ -125,7 +129,7 @@ def invoke_with_cleaning(
                 base_url=getattr(llm_adapter, "base_url", ""),
             )
             if attempt < max_retries and error_info.retryable:
-                wait_seconds = min(2 * attempt, 5)
+                wait_seconds = _get_backoff_time(attempt)
                 logger.warning(
                     "LLM 调用异常，准备重试 [attempt=%s/%s category=%s code=%s wait=%ss detail=%s]",
                     attempt,

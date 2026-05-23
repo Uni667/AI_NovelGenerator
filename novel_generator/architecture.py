@@ -16,7 +16,7 @@ from novel_generator.common import invoke_with_cleaning
 from novel_generator.platform_guidance import get_platform_story_rhythm_guidance
 from novel_generator.task_manager import raise_if_cancelled
 from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter, get_runtime_config, _provider_to_interface
-import prompt_definitions
+from novel_generator import prompts as prompt_definitions
 from utils import clear_file_content, save_string_to_txt
 
 logger = logging.getLogger(__name__)

@@ -110,3 +110,12 @@ async def upload_chapters(
         "skipped_files": skipped[:20],
         "chapters": results,
     }
+
+
+@router.delete("/api/v1/projects/{project_id}/chapters/{chapter_number}")
+def delete_chapter(project_id: str, chapter_number: int, request: Request):
+    project, _user_id = _check_project(project_id, request)
+    success = chapter_service.delete_chapter(project_id, chapter_number, project["filepath"])
+    if not success:
+        raise HTTPException(status_code=404, detail="章节不存在")
+    return {"message": f"第{chapter_number}章已删除", "chapter_number": chapter_number}

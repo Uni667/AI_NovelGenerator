@@ -1,4 +1,12 @@
 import { getToken } from "./auth"
+import type { 
+  Project, ProjectConfig, Chapter, ProjectFile, GenerationTask, CharacterProfile,
+  CharacterRelationship, CharacterConflict, CharacterAppearance, RelationshipGraph,
+  CharacterDashboard, TimelineEntry, ProjectOverview,
+  ApiCredential, ModelProfile, ModelAssignment, KnowledgeFile,
+  PlatformHookResult, PlatformTitlesResult, PlatformBlurbResult, PlatformTagsResult, PlatformDiagnosisResult,
+  MaterialEntity, DiagnosisReport
+} from "./types"
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 
@@ -125,18 +133,18 @@ function sseUrl(path: string, taskId?: string): string {
 
 export const api = {
   projects: {
-    list: () => request<any[]>("/api/v1/projects"),
-    get: (id: string) => request<any>(`/api/v1/projects/${id}`),
-    create: (data: any) => request<any>("/api/v1/projects", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: any) => request<any>(`/api/v1/projects/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    list: () => request<Project[]>("/api/v1/projects"),
+    get: (id: string) => request<Project>(`/api/v1/projects/${id}`),
+    create: (data: Partial<Project>) => request<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Project>) => request<Project>(`/api/v1/projects/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id: string) => request<void>(`/api/v1/projects/${id}`, { method: "DELETE" }),
-    config: (id: string) => request<any>(`/api/v1/projects/${id}/config`),
-    updateConfig: (id: string, data: any) => request<any>(`/api/v1/projects/${id}/config`, { method: "PUT", body: JSON.stringify(data) }),
+    config: (id: string) => request<ProjectConfig>(`/api/v1/projects/${id}/config`),
+    updateConfig: (id: string, data: Partial<ProjectConfig>) => request<ProjectConfig>(`/api/v1/projects/${id}/config`, { method: "PUT", body: JSON.stringify(data) }),
   },
   chapters: {
-    list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/chapters`),
-    get: (projectId: string, num: number) => request<any>(`/api/v1/projects/${projectId}/chapters/${num}`),
-    update: (projectId: string, num: number, data: any) => request<any>(`/api/v1/projects/${projectId}/chapters/${num}`, { method: "PUT", body: JSON.stringify(data) }),
+    list: (projectId: string) => request<Chapter[]>(`/api/v1/projects/${projectId}/chapters`),
+    get: (projectId: string, num: number) => request<{ chapter_number: number, content: string, meta: Chapter }>(`/api/v1/projects/${projectId}/chapters/${num}`),
+    update: (projectId: string, num: number, data: Partial<{content: string}>) => request<{ meta: Chapter }>(`/api/v1/projects/${projectId}/chapters/${num}`, { method: "PUT", body: JSON.stringify(data) }),
     upload: (projectId: string, files: File[]) => {
       const formData = new FormData()
       files.forEach((f) => formData.append("files", f))
@@ -166,13 +174,13 @@ export const api = {
   },
   config: {
     // API 凭证
-    listCredentials: () => request<any[]>("/api/user/api-credentials"),
+    listCredentials: () => request<ApiCredential[]>("/api/user/api-credentials"),
     createCredential: (data: { name: string; provider: string; api_key: string; base_url: string; is_default?: boolean }) =>
-      request<any>("/api/user/api-credentials", { method: "POST", body: JSON.stringify(data) }),
-    updateCredential: (id: string, data: any) =>
-      request<any>(`/api/user/api-credentials/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+      request<ApiCredential>("/api/user/api-credentials", { method: "POST", body: JSON.stringify(data) }),
+    updateCredential: (id: string, data: Partial<ApiCredential>) =>
+      request<ApiCredential>(`/api/user/api-credentials/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     deleteCredential: (id: string, cascade?: boolean) =>
-      request<any>(`/api/user/api-credentials/${id}${cascade ? "?cascade=true" : ""}`, { method: "DELETE" }),
+      request<void>(`/api/user/api-credentials/${id}${cascade ? "?cascade=true" : ""}`, { method: "DELETE" }),
     testCredential: (id: string) =>
       request<{ success: boolean; message: string }>(`/api/user/api-credentials/${id}/test`, { method: "POST" }),
     enableCredential: (id: string) =>
@@ -192,14 +200,14 @@ export const api = {
     modelRepair: () =>
       request<{ success: boolean; message: string; details: string[] }>("/api/user/model-settings/repair", { method: "POST" }),
     // 模型配置
-    listProfiles: () => request<any[]>("/api/user/model-profiles"),
-    getProfile: (id: string) => request<any>(`/api/user/model-profiles/${id}`),
-    createProfile: (data: any) =>
-      request<any>("/api/user/model-profiles", { method: "POST", body: JSON.stringify(data) }),
-    updateProfile: (id: string, data: any) =>
-      request<any>(`/api/user/model-profiles/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    listProfiles: () => request<ModelProfile[]>("/api/user/model-profiles"),
+    getProfile: (id: string) => request<ModelProfile>(`/api/user/model-profiles/${id}`),
+    createProfile: (data: Partial<ModelProfile>) =>
+      request<ModelProfile>("/api/user/model-profiles", { method: "POST", body: JSON.stringify(data) }),
+    updateProfile: (id: string, data: Partial<ModelProfile>) =>
+      request<ModelProfile>(`/api/user/model-profiles/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     deleteProfile: (id: string) =>
-      request<any>(`/api/user/model-profiles/${id}`, { method: "DELETE" }),
+      request<void>(`/api/user/model-profiles/${id}`, { method: "DELETE" }),
     testProfile: (id: string) =>
       request<{ success: boolean; message: string }>(`/api/user/model-profiles/${id}/test`, { method: "POST" }),
     setDefaultProfile: (id: string) =>
@@ -211,11 +219,11 @@ export const api = {
       request<any[]>(`/api/projects/${projectId}/model-invocation-logs?limit=${limit || 30}`),
   },
   modelAssignment: {
-    get: (projectId: string) => request<any>(`/api/projects/${projectId}/model-assignment`),
-    save: (projectId: string, data: any) =>
-      request<any>(`/api/projects/${projectId}/model-assignment`, { method: "PUT", body: JSON.stringify(data) }),
+    get: (projectId: string) => request<ModelAssignment>(`/api/projects/${projectId}/model-assignment`),
+    save: (projectId: string, data: ModelAssignment) =>
+      request<ModelAssignment>(`/api/projects/${projectId}/model-assignment`, { method: "PUT", body: JSON.stringify(data) }),
     applyPlatformPreset: (projectId: string, platform: string) =>
-      request<any>(`/api/projects/${projectId}/model-assignment/apply-platform-preset`, { method: "POST", body: JSON.stringify({ platform }) }),
+      request<ModelAssignment>(`/api/projects/${projectId}/model-assignment/apply-platform-preset`, { method: "POST", body: JSON.stringify({ platform }) }),
   },
   knowledge: {
     upload: (projectId: string, file: File) => {
@@ -240,9 +248,9 @@ export const api = {
         return res.json()
       })
     },
-    list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/knowledge/files`),
-    delete: (projectId: string, fileId: number) => request<any>(`/api/v1/projects/${projectId}/knowledge/files/${fileId}`, { method: "DELETE" }),
-    reimport: (projectId: string, fileId: number) => request<any>(`/api/v1/projects/${projectId}/knowledge/files/${fileId}/reimport`, { method: "POST" }),
+    list: (projectId: string) => request<KnowledgeFile[]>(`/api/v1/projects/${projectId}/knowledge/files`),
+    delete: (projectId: string, fileId: number) => request<void>(`/api/v1/projects/${projectId}/knowledge/files/${fileId}`, { method: "DELETE" }),
+    reimport: (projectId: string, fileId: number) => request<KnowledgeFile>(`/api/v1/projects/${projectId}/knowledge/files/${fileId}/reimport`, { method: "POST" }),
     clearVector: (projectId: string) => request<void>(`/api/v1/projects/${projectId}/knowledge/clear-vector`, { method: "DELETE" }),
   },
   generate: {
@@ -257,45 +265,45 @@ export const api = {
     listTasks: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/generate/tasks`),
   },
   characters: {
-    list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/characters`),
-    create: (projectId: string, data: { name: string; description?: string; status?: string; source?: string; first_appearance_chapter?: number | null }) => request<any>(`/api/v1/projects/${projectId}/characters`, { method: "POST", body: JSON.stringify(data) }),
-    update: (projectId: string, charId: number, data: any) => request<any>(`/api/v1/projects/${projectId}/characters/${charId}`, { method: "PUT", body: JSON.stringify(data) }),
+    list: (projectId: string) => request<CharacterProfile[]>(`/api/v1/projects/${projectId}/characters`),
+    create: (projectId: string, data: { name: string; description?: string; status?: string; source?: string; first_appearance_chapter?: number | null }) => request<CharacterProfile>(`/api/v1/projects/${projectId}/characters`, { method: "POST", body: JSON.stringify(data) }),
+    update: (projectId: string, charId: number, data: Partial<CharacterProfile>) => request<CharacterProfile>(`/api/v1/projects/${projectId}/characters/${charId}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (projectId: string, charId: number) => request<void>(`/api/v1/projects/${projectId}/characters/${charId}`, { method: "DELETE" }),
-    importPreview: (projectId: string) => request<{ summary: any; candidates: any[] }>(`/api/v1/projects/${projectId}/characters/import-from-state/preview`, { method: "POST" }),
-    importFromState: (projectId: string, data?: { selected_candidate_ids: string[] }) => request<any>(`/api/v1/projects/${projectId}/characters/import-from-state`, { method: "POST", body: JSON.stringify(data || {}) }),
-    suggest: (projectId: string) => request<{ characters: any[] }>(`/api/v1/projects/${projectId}/characters/suggest`, { method: "POST" }),
-    dashboard: (projectId: string) => request<any>(`/api/v1/projects/${projectId}/characters/dashboard`),
+    importPreview: (projectId: string) => request<{ summary: any; candidates: CharacterProfile[] }>(`/api/v1/projects/${projectId}/characters/import-from-state/preview`, { method: "POST" }),
+    importFromState: (projectId: string, data?: { selected_candidate_ids: string[] }) => request<CharacterProfile[]>(`/api/v1/projects/${projectId}/characters/import-from-state`, { method: "POST", body: JSON.stringify(data || {}) }),
+    suggest: (projectId: string) => request<{ characters: CharacterProfile[] }>(`/api/v1/projects/${projectId}/characters/suggest`, { method: "POST" }),
+    dashboard: (projectId: string) => request<CharacterDashboard>(`/api/v1/projects/${projectId}/characters/dashboard`),
   },
   characterRelationships: {
-    list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/character-relationships`),
-    create: (projectId: string, data: any) => request<any>(`/api/v1/projects/${projectId}/character-relationships`, { method: "POST", body: JSON.stringify(data) }),
-    createBatch: (projectId: string, data: any[]) => request<{ created: number; ids: number[] }>(`/api/v1/projects/${projectId}/character-relationships/batch`, { method: "POST", body: JSON.stringify(data) }),
-    update: (projectId: string, relId: number, data: any) => request<any>(`/api/v1/projects/${projectId}/character-relationships/${relId}`, { method: "PUT", body: JSON.stringify(data) }),
+    list: (projectId: string) => request<CharacterRelationship[]>(`/api/v1/projects/${projectId}/character-relationships`),
+    create: (projectId: string, data: Partial<CharacterRelationship>) => request<CharacterRelationship>(`/api/v1/projects/${projectId}/character-relationships`, { method: "POST", body: JSON.stringify(data) }),
+    createBatch: (projectId: string, data: Partial<CharacterRelationship>[]) => request<{ created: number; ids: number[] }>(`/api/v1/projects/${projectId}/character-relationships/batch`, { method: "POST", body: JSON.stringify(data) }),
+    update: (projectId: string, relId: number, data: Partial<CharacterRelationship>) => request<CharacterRelationship>(`/api/v1/projects/${projectId}/character-relationships/${relId}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (projectId: string, relId: number) => request<void>(`/api/v1/projects/${projectId}/character-relationships/${relId}`, { method: "DELETE" }),
-    graph: (projectId: string) => request<any>(`/api/v1/projects/${projectId}/character-relationships/graph`),
-    types: () => request<{ types: any[]; statuses: string[] }>(`/api/v1/character-relationship-types`),
+    graph: (projectId: string) => request<RelationshipGraph>(`/api/v1/projects/${projectId}/character-relationships/graph`),
+    types: () => request<{ types: { value: string; label: string }[]; statuses: string[] }>(`/api/v1/character-relationship-types`),
   },
   characterConflicts: {
-    list: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/character-conflicts`),
-    create: (projectId: string, data: any) => request<any>(`/api/v1/projects/${projectId}/character-conflicts`, { method: "POST", body: JSON.stringify(data) }),
-    createBatch: (projectId: string, data: any[]) => request<{ created: number; ids: number[] }>(`/api/v1/projects/${projectId}/character-conflicts/batch`, { method: "POST", body: JSON.stringify(data) }),
-    update: (projectId: string, conflictId: number, data: any) => request<any>(`/api/v1/projects/${projectId}/character-conflicts/${conflictId}`, { method: "PUT", body: JSON.stringify(data) }),
+    list: (projectId: string) => request<CharacterConflict[]>(`/api/v1/projects/${projectId}/character-conflicts`),
+    create: (projectId: string, data: Partial<CharacterConflict>) => request<CharacterConflict>(`/api/v1/projects/${projectId}/character-conflicts`, { method: "POST", body: JSON.stringify(data) }),
+    createBatch: (projectId: string, data: Partial<CharacterConflict>[]) => request<{ created: number; ids: number[] }>(`/api/v1/projects/${projectId}/character-conflicts/batch`, { method: "POST", body: JSON.stringify(data) }),
+    update: (projectId: string, conflictId: number, data: Partial<CharacterConflict>) => request<CharacterConflict>(`/api/v1/projects/${projectId}/character-conflicts/${conflictId}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (projectId: string, conflictId: number) => request<void>(`/api/v1/projects/${projectId}/character-conflicts/${conflictId}`, { method: "DELETE" }),
-    types: () => request<any>(`/api/v1/character-conflict-types`),
+    types: () => request<{ types: { value: string; label: string }[]; statuses: string[] }>(`/api/v1/character-conflict-types`),
   },
   characterAppearances: {
     list: (projectId: string, params?: { character_id?: number; chapter_number?: number }) => {
       let url = `/api/v1/projects/${projectId}/character-appearances`
       if (params?.character_id) url += `?character_id=${params.character_id}`
       else if (params?.chapter_number) url += `?chapter_number=${params.chapter_number}`
-      return request<any[]>(url)
+      return request<CharacterAppearance[]>(url)
     },
-    create: (projectId: string, data: any) => request<any>(`/api/v1/projects/${projectId}/character-appearances`, { method: "POST", body: JSON.stringify(data) }),
-    createBatch: (projectId: string, data: any[]) => request<{ created: number; ids: number[] }>(`/api/v1/projects/${projectId}/character-appearances/batch`, { method: "POST", body: JSON.stringify(data) }),
-    update: (projectId: string, appearanceId: number, data: any) => request<any>(`/api/v1/projects/${projectId}/character-appearances/${appearanceId}`, { method: "PUT", body: JSON.stringify(data) }),
+    create: (projectId: string, data: Partial<CharacterAppearance>) => request<CharacterAppearance>(`/api/v1/projects/${projectId}/character-appearances`, { method: "POST", body: JSON.stringify(data) }),
+    createBatch: (projectId: string, data: Partial<CharacterAppearance>[]) => request<{ created: number; ids: number[] }>(`/api/v1/projects/${projectId}/character-appearances/batch`, { method: "POST", body: JSON.stringify(data) }),
+    update: (projectId: string, appearanceId: number, data: Partial<CharacterAppearance>) => request<CharacterAppearance>(`/api/v1/projects/${projectId}/character-appearances/${appearanceId}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (projectId: string, appearanceId: number) => request<void>(`/api/v1/projects/${projectId}/character-appearances/${appearanceId}`, { method: "DELETE" }),
-    timeline: (projectId: string) => request<any[]>(`/api/v1/projects/${projectId}/character-appearances/timeline`),
-    types: () => request<any>(`/api/v1/character-appearance-types`),
+    timeline: (projectId: string) => request<TimelineEntry[]>(`/api/v1/projects/${projectId}/character-appearances/timeline`),
+    types: () => request<{ types: { value: string; label: string }[]; statuses: string[] }>(`/api/v1/character-appearance-types`),
   },
   export: {
     download: (projectId: string, format: "txt" | "html" = "txt") => {
@@ -329,27 +337,44 @@ export const api = {
     },
     list: (projectId: string, fileType?: string) => {
       const qs = fileType ? `?type=${encodeURIComponent(fileType)}` : ""
-      return request<any[]>(`/api/v1/projects/${projectId}/project-files${qs}`)
+      return request<ProjectFile[]>(`/api/v1/projects/${projectId}/project-files${qs}`)
     },
     setCurrent: (projectId: string, fileId: string) =>
-      request<any>(`/api/v1/projects/${projectId}/project-files/${fileId}/set-current`, { method: "PUT" }),
+      request<ProjectFile>(`/api/v1/projects/${projectId}/project-files/${fileId}/set-current`, { method: "PUT" }),
     getCurrentArchitecture: (projectId: string) =>
-      request<any>(`/api/v1/projects/${projectId}/current-architecture`).catch(() => null),
+      request<ProjectFile>(`/api/v1/projects/${projectId}/current-architecture`).catch(() => null),
     getCurrentOutline: (projectId: string) =>
-      request<any>(`/api/v1/projects/${projectId}/current-outline`).catch(() => null),
+      request<ProjectFile>(`/api/v1/projects/${projectId}/current-outline`).catch(() => null),
     delete: (projectId: string, fileId: string) =>
       request<{ message: string }>(`/api/v1/projects/${projectId}/project-files/${fileId}`, { method: "DELETE" }),
   },
   platform: {
-    titles: (projectId: string) => request<{ titles: string[] }>(`/api/v1/projects/${projectId}/tools/titles`, { method: "POST" }),
-    blurb: (projectId: string) => request<{ blurbs: string[] }>(`/api/v1/projects/${projectId}/tools/blurb`, { method: "POST" }),
-    hookCheck: (projectId: string, chapterNumber = 1) => request<{ analysis: any }>(`/api/v1/projects/${projectId}/tools/hook-check?chapter_number=${chapterNumber}`, { method: "POST" }),
-    chapterHookCheck: (projectId: string, chapterNumber: number) => request<{ analysis: any }>(`/api/v1/projects/${projectId}/tools/chapter-hook-check?chapter_number=${chapterNumber}`, { method: "POST" }),
-    batchHookCheck: (projectId: string) => request<{ chapters: any[] }>(`/api/v1/projects/${projectId}/tools/batch-hook-check`, { method: "POST" }),
-    tags: (projectId: string) => request<{ tags: any }>(`/api/v1/projects/${projectId}/tools/tags`, { method: "POST" }),
-    chapterTitle: (projectId: string, chapterNumber: number) => request<{ titles: string[] }>(`/api/v1/projects/${projectId}/tools/chapter-title?chapter_number=${chapterNumber}`, { method: "POST" }),
-    diagnose: (projectId: string, chapterNumber: number) => request<{ chapter_number: number; diagnosis: string; platform: string }>(`/api/v1/projects/${projectId}/tools/diagnose?chapter_number=${chapterNumber}`, { method: "POST" }),
+    titles: (projectId: string) => request<PlatformTitlesResult>(`/api/v1/projects/${projectId}/tools/titles`, { method: "POST" }),
+    blurb: (projectId: string) => request<PlatformBlurbResult>(`/api/v1/projects/${projectId}/tools/blurb`, { method: "POST" }),
+    hookCheck: (projectId: string, chapterNumber = 1) => request<{ analysis: PlatformHookResult }>(`/api/v1/projects/${projectId}/tools/hook-check?chapter_number=${chapterNumber}`, { method: "POST" }),
+    chapterHookCheck: (projectId: string, chapterNumber: number) => request<{ analysis: PlatformHookResult }>(`/api/v1/projects/${projectId}/tools/chapter-hook-check?chapter_number=${chapterNumber}`, { method: "POST" }),
+    batchHookCheck: (projectId: string) => request<{ chapters: { chapter_number: number, analysis: PlatformHookResult }[] }>(`/api/v1/projects/${projectId}/tools/batch-hook-check`, { method: "POST" }),
+    tags: (projectId: string) => request<PlatformTagsResult>(`/api/v1/projects/${projectId}/tools/tags`, { method: "POST" }),
+    chapterTitle: (projectId: string, chapterNumber: number) => request<PlatformTitlesResult>(`/api/v1/projects/${projectId}/tools/chapter-title?chapter_number=${chapterNumber}`, { method: "POST" }),
+    diagnose: (projectId: string, chapterNumber: number) => request<PlatformDiagnosisResult>(`/api/v1/projects/${projectId}/tools/diagnose?chapter_number=${chapterNumber}`, { method: "POST" }),
     commercialGenerate: (projectId: string, params: Record<string, any>) => request<{ mode: string; result: string; platform: string }>(`/api/v1/projects/${projectId}/tools/commercial-generate?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])).toString()}`, { method: "POST" }),
     profiles: () => request<{ platforms: Record<string, any>; trends: Record<string, any> }>(`/api/v1/platform/profiles`),
+  },
+  materials: {
+    decompose: (projectId: string, rawText: string) => 
+      request<{ entities: MaterialEntity[] }>(`/api/v1/projects/${projectId}/materials/decompose`, { 
+        method: "POST", 
+        body: JSON.stringify({ raw_text: rawText }) 
+      }),
+    diagnose: (projectId: string, entity: MaterialEntity) => 
+      request<{ diagnosis: DiagnosisReport }>(`/api/v1/projects/${projectId}/materials/diagnose`, { 
+        method: "POST", 
+        body: JSON.stringify({ entity }) 
+      }),
+    optimize: (projectId: string, entity: MaterialEntity, diagnosis: DiagnosisReport, userInstruction: string = "") => 
+      request<{ optimized_content: string }>(`/api/v1/projects/${projectId}/materials/optimize`, { 
+        method: "POST", 
+        body: JSON.stringify({ entity, diagnosis, user_instruction: userInstruction }) 
+      }),
   },
 }
