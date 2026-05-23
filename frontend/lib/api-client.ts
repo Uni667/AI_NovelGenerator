@@ -376,5 +376,10 @@ export const api = {
         method: "POST", 
         body: JSON.stringify({ entity, diagnosis, user_instruction: userInstruction }) 
       }),
+    sync: (projectId: string, entities: MaterialEntity[]) => 
+      request<{ message: string; characters_added: number; others_added: number }>(`/api/v1/projects/${projectId}/materials/sync`, { 
+        method: "POST", 
+        body: JSON.stringify({ entities }) 
+      }),
   },
 }

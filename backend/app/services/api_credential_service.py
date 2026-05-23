@@ -12,7 +12,7 @@ from backend.app.utils.crypto import (
     last4,
     mask_api_key,
 )
-from backend.app.services.model_runtime import PROVIDER_DEFAULTS
+from backend.app.services.config_resolver import PROVIDER_DEFAULTS
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ def get_credential(cred_id: str, user_id: str) -> dict | None:
 
 
 def create_credential(user_id: str, data: dict) -> dict:
-    from backend.app.services.model_runtime import infer_provider, normalize_base_url
+    from backend.app.services.config_resolver import infer_provider, normalize_base_url
 
     name = (data.get("name") or "").strip()
     if not name:
@@ -119,7 +119,7 @@ def create_credential(user_id: str, data: dict) -> dict:
 
 
 def update_credential(cred_id: str, user_id: str, data: dict) -> dict:
-    from backend.app.services.model_runtime import infer_provider, normalize_base_url
+    from backend.app.services.config_resolver import infer_provider, normalize_base_url
 
     existing = get_credential(cred_id, user_id)
     if not existing:

@@ -70,7 +70,7 @@ def finalize_chapter(
     )
 
     _emit("progress", {"step": "summary_update", "status": "running", "message": "正在更新全局摘要..."})
-    prompt_summary = prompt_definitions.summary_prompt.format(
+    prompt_summary = prompt_definitions.get_prompt_template(ctx.project_id, 'summary_prompt').format(
         chapter_text=chapter_text, global_summary=old_global_summary
     )
     new_global_summary = invoke_with_cleaning(llm, prompt_summary, cancel_check=_check_cancel)
@@ -80,7 +80,7 @@ def finalize_chapter(
 
     _check_cancel()
     _emit("progress", {"step": "character_state_update", "status": "running", "message": "正在更新角色状态..."})
-    prompt_char_state = prompt_definitions.update_character_state_prompt.format(
+    prompt_char_state = prompt_definitions.get_prompt_template(ctx.project_id, 'update_character_state_prompt').format(
         chapter_text=chapter_text, old_state=old_character_state
     )
     new_char_state = invoke_with_cleaning(llm, prompt_char_state, cancel_check=_check_cancel)
@@ -90,7 +90,7 @@ def finalize_chapter(
 
     _check_cancel()
     _emit("progress", {"step": "plot_arcs_update", "status": "running", "message": "正在更新伏笔暗线台账..."})
-    prompt_plot_arcs = prompt_definitions.update_plot_arcs_prompt.format(
+    prompt_plot_arcs = prompt_definitions.get_prompt_template(ctx.project_id, 'update_plot_arcs_prompt').format(
         chapter_number=novel_number,
         chapter_text=chapter_text,
         global_summary=new_global_summary,
@@ -146,6 +146,6 @@ def enrich_chapter_text(
         timeout=ctx.llm.timeout,
         cancel_token=ctx.cancel_token,
     )
-    prompt = prompt_definitions.enrich_prompt.format(word_number=word_number, chapter_text=chapter_text)
+    prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'enrich_prompt').format(word_number=word_number, chapter_text=chapter_text)
     enriched_text = invoke_with_cleaning(llm, prompt, cancel_check=_check_cancel)
     return enriched_text if enriched_text else chapter_text

@@ -444,7 +444,7 @@ def delete_model_profile(profile_id: str, request: Request):
 @router.post("/api/user/model-profiles/{profile_id}/test")
 def test_model_profile(profile_id: str, request: Request):
     user_id = get_current_user(request)
-    from backend.app.services.model_runtime import ConfigError, _build_runtime, _invoke_chat, _invoke_embedding
+    from backend.app.services.config_resolver import ConfigError, _build_runtime, _invoke_chat, _invoke_embedding
 
     with get_db() as conn:
         profile = _get_profile(conn, user_id, profile_id)

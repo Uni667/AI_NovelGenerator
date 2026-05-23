@@ -42,7 +42,7 @@ def build_chapter_prompt(
     filepath = ctx.filepath
     novel_number = params.chapter_number
     platform_label, platform_rules = get_platform_chapter_guidance(getattr(params, "platform", "tomato"))
-    platform_guidance = prompt_definitions.platform_chapter_guidance_prompt.format(
+    platform_guidance = prompt_definitions.get_prompt_template(ctx.project_id, 'platform_chapter_guidance_prompt').format(
         platform_label=platform_label,
         platform_rules=platform_rules,
     )
@@ -79,7 +79,7 @@ def build_chapter_prompt(
     # 第一章特殊处理
     if novel_number == 1:
         _check_cancel()
-        return prompt_definitions.first_chapter_draft_prompt.format(
+        return prompt_definitions.get_prompt_template(ctx.project_id, 'first_chapter_draft_prompt').format(
             novel_number=novel_number,
             word_number=params.word_number,
             chapter_title=chapter_info["chapter_title"],
@@ -127,7 +127,7 @@ def build_chapter_prompt(
             temperature=0.3, max_tokens=ctx.llm.max_tokens, timeout=ctx.llm.timeout,
         )
 
-        search_prompt = prompt_definitions.knowledge_search_prompt.format(
+        search_prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'knowledge_search_prompt').format(
             chapter_number=novel_number,
             chapter_title=chapter_info["chapter_title"],
             characters_involved=params.characters_involved,
@@ -191,7 +191,7 @@ def build_chapter_prompt(
         filtered_context = "（知识库处理失败）"
 
     _check_cancel()
-    return prompt_definitions.next_chapter_draft_prompt.format(
+    return prompt_definitions.get_prompt_template(ctx.project_id, 'next_chapter_draft_prompt').format(
         user_guidance=params.user_guidance or "无特殊指导",
         global_summary=global_summary_text,
         previous_chapter_excerpt=previous_excerpt,

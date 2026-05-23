@@ -152,7 +152,8 @@ CHAPTER_TITLE_PROMPT = """你是一位番茄免费小说平台的编辑。请根
 
 def _get_llm_and_config(user_id: str, project_id: str):
     """Get LLM adapter and config through ModelRuntimeService."""
-    from backend.app.services.model_runtime import get_runtime_config, _build_chat_adapter, ConfigError
+    from backend.app.services.model_runtime import _build_chat_adapter
+    from backend.app.services.config_resolver import get_runtime_config, ConfigError
 
     try:
         rt = get_runtime_config(user_id, "draft", project_id)

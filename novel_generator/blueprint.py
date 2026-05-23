@@ -79,7 +79,7 @@ def polish_blueprint_text(
             ctx.cancel_token.raise_if_set()
         return False
 
-    prompt = prompt_definitions.blueprint_polish_prompt.format(
+    prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'blueprint_polish_prompt').format(
         platform_label=platform_label,
         platform_story_guidance=platform_story_guidance,
         blueprint_text=blueprint_text,
@@ -195,7 +195,7 @@ def Chapter_blueprint_generate(
         while current_start <= number_of_chapters:
             current_end = min(current_start + chunk_size - 1, number_of_chapters)
             limited_blueprint = limit_chapter_blueprint(final_blueprint)
-            chunk_prompt = prompt_definitions.chunked_chapter_blueprint_prompt.format(
+            chunk_prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'chunked_chapter_blueprint_prompt').format(
                 novel_architecture=architecture_text,
                 chapter_list=limited_blueprint,
                 number_of_chapters=number_of_chapters,
@@ -229,7 +229,7 @@ def Chapter_blueprint_generate(
         return
 
     if chunk_size >= number_of_chapters:
-        prompt = prompt_definitions.chapter_blueprint_prompt.format(
+        prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'chapter_blueprint_prompt').format(
             novel_architecture=architecture_text,
             number_of_chapters=number_of_chapters,
             user_guidance=user_guidance,
@@ -256,7 +256,7 @@ def Chapter_blueprint_generate(
     while current_start <= number_of_chapters:
         current_end = min(current_start + chunk_size - 1, number_of_chapters)
         limited_blueprint = limit_chapter_blueprint(final_blueprint)
-        chunk_prompt = prompt_definitions.chunked_chapter_blueprint_prompt.format(
+        chunk_prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'chunked_chapter_blueprint_prompt').format(
             novel_architecture=architecture_text,
             chapter_list=limited_blueprint,
             number_of_chapters=number_of_chapters,

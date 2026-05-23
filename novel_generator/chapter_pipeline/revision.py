@@ -30,7 +30,7 @@ def rewrite_chapter_by_quality_feedback(
             raise_if_cancelled(task_id)
         return False
 
-    prompt = prompt_definitions.chapter_quality_rewrite_prompt.format(
+    prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'chapter_quality_rewrite_prompt').format(
         platform_label=platform_label,
         platform_rules=platform_rules,
         novel_number=params.chapter_number,
@@ -79,7 +79,7 @@ def revise_chapter_voice(
             raise_if_cancelled(task_id)
         return False
 
-    prompt = prompt_definitions.de_ai_style_revision_prompt.format(
+    prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'de_ai_style_revision_prompt').format(
         platform_label=platform_label,
         platform_rules=platform_rules,
         novel_number=params.chapter_number,

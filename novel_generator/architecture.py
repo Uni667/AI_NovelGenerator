@@ -109,7 +109,7 @@ def polish_architecture_section(
             ctx.cancel_token.raise_if_set()
         return False
 
-    prompt = prompt_definitions.architecture_section_polish_prompt.format(
+    prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'architecture_section_polish_prompt').format(
         platform_label=platform_label,
         platform_story_guidance=platform_story_guidance,
         section_label=section_label,
@@ -212,7 +212,7 @@ def Novel_architecture_generate(
         logger.info("Step1: Generating core_seed_prompt (核心种子) ...")
         _emit("progress", {"step": "core_seed", "status": "running", "message": "正在生成核心种子..."})
 
-        prompt_core = prompt_definitions.core_seed_prompt.format(
+        prompt_core = prompt_definitions.get_prompt_template(ctx.project_id, 'core_seed_prompt').format(
             topic=topic, genre=genre, category=category,
             number_of_chapters=num_chapters, word_number=word_number,
             user_guidance=user_guidance,
@@ -245,7 +245,7 @@ def Novel_architecture_generate(
         logger.info("Step2: Generating character_dynamics_prompt ...")
         _emit("progress", {"step": "character", "status": "running", "message": "正在生成角色架构..."})
 
-        prompt_character = prompt_definitions.character_dynamics_prompt.format(
+        prompt_character = prompt_definitions.get_prompt_template(ctx.project_id, 'character_dynamics_prompt').format(
             core_seed=partial_data["core_seed_result"].strip(),
             user_guidance=user_guidance
         )
@@ -275,7 +275,7 @@ def Novel_architecture_generate(
         logger.info("Generating initial character state from character dynamics ...")
         _emit("progress", {"step": "character_state", "status": "running", "message": "正在生成初始角色状态..."})
 
-        prompt_char_state_init = prompt_definitions.create_character_state_prompt.format(
+        prompt_char_state_init = prompt_definitions.get_prompt_template(ctx.project_id, 'create_character_state_prompt').format(
             character_dynamics=partial_data["character_dynamics_result"].strip()
         )
         character_state_init = invoke_with_cleaning(
@@ -301,7 +301,7 @@ def Novel_architecture_generate(
         logger.info("Step3: Generating world_building_prompt ...")
         _emit("progress", {"step": "world", "status": "running", "message": "正在生成世界观..."})
 
-        prompt_world = prompt_definitions.world_building_prompt.format(
+        prompt_world = prompt_definitions.get_prompt_template(ctx.project_id, 'world_building_prompt').format(
             core_seed=partial_data["core_seed_result"].strip(),
             user_guidance=user_guidance
         )
@@ -331,7 +331,7 @@ def Novel_architecture_generate(
         logger.info("Step4: Generating plot_architecture_prompt ...")
         _emit("progress", {"step": "plot", "status": "running", "message": "正在生成三幕式情节架构..."})
 
-        prompt_plot = prompt_definitions.plot_architecture_prompt.format(
+        prompt_plot = prompt_definitions.get_prompt_template(ctx.project_id, 'plot_architecture_prompt').format(
             core_seed=partial_data["core_seed_result"].strip(),
             character_dynamics=partial_data["character_dynamics_result"].strip(),
             world_building=partial_data["world_building_result"].strip(),
@@ -369,7 +369,7 @@ def Novel_architecture_generate(
         logger.info("Generating initial global summary ...")
         _emit("progress", {"step": "global_summary_init", "status": "running", "message": "正在生成初始全局摘要..."})
 
-        prompt_global_summary = prompt_definitions.initial_global_summary_prompt.format(
+        prompt_global_summary = prompt_definitions.get_prompt_template(ctx.project_id, 'initial_global_summary_prompt').format(
             topic=topic,
             category=category,
             genre=genre,
@@ -404,7 +404,7 @@ def Novel_architecture_generate(
         logger.info("Generating initial plot arcs ledger ...")
         _emit("progress", {"step": "plot_arcs_init", "status": "running", "message": "正在生成伏笔暗线台账..."})
 
-        prompt_plot_arcs = prompt_definitions.initial_plot_arcs_prompt.format(
+        prompt_plot_arcs = prompt_definitions.get_prompt_template(ctx.project_id, 'initial_plot_arcs_prompt').format(
             core_seed=core_seed_result.strip(),
             character_dynamics=character_dynamics_result.strip(),
             world_building=world_building_result.strip(),

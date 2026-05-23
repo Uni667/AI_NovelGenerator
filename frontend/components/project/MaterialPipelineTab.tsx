@@ -107,6 +107,32 @@ export function MaterialPipelineTab() {
     }
   }
 
+  // 步骤 5: 同步入库
+  const handleSync = async () => {
+    if (entities.length === 0) return toast.error("没有可同步的素材")
+    
+    setIsProcessing(true)
+    try {
+      const syncEntities = entities.map(ent => ({
+        ...ent,
+        content: optimizedContents[ent.id] || ent.content
+      }))
+      
+      const res = await api.materials.sync(projectId, syncEntities)
+      toast.success(res.message || `成功添加 ${res.characters_added} 个角色，${res.others_added} 个设定`)
+      
+      setCurrentStep(1)
+      setEntities([])
+      setDiagnoses({})
+      setOptimizedContents({})
+      setRawText("")
+    } catch (err: any) {
+      toast.error(err.message || "同步失败")
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   const getTypeLabel = (type: string) => {
     const map: Record<string, string> = { character: "角色", world_rule: "世界观", plot_arc: "大纲片段", hook: "爽点钩子" }
     return map[type] || type
@@ -275,8 +301,9 @@ export function MaterialPipelineTab() {
                   })}
 
                   <div className="pt-6 border-t border-border mt-6">
-                    <Button className="w-full shadow-glow" size="lg">
-                      <UploadCloud className="w-4 h-4 mr-2" /> 同步至项目核心架构
+                    <Button className="w-full shadow-glow" size="lg" onClick={handleSync} disabled={isProcessing}>
+                      {isProcessing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UploadCloud className="w-4 h-4 mr-2" />}
+                      同步至项目核心架构
                     </Button>
                   </div>
                 </div>

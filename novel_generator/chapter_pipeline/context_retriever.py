@@ -76,7 +76,7 @@ def summarize_recent_chapters(
         chapter_info = chapter_info or {}
         next_chapter_info = next_chapter_info or {}
 
-        prompt = prompt_definitions.summarize_recent_chapters_prompt.format(
+        prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'summarize_recent_chapters_prompt').format(
             combined_text=combined_text,
             novel_number=chapter_info.get("chapter_number", 0),
             chapter_title=chapter_info.get("chapter_title", "未命名"),
@@ -196,7 +196,7 @@ def get_filtered_knowledge_context(
             f"{chapter_info.get('scene_location', '')}"
         )
 
-        prompt = prompt_definitions.knowledge_filter_prompt.format(
+        prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'knowledge_filter_prompt').format(
             chapter_info=formatted_chapter_info,
             retrieved_texts="\n\n".join(formatted_texts) if formatted_texts else "（无检索结果）"
         )

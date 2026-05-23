@@ -1,19 +1,15 @@
-import asyncio
-import logging
 import os
-import time
-import uuid
-
+import logging
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
 
 from backend.app.auth import get_current_user
 from backend.app.services import chapter_service, file_service, project_service
-from backend.app.services.model_runtime import ConfigError, RuntimeConfig, _provider_to_interface, call_chat, call_embedding, create_chat_adapter, create_embedding_adapter, get_runtime_config, mark_used
-from backend.app.utils.sse import HEARTBEAT, SSEEmitter, attach_task_stream, detach_task_stream, reset_task_stream, sse_event_generator
-from llm_errors import LLMInvocationError, coerce_error_info
+from backend.app.services.model_runtime import mark_used
+from backend.app.services.sse_manager import make_streaming_response
+from backend.app.services.task_orchestrator import prepare_generation_task, run_orchestrated_task
+from backend.app.services.generation_context_builder import build_full_context, make_chapter_params
+from backend.app.utils.sse import SSEEmitter
 from novel_generator.cancel_token import CancelToken
-from novel_generator.context import ChapterParams, GenerationContext, ProjectConfig
 from novel_generator.task_manager import (
     bind_cancel_token,
     get_task,
@@ -22,9 +18,7 @@ from novel_generator.task_manager import (
     task_payload,
     unbind_cancel_token,
 )
-from backend.app.services.sse_manager import make_streaming_response
-from backend.app.services.task_orchestrator import prepare_generation_task, build_terminal_error_payload
-from utils import read_file
+from utils import read_file, get_word_count
 
 router = APIRouter(tags=["AI 生成"])
 logger = logging.getLogger(__name__)
@@ -41,129 +35,13 @@ def _check_project(project_id: str, request: Request) -> tuple[dict, dict, str]:
     return project, pconfig, user_id
 
 
-def _get_runtime_config(user_id: str, purpose: str, project_id: str) -> RuntimeConfig:
-    """获取指定用途的运行时配置。所有模型调用的唯一入口。"""
-    try:
-        return get_runtime_config(user_id, purpose, project_id)
-    except ConfigError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+def _require_project_file(project_path: str, filename: str, label: str):
+    if not os.path.exists(os.path.join(project_path, filename)):
+        raise RuntimeError(f"缺少必备文件：{label} ({filename})，请先生成。")
 
 
-def _runtime_to_llm_conf(rt: RuntimeConfig) -> dict:
-    return {
-        "api_key": rt.api_key,
-        "base_url": rt.base_url,
-        "model_name": rt.model,
-        "interface_format": _provider_to_interface(rt.provider),
-        "temperature": rt.temperature or 0.7,
-        "max_tokens": rt.max_tokens or 8192,
-        "timeout": 600,
-    }
-
-
-def _runtime_to_emb_conf(rt: RuntimeConfig) -> dict:
-    return {
-        "api_key": rt.api_key,
-        "base_url": rt.base_url,
-        "model_name": rt.model,
-        "interface_format": _provider_to_interface(rt.provider),
-    }
-
-
-def _optional_embedding_conf(user_id: str, project_id: str) -> dict:
-    try:
-        return _runtime_to_emb_conf(get_runtime_config(user_id, "embedding", project_id))
-    except ConfigError:
-        return {}
-
-
-def _make_ctx(
-    llm_conf: dict,
-    emb_conf: dict,
-    filepath: str,
-    project_id: str = "",
-    user_id: str = "",
-    cancel_token: CancelToken | None = None,
-) -> GenerationContext:
-    return GenerationContext.from_dicts(
-        llm_dict=llm_conf,
-        emb_dict=emb_conf,
-        filepath=filepath,
-        project_id=project_id,
-        user_id=user_id,
-        cancel_token=cancel_token,
-    )
-
-
-def _make_project_cfg(pconfig: dict) -> ProjectConfig:
-    return ProjectConfig(
-        topic=pconfig.get("topic", ""),
-        genre=pconfig.get("genre", ""),
-        category=pconfig.get("category", ""),
-        platform=pconfig.get("platform", "tomato"),
-        num_chapters=pconfig.get("num_chapters", 0),
-        word_number=pconfig.get("word_number", 3000),
-        language=pconfig.get("language", "zh"),
-        user_guidance=pconfig.get("user_guidance", ""),
-        target_reader=pconfig.get("target_reader", ""),
-        reader_direction=pconfig.get("reader_direction", ""),
-        trend_key=pconfig.get("trend_key", ""),
-        custom_trend=pconfig.get("custom_trend", ""),
-        trend_translation=pconfig.get("trend_translation", ""),
-        forbidden=pconfig.get("forbidden", ""),
-        style_requirement=pconfig.get("style_requirement", ""),
-    )
-
-
-def _make_chapter_params(pconfig: dict, chapter_number: int) -> ChapterParams:
-    return ChapterParams(
-        chapter_number=chapter_number,
-        word_number=pconfig.get("word_number", 3000),
-        user_guidance=pconfig.get("user_guidance", ""),
-        platform=pconfig.get("platform", "tomato"),
-        target_reader=pconfig.get("target_reader", ""),
-        reader_direction=pconfig.get("reader_direction", ""),
-        trend_key=pconfig.get("trend_key", ""),
-        custom_trend=pconfig.get("custom_trend", ""),
-        trend_translation=pconfig.get("trend_translation", ""),
-        forbidden=pconfig.get("forbidden", ""),
-        style_requirement=pconfig.get("style_requirement", ""),
-    )
-
-
-
-
-
-def _mask_api_key(api_key: str) -> str:
-    api_key = (api_key or "").strip()
-    if not api_key:
-        return ""
-    if len(api_key) <= 8:
-        return "*" * len(api_key)
-    return f"{api_key[:4]}***{api_key[-4:]}"
-
-
-def _sanitize_base_url(base_url: str) -> str:
-    return (base_url or "").strip().rstrip("/")
-
-
-def _log_llm_selection(task_id: str, project: dict, llm_conf: dict, kind: str) -> None:
-    logger.info(
-        "Generation preflight [task_id=%s kind=%s project_id=%s project_name=%s provider=%s model=%s base_url=%s api_key=%s timeout=%s max_tokens=%s]",
-        task_id,
-        kind,
-        project.get("id"),
-        project.get("name"),
-        llm_conf.get("interface_format", ""),
-        llm_conf.get("model_name", ""),
-        _sanitize_base_url(llm_conf.get("base_url", "")),
-        _mask_api_key(llm_conf.get("api_key", "")),
-        llm_conf.get("timeout"),
-        llm_conf.get("max_tokens"),
-    )
-
-
-
+def _build_terminal_error_payload(task_id: str, step: str, msg: str) -> dict:
+    return {"step": step, "task_id": task_id, "message": msg}
 
 
 @router.get("/api/v1/projects/{project_id}/generate/tasks/{task_id}")
@@ -181,8 +59,7 @@ def cancel_generation_task(project_id: str, task_id: str, request: Request):
     task = get_task(task_id)
     if not task or task.project_id != project_id:
         raise HTTPException(status_code=404, detail="任务不存在")
-    result = request_cancel(task_id)
-    if not result:
+    if not request_cancel(task_id):
         raise HTTPException(status_code=404, detail="任务不存在")
     return task_payload(task_id)
 
@@ -192,40 +69,21 @@ def cancel_generation_task(project_id: str, task_id: str, request: Request):
 async def generate_architecture(project_id: str, request: Request, task_id: str | None = None):
     project, pconfig, user_id = _check_project(project_id, request)
     resolved_task_id = prepare_generation_task(
-        project_id,
-        user_id,
-        "generate_architecture",
-        task_id,
-        {"project_name": project.get("name", ""), "chapter_count": pconfig.get("num_chapters", 0)},
+        project_id, user_id, "generate_architecture", task_id,
+        {"project_name": project.get("name", ""), "chapter_count": pconfig.get("num_chapters", 0)}
     )
-    from backend.app.services.task_orchestrator import run_orchestrated_task
-    return make_streaming_response(
-        request,
-        resolved_task_id,
-        run_orchestrated_task,
-        _run_architecture,
-        project,
-        pconfig,
-        user_id,
-    )
+    return make_streaming_response(request, resolved_task_id, run_orchestrated_task, _run_architecture, project, pconfig, user_id)
 
 
 def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: str, task_id: str | None = None):
     from novel_generator.architecture import Novel_architecture_generate
-
     cancel_token = CancelToken()
     previous_status = project.get("status", "draft")
+    
     if task_id:
         bind_cancel_token(task_id, cancel_token)
 
-    rt = _get_runtime_config(user_id, "architecture", project["id"])
-    llm_conf = _runtime_to_llm_conf(rt)
-    emb_conf = _optional_embedding_conf(user_id, project["id"])
-    if task_id:
-        _log_llm_selection(task_id, project, llm_conf, "architecture")
-
-    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], user_id=user_id, cancel_token=cancel_token)
-    proj_cfg = _make_project_cfg(pconfig)
+    ctx, proj_cfg, rt = build_full_context(user_id, project, pconfig, "architecture", cancel_token, task_id)
 
     try:
         project_service.update_project(project["id"], {"status": "generating"}, user_id)
@@ -235,14 +93,9 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict, user_id
         arch_content = read_file(arch_path) if os.path.exists(arch_path) else ""
         if arch_content.strip():
             file_service.create_project_file(
-                project_id=project["id"],
-                user_id=user_id,
-                type="architecture",
-                title=f"{project.get('name', '')} 架构",
-                filename="Novel_architecture.txt",
-                content=arch_content,
-                source="ai_generated",
-                is_current=True,
+                project_id=project["id"], user_id=user_id, type="architecture",
+                title=f"{project.get('name', '')} 架构", filename="Novel_architecture.txt",
+                content=arch_content, source="ai_generated", is_current=True,
             )
 
         project_service.update_project(project["id"], {"status": "ready"}, user_id)
@@ -260,38 +113,20 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict, user_id
 async def generate_blueprint(project_id: str, request: Request, task_id: str | None = None):
     project, pconfig, user_id = _check_project(project_id, request)
     resolved_task_id = prepare_generation_task(
-        project_id,
-        user_id,
-        "generate_outline",
-        task_id,
-        {"project_name": project.get("name", ""), "chapter_count": pconfig.get("num_chapters", 0)},
+        project_id, user_id, "generate_outline", task_id,
+        {"project_name": project.get("name", ""), "chapter_count": pconfig.get("num_chapters", 0)}
     )
-    from backend.app.services.task_orchestrator import run_orchestrated_task
-    return make_streaming_response(
-        request,
-        resolved_task_id,
-        run_orchestrated_task,
-        _run_blueprint,
-        project,
-        pconfig,
-        user_id,
-    )
+    return make_streaming_response(request, resolved_task_id, run_orchestrated_task, _run_blueprint, project, pconfig, user_id)
 
 
 def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: str, task_id: str | None = None):
     from novel_generator.blueprint import Chapter_blueprint_generate
-
     cancel_token = CancelToken()
     if task_id:
         bind_cancel_token(task_id, cancel_token)
 
     _require_project_file(project["filepath"], "Novel_architecture.txt", "小说架构")
-    rt = _get_runtime_config(user_id, "outline", project["id"])
-    llm_conf = _runtime_to_llm_conf(rt)
-    if task_id:
-        _log_llm_selection(task_id, project, llm_conf, "blueprint")
-    ctx = _make_ctx(llm_conf, {}, project["filepath"], project_id=project["id"], user_id=user_id, cancel_token=cancel_token)
-    proj_cfg = _make_project_cfg(pconfig)
+    ctx, proj_cfg, rt = build_full_context(user_id, project, pconfig, "outline", cancel_token, task_id)
 
     try:
         Chapter_blueprint_generate(ctx, proj_cfg, emitter=emitter, task_id=task_id)
@@ -302,17 +137,13 @@ def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: s
         dir_content = read_file(dir_path) if os.path.exists(dir_path) else ""
         if dir_content.strip():
             file_service.create_project_file(
-                project_id=project["id"],
-                user_id=user_id,
-                type="outline",
-                title=f"{project.get('name', '')} 章节目录",
-                filename="Novel_directory.txt",
-                content=dir_content,
-                source="ai_generated",
-                is_current=True,
+                project_id=project["id"], user_id=user_id, type="outline",
+                title=f"{project.get('name', '')} 章节目录", filename="Novel_directory.txt",
+                content=dir_content, source="ai_generated", is_current=True,
             )
 
         chapter_service.sync_chapters_from_directory(project["id"], project["filepath"], user_id)
+        mark_used(user_id, rt.api_credential_id, rt.model_profile_id)
     finally:
         if task_id:
             unbind_cancel_token(task_id)
@@ -323,132 +154,55 @@ def _run_blueprint(emitter: SSEEmitter, project: dict, pconfig: dict, user_id: s
 async def generate_chapter(project_id: str, chapter_number: int, request: Request, task_id: str | None = None):
     project, pconfig, user_id = _check_project(project_id, request)
     resolved_task_id = prepare_generation_task(
-        project_id,
-        user_id,
-        "generate_chapter",
-        task_id,
-        {"project_name": project.get("name", ""), "chapter_number": chapter_number},
+        project_id, user_id, "generate_chapter", task_id,
+        {"project_name": project.get("name", ""), "chapter_number": chapter_number}
     )
-    from backend.app.services.task_orchestrator import run_orchestrated_task
-    return make_streaming_response(
-        request,
-        resolved_task_id,
-        run_orchestrated_task,
-        _run_chapter_generation,
-        project,
-        pconfig,
-        chapter_number,
-        user_id,
-    )
+    return make_streaming_response(request, resolved_task_id, run_orchestrated_task, _run_chapter_generation, project, pconfig, chapter_number, user_id)
 
 
 @router.post("/api/v1/projects/{project_id}/generate/chapters")
 @router.get("/api/v1/projects/{project_id}/generate/chapters")
-async def generate_chapter_batch(
-    project_id: str,
-    request: Request,
-    start_chapter: int = 1,
-    count: int = 1,
-    task_id: str | None = None,
-):
-    if start_chapter < 1:
-        raise HTTPException(status_code=400, detail="起始章节必须大于 0")
-    if count < 1 or count > 20:
-        raise HTTPException(status_code=400, detail="本轮生成章节数必须在 1 到 20 之间")
+async def generate_chapter_batch(project_id: str, request: Request, start_chapter: int = 1, count: int = 1, task_id: str | None = None):
+    if start_chapter < 1 or count < 1 or count > 20:
+        raise HTTPException(status_code=400, detail="参数有误：起始章节需>0，且本轮生成数需在 1-20 之间")
     project, pconfig, user_id = _check_project(project_id, request)
     resolved_task_id = prepare_generation_task(
-        project_id,
-        user_id,
-        "generate_chapter_batch",
-        task_id,
-        {"project_name": project.get("name", ""), "start_chapter": start_chapter, "count": count},
+        project_id, user_id, "generate_chapter_batch", task_id,
+        {"project_name": project.get("name", ""), "start_chapter": start_chapter, "count": count}
     )
-    from backend.app.services.task_orchestrator import run_orchestrated_task
-    return make_streaming_response(
-        request,
-        resolved_task_id,
-        run_orchestrated_task,
-        _run_chapter_batch_generation,
-        project,
-        pconfig,
-        start_chapter,
-        count,
-        user_id,
-    )
+    return make_streaming_response(request, resolved_task_id, run_orchestrated_task, _run_chapter_batch_generation, project, pconfig, start_chapter, count, user_id)
 
 
-def _run_chapter_batch_generation(
-    emitter: SSEEmitter,
-    project: dict,
-    pconfig: dict,
-    start_chapter: int,
-    count: int,
-    user_id: str,
-    task_id: str | None = None,
-):
+def _run_chapter_batch_generation(emitter: SSEEmitter, project: dict, pconfig: dict, start_chapter: int, count: int, user_id: str, task_id: str | None = None):
     cancel_token = CancelToken()
     if task_id:
         bind_cancel_token(task_id, cancel_token)
     try:
         for offset in range(count):
             chapter_number = start_chapter + offset
-            emitter.emit(
-                "progress",
-                {
-                    "step": "batch",
-                    "status": "running",
-                    "message": f"开始生成第 {chapter_number} 章（{offset + 1}/{count}）",
-                },
-            )
-            _run_chapter_generation(
-                emitter,
-                project,
-                pconfig,
-                chapter_number,
-                user_id,
-                task_id=task_id,
-                cancel_token=cancel_token,
-            )
+            emitter.emit("progress", {"step": "batch", "status": "running", "message": f"开始生成第 {chapter_number} 章（{offset + 1}/{count}）"})
+            _run_chapter_generation(emitter, project, pconfig, chapter_number, user_id, task_id=task_id, cancel_token=cancel_token)
     finally:
         if task_id:
             unbind_cancel_token(task_id)
 
 
-def _run_chapter_generation(
-    emitter: SSEEmitter,
-    project: dict,
-    pconfig: dict,
-    chapter_number: int,
-    user_id: str,
-    task_id: str | None = None,
-    cancel_token: CancelToken | None = None,
-):
+def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int, user_id: str, task_id: str | None = None, cancel_token: CancelToken | None = None):
     from novel_generator.chapter import build_chapter_prompt, generate_chapter_draft
-
+    own_token = False
     if cancel_token is None:
         cancel_token = CancelToken()
         if task_id:
             bind_cancel_token(task_id, cancel_token)
         own_token = True
-    else:
-        own_token = False
 
     try:
         _require_project_file(project["filepath"], "Novel_architecture.txt", "小说架构")
         _require_project_file(project["filepath"], "Novel_directory.txt", "章节目录")
-        rt = _get_runtime_config(user_id, "draft", project["id"])
-        llm_conf = _runtime_to_llm_conf(rt)
-        emb_conf = _optional_embedding_conf(user_id, project["id"])
-        if task_id:
-            _log_llm_selection(task_id, project, llm_conf, "chapter")
+        ctx, _, rt = build_full_context(user_id, project, pconfig, "draft", cancel_token, task_id)
+        params = make_chapter_params(pconfig, chapter_number)
 
-        ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], user_id=user_id, cancel_token=cancel_token)
-        params = _make_chapter_params(pconfig, chapter_number)
-
-        emitter.emit(
-            "progress",
-            {"step": "build_prompt", "status": "running", "message": f"正在构建第 {chapter_number} 章提示词..."},
-        )
+        emitter.emit("progress", {"step": "build_prompt", "status": "running", "message": f"正在构建第 {chapter_number} 章提示词..."})
         prompt_text = build_chapter_prompt(ctx, params, task_id=task_id)
         emitter.emit("progress", {"step": "build_prompt", "status": "done", "message": "提示词构建完成"})
 
@@ -458,17 +212,13 @@ def _run_chapter_generation(
         if draft_text:
             if task_id:
                 raise_if_cancelled(task_id)
-            from utils import get_word_count
-
             wc = get_word_count(draft_text)
             chapter_service.mark_chapter_draft(project["id"], chapter_number, wc)
+            mark_used(user_id, rt.api_credential_id, rt.model_profile_id)
             emitter.emit("progress", {"step": "draft", "status": "done", "message": f"第 {chapter_number} 章草稿生成完成"})
             emitter.emit("partial", {"step": "draft", "content": draft_text[:500] + "..."})
         else:
-            emitter.emit(
-                "error",
-                _build_terminal_error_payload(task_id or "", "draft", "草稿生成返回空内容"),
-            )
+            emitter.emit("error", _build_terminal_error_payload(task_id or "", "draft", "草稿生成返回空内容"))
             raise RuntimeError("草稿生成返回空内容")
     finally:
         if own_token and task_id:
@@ -480,98 +230,58 @@ def _run_chapter_generation(
 async def finalize_chapter_route(project_id: str, chapter_number: int, request: Request, task_id: str | None = None):
     project, pconfig, user_id = _check_project(project_id, request)
     resolved_task_id = prepare_generation_task(
-        project_id,
-        user_id,
-        "finalize_chapter",
-        task_id,
-        {"project_name": project.get("name", ""), "chapter_number": chapter_number},
+        project_id, user_id, "finalize_chapter", task_id,
+        {"project_name": project.get("name", ""), "chapter_number": chapter_number}
     )
-    from backend.app.services.task_orchestrator import run_orchestrated_task
-    return make_streaming_response(
-        request,
-        resolved_task_id,
-        run_orchestrated_task,
-        _run_finalize,
-        project,
-        pconfig,
-        chapter_number,
-        user_id,
-    )
+    return make_streaming_response(request, resolved_task_id, run_orchestrated_task, _run_finalize, project, pconfig, chapter_number, user_id)
 
 
-def _run_finalize(
-    emitter: SSEEmitter,
-    project: dict,
-    pconfig: dict,
-    chapter_number: int,
-    user_id: str,
-    task_id: str | None = None,
-):
+def _run_finalize(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int, user_id: str, task_id: str | None = None):
     from novel_generator.finalization import finalize_chapter
-
     cancel_token = CancelToken()
     if task_id:
         bind_cancel_token(task_id, cancel_token)
 
     try:
-        chapter_filename = os.path.join("chapters", f"chapter_{chapter_number}.txt")
-        _require_project_file(project["filepath"], chapter_filename, f"第 {chapter_number} 章草稿")
-        rt = _get_runtime_config(user_id, "polish", project["id"])
-        llm_conf = _runtime_to_llm_conf(rt)
-        emb_conf = _optional_embedding_conf(user_id, project["id"])
-        if task_id:
-            _log_llm_selection(task_id, project, llm_conf, "finalize")
-
-        ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], user_id=user_id, cancel_token=cancel_token)
-        params = _make_chapter_params(pconfig, chapter_number)
+        _require_project_file(project["filepath"], os.path.join("chapters", f"chapter_{chapter_number}.txt"), f"第 {chapter_number} 章草稿")
+        ctx, _, rt = build_full_context(user_id, project, pconfig, "polish", cancel_token, task_id)
+        params = make_chapter_params(pconfig, chapter_number)
 
         emitter.emit("progress", {"step": "finalize", "status": "running", "message": f"正在定稿第 {chapter_number} 章..."})
         finalize_chapter(ctx, params, emitter=emitter, task_id=task_id)
         if task_id:
             raise_if_cancelled(task_id)
 
-        from utils import get_word_count
-
         chapter_text = read_file(os.path.join(project["filepath"], "chapters", f"chapter_{chapter_number}.txt"))
         wc = get_word_count(chapter_text)
         chapter_service.mark_chapter_final(project["id"], chapter_number, wc)
+        mark_used(user_id, rt.api_credential_id, rt.model_profile_id)
         emitter.emit("progress", {"step": "finalize", "status": "done", "message": f"第 {chapter_number} 章定稿完成"})
     finally:
         if task_id:
             unbind_cancel_token(task_id)
 
 
-# ── 同步生成端点（绕过 SSE/线程池，用于调试和直接调用）──
-
 @router.post("/api/v1/projects/{project_id}/generate/sync/architecture")
 def generate_architecture_sync(project_id: str, request: Request):
     """直接同步生成架构，返回结果文本。不依赖 SSE/线程池。"""
     project, pconfig, user_id = _check_project(project_id, request)
-
     from novel_generator.architecture import Novel_architecture_generate
-    from backend.app.services.model_runtime import get_runtime_config
-    from backend.app.services import file_service, project_service
-    from utils import read_file as _read_file
-
-    rt = _get_runtime_config(user_id, "architecture", project_id)
-    llm_conf = _runtime_to_llm_conf(rt)
-    emb_conf = _optional_embedding_conf(user_id, project_id)
-
-    ctx = _make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project_id, user_id=user_id)
-    proj_cfg = _make_project_cfg(pconfig)
-
+    
+    ctx, proj_cfg, rt = build_full_context(user_id, project, pconfig, "architecture", None)
     project_service.update_project(project_id, {"status": "generating"}, user_id)
 
     try:
         Novel_architecture_generate(ctx, proj_cfg)
         arch_path = os.path.join(project["filepath"], "Novel_architecture.txt")
-        content = _read_file(arch_path) if os.path.exists(arch_path) else ""
+        content = read_file(arch_path) if os.path.exists(arch_path) else ""
         file_service.create_project_file(
             project_id=project_id, user_id=user_id, type="architecture",
             title="架构", filename="Novel_architecture.txt", content=content,
             source="ai_generated", is_current=True,
         )
         project_service.update_project(project_id, {"status": "ready"}, user_id)
+        mark_used(user_id, rt.api_credential_id, rt.model_profile_id)
         return {"success": True, "message": "架构生成完成", "length": len(content)}
     except Exception as exc:
         project_service.update_project(project_id, {"status": "draft"}, user_id)
@@ -579,13 +289,10 @@ def generate_architecture_sync(project_id: str, request: Request):
         raise HTTPException(status_code=500, detail=f"架构生成失败: {exc}")
 
 
-# ── 新增：任务列表、任务重试 ──
-
 @router.get("/api/v1/projects/{project_id}/generate/tasks")
 def list_generation_tasks(project_id: str, request: Request):
     _check_project(project_id, request)
-    from novel_generator.task_manager import list_tasks, task_payload
-
+    from novel_generator.task_manager import list_tasks
     tasks = list_tasks(project_id)
     results = [task_payload(t.task_id) for t in tasks]
     results.sort(key=lambda p: p.get("created_at", 0), reverse=True)
@@ -594,30 +301,24 @@ def list_generation_tasks(project_id: str, request: Request):
 
 @router.post("/api/v1/projects/{project_id}/generate/tasks/{task_id}/retry")
 async def retry_generation_task(project_id: str, task_id: str, request: Request):
-    project, pconfig, user_id = _check_project(project_id, request)
-    from novel_generator.task_manager import get_task
-
+    project, _, _ = _check_project(project_id, request)
     task = get_task(task_id)
     if not task or task.project_id != project_id:
         raise HTTPException(status_code=404, detail="任务不存在")
     if task.status not in ("failed", "cancelled"):
         raise HTTPException(status_code=400, detail="只能重试失败或已取消的任务")
 
-    kind = task.kind
-    metadata = task.metadata or {}
+    kind, metadata = task.kind, task.metadata or {}
+    
     if kind == "generate_architecture":
         return await generate_architecture(project_id, request, task_id=task_id)
     elif kind == "generate_outline":
         return await generate_blueprint(project_id, request, task_id=task_id)
     elif kind == "finalize_chapter":
-        chapter_num = metadata.get("chapter_number", 1)
-        return await finalize_chapter_route(project_id, chapter_num, request, task_id=task_id)
+        return await finalize_chapter_route(project_id, metadata.get("chapter_number", 1), request, task_id=task_id)
     elif kind == "generate_chapter":
-        chapter_num = metadata.get("chapter_number", 1)
-        return await generate_chapter(project_id, chapter_num, request, task_id=task_id)
+        return await generate_chapter(project_id, metadata.get("chapter_number", 1), request, task_id=task_id)
     elif kind == "generate_chapter_batch":
-        start = metadata.get("start_chapter", 1)
-        count = metadata.get("count", 1)
-        return await generate_chapter_batch(project_id, request, start_chapter=start, count=count, task_id=task_id)
+        return await generate_chapter_batch(project_id, request, start_chapter=metadata.get("start_chapter", 1), count=metadata.get("count", 1), task_id=task_id)
     else:
         raise HTTPException(status_code=400, detail=f"不支持重试该任务类型: {kind}")

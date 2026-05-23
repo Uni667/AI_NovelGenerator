@@ -324,7 +324,8 @@ def suggest_characters(project_id: str, request: Request):
         ).fetchall()
         existing = [dict(r) for r in rows]
 
-    from backend.app.services.model_runtime import get_runtime_config, _build_chat_adapter, ConfigError
+    from backend.app.services.model_runtime import _build_chat_adapter
+    from backend.app.services.config_resolver import get_runtime_config, ConfigError
 
     try:
         runtime_cfg = get_runtime_config(user_id, "character", project_id)

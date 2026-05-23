@@ -22,7 +22,8 @@ def _check_project(project_id: str, request: Request) -> tuple[dict, str]:
 
 def _resolve_embedding_config(user_id: str, project_id: str) -> dict:
     """Get embedding runtime config through ModelRuntimeService. Returns dict with keys for downstream."""
-    from backend.app.services.model_runtime import get_runtime_config, ConfigError, _provider_to_interface
+    from backend.app.services.model_runtime import _provider_to_interface
+    from backend.app.services.config_resolver import get_runtime_config, ConfigError
 
     try:
         rt = get_runtime_config(user_id, "embedding", project_id)

@@ -42,3 +42,31 @@ from .state_update import (
     Character_Import_Prompt,
 )
 
+import os
+import json
+
+def get_prompt_template(project_id: str, prompt_key: str) -> str:
+    """
+    Retrieves the prompt template. First checks project config for custom overrides.
+    If none found, returns the default python template.
+    """
+    # Load defaults from this module dynamically
+    default_prompt = globals().get(prompt_key, "")
+    
+    if not project_id:
+        return default_prompt
+        
+    # Read project config
+    try:
+        from backend.app.services.project_service import get_project_config
+        config = get_project_config(project_id)
+        if config and "custom_prompts" in config:
+            return config["custom_prompts"].get(prompt_key, default_prompt)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Error loading custom prompt: {e}")
+        pass
+        
+    return default_prompt
+
+

@@ -113,7 +113,7 @@ def analyze_mid_section_quality(ctx, chapter_text: str, task_id: str | None = No
 
     result = invoke_with_cleaning(
         llm,
-        prompt_definitions.mid_section_quality_prompt.format(chapter_text=middle_text[:2500]),
+        prompt_definitions.get_prompt_template(ctx.project_id, 'mid_section_quality_prompt').format(chapter_text=middle_text[:2500]),
         cancel_check=_check_cancel,
         operation_name="章节中段质检",
         step="mid_check",
@@ -138,7 +138,7 @@ def analyze_dialogue_voice(ctx, chapter_text: str, task_id: str | None = None) -
 
     result = invoke_with_cleaning(
         llm,
-        prompt_definitions.dialogue_voice_check_prompt.format(chapter_text=chapter_text[:3000]),
+        prompt_definitions.get_prompt_template(ctx.project_id, 'dialogue_voice_check_prompt').format(chapter_text=chapter_text[:3000]),
         cancel_check=_check_cancel,
         operation_name="人物话语质检",
         step="dialogue_check",

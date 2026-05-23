@@ -131,6 +131,29 @@ export function WorkbenchTab() {
     loadWorkbenchChapter(selectedChapterNumber)
   }, [selectedChapterNumber])
 
+  // Get the last partial event for streaming draft content
+  const lastPartial = events.filter((e: any) => e.type === "partial").pop()
+
+  // Stream text into editor during generation
+  React.useEffect(() => {
+    if ((sseAction === "chapter" || sseAction === "chapterBatch") && lastPartial?.data?.content) {
+      if (lastPartial.data.step === "draft" || lastPartial.data.step === "voice_polish" || lastPartial.data.step === "quality_rewrite") {
+        setChapterEditorContent(lastPartial.data.content)
+      }
+    }
+  }, [lastPartial, sseAction])
+
+  // Reload chapter text and meta when generation finishes
+  React.useEffect(() => {
+    if (events.length > 0) {
+      const lastEvent = events[events.length - 1]
+      if (lastEvent.type === "done" && (sseAction === "chapter" || sseAction === "chapterBatch" || sseAction === "finalize")) {
+        loadWorkbenchChapter(selectedChapterNumber)
+        refetchChapters()
+      }
+    }
+  }, [events, sseAction, selectedChapterNumber])
+
   return (
     <div className="space-y-6">
       <Card className="glass-panel border-border/40 hover:shadow-[0_0_30px_oklch(0.68_0.19_285/0.1)] transition-all duration-500">
