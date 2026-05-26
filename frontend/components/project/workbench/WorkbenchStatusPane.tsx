@@ -9,7 +9,9 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { Loader2, Target, Eye, FileEdit, Gauge, AlertCircle, Ban, CheckCircle, RefreshCcw, Sparkles, Info } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { useProjectContext } from "../ProjectContext"
-import type { Chapter } from "@/lib/types"
+import type { Chapter, PlatformDiagnosisItem } from "@/lib/types"
+import { parseDiagnosisItems } from "@/lib/types"
+import { DiagnosisFixDialog } from "./DiagnosisFixDialog"
 
 export function WorkbenchStatusPane() {
   const {
@@ -34,6 +36,9 @@ export function WorkbenchStatusPane() {
   } = useProjectContext()
 
   const [accordionValue, setAccordionValue] = useState<string[]>(["basic", "structure", "foreshadow", "wordcount", "quality"])
+  const [diagnosisItems, setDiagnosisItems] = useState<PlatformDiagnosisItem[]>([])
+  const [selectedFixIssues, setSelectedFixIssues] = useState<string[]>([])
+  const [fixDialogOpen, setFixDialogOpen] = useState(false)
 
   const currentWordCount = chapterEditorContent?.length || activeChapterMeta?.word_count || 0
   const targetWordCount = config?.word_number || 3000
@@ -43,6 +48,17 @@ export function WorkbenchStatusPane() {
   const wordCountDiff = currentWordCount - targetWordCount
 
   const totalWords = chapters?.reduce((acc: number, cur: Chapter) => acc + (cur.word_count || 0), 0) || 0
+
+  React.useEffect(() => {
+    if (diagnosisResult) {
+      const items = parseDiagnosisItems(diagnosisResult)
+      setDiagnosisItems(items)
+      setSelectedFixIssues(items.filter(i => i.autoFixable).map(i => i.type))
+    } else {
+      setDiagnosisItems([])
+      setSelectedFixIssues([])
+    }
+  }, [diagnosisResult])
 
   const isChapterAction = sseAction === "chapter" || sseAction === "chapterBatch" || sseAction === "finalize"
   const progressEvents = events.filter((e: any) => e.type === "progress")
@@ -306,19 +322,73 @@ export function WorkbenchStatusPane() {
                     诊断本章文风
                   </Button>
 
-                  {diagnosisResult && (
-                    <div className="space-y-1.5 rounded-lg border border-border/50 bg-secondary/20 p-2 text-[11px] max-h-48 overflow-auto">
-                      <p className="text-[9px] text-muted-foreground uppercase font-semibold border-b border-border/20 pb-1">文风诊断</p>
-                      {diagnosisResult.split("\n").map((line: string, index: number) => {
-                        const isHeader = line.startsWith("【")
-                        if (isHeader) {
-                          return <p key={index} className="font-bold text-[11px] mt-1.5 mb-0.5 text-primary">{line}</p>
-                        }
-                        if (line.trim()) {
-                          return <p key={index} className="leading-relaxed text-muted-foreground text-[10px]">{line}</p>
-                        }
-                        return <div key={index} className="h-0.5" />
-                      })}
+                  {diagnosisItems.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[9px] text-muted-foreground uppercase font-semibold">
+                          诊断问题 ({diagnosisItems.filter(i => i.autoFixable).length} 项可优化)
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedFixIssues(diagnosisItems.filter(i => i.autoFixable).map(i => i.type))
+                            setFixDialogOpen(true)
+                          }}
+                          className="text-[10px] text-primary hover:text-primary/80 font-medium"
+                        >
+                          一键优化本章
+                        </button>
+                      </div>
+                      <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                        {diagnosisItems.filter(i => i.autoFixable).map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-start gap-1.5 rounded-lg border border-border/30 bg-card/10 p-1.5 text-[10px]"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedFixIssues.includes(item.type)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedFixIssues(prev => [...prev, item.type])
+                                } else {
+                                  setSelectedFixIssues(prev => prev.filter(t => t !== item.type))
+                                }
+                              }}
+                              className="mt-0.5 h-3 w-3 shrink-0 accent-primary"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-foreground truncate">{item.type}</p>
+                              <p className="text-muted-foreground leading-tight mt-0.5 line-clamp-2">{item.description}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedFixIssues([item.type])
+                                setFixDialogOpen(true)
+                              }}
+                              className="shrink-0 px-1.5 py-0.5 rounded text-[9px] text-primary hover:bg-primary/10 transition-colors"
+                            >
+                              优化
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      {diagnosisItems.filter(i => !i.autoFixable).length > 0 && (
+                        <details className="text-[9px] text-muted-foreground">
+                          <summary className="cursor-pointer hover:text-foreground">
+                            其他诊断信息 ({diagnosisItems.filter(i => !i.autoFixable).length} 项)
+                          </summary>
+                          <div className="mt-1 space-y-0.5">
+                            {diagnosisItems.filter(i => !i.autoFixable).map((item) => (
+                              <p key={item.id} className="leading-relaxed">
+                                <span className="font-semibold text-foreground">{item.type}：</span>
+                                {item.description}
+                              </p>
+                            ))}
+                          </div>
+                        </details>
+                      )}
                     </div>
                   )}
                 </div>
@@ -326,7 +396,21 @@ export function WorkbenchStatusPane() {
             </AccordionItem>
           </Accordion>
         </CardContent>
-      </Card>
+
+      {/* 根据诊断优化对话框 */}
+      <DiagnosisFixDialog
+        open={fixDialogOpen}
+        onOpenChange={setFixDialogOpen}
+        chapterContent={chapterEditorContent}
+        diagnosis={diagnosisResult}
+        selectedIssues={selectedFixIssues}
+        projectId={projectId}
+        chapterNumber={selectedChapterNumber}
+        onApply={(optimizedContent) => {
+          setFixDialogOpen(false)
+        }}
+      />
+    </Card>
     </div>
   )
 }

@@ -6,6 +6,9 @@ from fastapi.responses import StreamingResponse
 from backend.app.services import project_service, chapter_service
 
 from backend.app.auth import get_current_user
+from sse_starlette.sse import EventSourceResponse
+from pydantic import BaseModel
+from typing import Optional, List
 
 logger = logging.getLogger(__name__)
 
@@ -619,3 +622,75 @@ def get_platform_profiles():
         "platforms": list_platform_profiles(),
         "trends": list_trend_translators(),
     }
+
+
+# ── 10. 根据诊断优化本章（SSE 流式）──────────────────────────────────
+
+FIX_SYSTEM_PROMPT = """你是一位网文平台编辑。根据以下诊断报告对本章进行针对性优化。
+
+要求：
+1. 保留原剧情、人物、事件顺序和关键信息。
+2. 只修复诊断报告中指出的问题，不要擅自新增大剧情。
+3. 不要改变章节核心走向。
+4. 保持原有文风，但提升开篇抓力、情绪张力、节奏和钩子。
+5. 如果有多项问题需要修改，请依次处理。
+6. 输出完整的优化后章节正文。
+7. 不要输出思考过程、不要输出标记，只输出修改后的正文。"""
+
+class DiagnoseFixRequest(BaseModel):
+    chapter_number: int
+    chapter_content: str
+    diagnosis: str
+    selected_issues: List[str] = []
+
+@router.post("/api/v1/projects/{project_id}/tools/diagnose-and-fix")
+async def diagnose_and_fix(project_id: str, body: DiagnoseFixRequest, request: Request):
+    """根据诊断报告对本章进行针对性优化，SSE 流式返回优化结果。"""
+    user_id = get_current_user(request)
+    llm, rt = _get_llm_and_config(user_id, project_id)
+    
+    project = project_service.get_project(project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    
+    pconfig = project_service.get_project_config(project_id)
+    
+    platform_key = pconfig.get("platform", "tomato") if pconfig else "tomato"
+    
+    from novel_generator.commercial_profiles import format_profile_for_prompt
+    platform_text = format_profile_for_prompt(platform_key)
+
+    issues_text = "\n".join([f"- {issue}" for issue in body.selected_issues]) if body.selected_issues else "全部诊断问题"
+
+    fix_prompt = "\n\n".join([
+        FIX_SYSTEM_PROMPT,
+        platform_text,
+        "---",
+        f"目标平台：{platform_key}",
+        "---",
+        "当前章节正文：",
+        body.chapter_content,
+        "---",
+        "诊断报告：",
+        body.diagnosis,
+        "---",
+        "用户要求重点优化的项目：",
+        issues_text,
+        "---",
+        "请输出优化后的完整章节正文。",
+    ])
+
+    async def event_generator():
+        try:
+            yield {"event": "progress", "data": json.dumps({"step": "analyzing", "message": "正在分析诊断报告..."})}
+            
+            result = llm.invoke(fix_prompt)
+            
+            yield {"event": "partial", "data": json.dumps({"content": result})}
+            
+            yield {"event": "done", "data": json.dumps({"step": "done", "message": "优化完成"})}
+        except Exception as e:
+            logger.exception("Diagnose-and-fix failed")
+            yield {"event": "error", "data": json.dumps({"message": str(e)})}
+
+    return EventSourceResponse(event_generator())

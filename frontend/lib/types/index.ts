@@ -496,6 +496,54 @@ export interface PlatformDiagnosisResult {
   platform: string;
 }
 
+export interface PlatformDiagnosisItem {
+  id: string;
+  type: string;
+  description: string;
+  suggestion: string;
+  severity: "low" | "medium" | "high" | "critical";
+  autoFixable: boolean;
+}
+
+export function parseDiagnosisItems(diagnosisText: string): PlatformDiagnosisItem[] {
+  if (!diagnosisText) return [];
+  const items: PlatformDiagnosisItem[] = [];
+  const lines = diagnosisText.split("
+");
+  let currentType = "";
+  let currentDesc = "";
+  for (const line of lines) {
+    const headerMatch = line.match(/^【(.+?)】/);
+    if (headerMatch) {
+      if (currentType && currentDesc) {
+        items.push({
+          id: `item-${items.length}`,
+          type: currentType,
+          description: currentDesc,
+          suggestion: currentDesc,
+          severity: currentType.includes("问题") || currentType.includes("压缩") ? "high" : currentType.includes("建议") || currentType.includes("强化") ? "medium" : "low",
+          autoFixable: !currentType.includes("总体评分") && !currentType.includes("平台适配"),
+        });
+      }
+      currentType = headerMatch[1];
+      currentDesc = line.substring(headerMatch[0].length).trim();
+    } else if (line.trim() && currentType) {
+      currentDesc += (currentDesc ? " " : "") + line.trim();
+    }
+  }
+  if (currentType && currentDesc) {
+    items.push({
+      id: `item-${items.length}`,
+      type: currentType,
+      description: currentDesc,
+      suggestion: currentDesc,
+      severity: currentType.includes("问题") || currentType.includes("压缩") ? "high" : currentType.includes("建议") || currentType.includes("强化") ? "medium" : "low",
+      autoFixable: !currentType.includes("总体评分") && !currentType.includes("平台适配"),
+    });
+  }
+  return items;
+}
+
 export interface MaterialEntity {
   id: string
   type: 'character' | 'world_rule' | 'plot_arc' | 'hook'

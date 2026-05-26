@@ -382,6 +382,7 @@ export const api = {
     tags: (projectId: string) => request<PlatformTagsResult>(`/api/v1/projects/${projectId}/tools/tags`, { method: "POST" }),
     chapterTitle: (projectId: string, chapterNumber: number) => request<PlatformTitlesResult>(`/api/v1/projects/${projectId}/tools/chapter-title?chapter_number=${chapterNumber}`, { method: "POST" }),
     diagnose: (projectId: string, chapterNumber: number) => request<PlatformDiagnosisResult>(`/api/v1/projects/${projectId}/tools/diagnose?chapter_number=${chapterNumber}`, { method: "POST" }),
+    diagnoseAndFix: (projectId: string, data: { chapter_number: number; chapter_content: string; diagnosis: string; selected_issues: string[] }) => { const url = `/api/v1/projects/${projectId}/tools/diagnose-and-fix`; return fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(data) }).then(r => r.json()); },
     commercialGenerate: (projectId: string, params: Record<string, any>) => request<{ mode: string; result: string; platform: string }>(`/api/v1/projects/${projectId}/tools/commercial-generate?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])).toString()}`, { method: "POST" }),
     profiles: () => request<{ platforms: Record<string, any>; trends: Record<string, any> }>(`/api/v1/platform/profiles`),
   },
