@@ -54,10 +54,16 @@ railway up
 
 ### 4. 环境变量（在 Railway Dashboard 中设置）
 
-| 变量 | 说明 |
-|------|------|
-| `ALLOWED_ORIGINS` | CORS 允许的域名，逗号分隔，必须包含 Vercel 前端地址 |
-| `PORT` | Railway 自动注入，无需手动设置 |
+| 变量 | 是否必填 | 说明 |
+|------|---------|------|
+| `ALLOWED_ORIGINS` | 是 | CORS 允许的域名，逗号分隔，必须包含 Vercel 前端地址 |
+| `NEXTAUTH_SECRET` | 是 | JWT 签名密钥（生产环境切勿使用默认值，建议使用随机密钥） |
+| `API_SECRET_ENCRYPTION_KEY` | 是 | API Key 加密密钥（AES-256-GCM，必须是 64 字符的十六进制 32 字节密钥） |
+| `PYTHONUTF8` | 否 | 强制 Python 运行时使用 UTF-8 编码（建议设为 `1`） |
+| `PORT` | 否 | Railway 自动注入，无需手动设置 |
+
+> [!CAUTION]
+> 在生产环境中，**严禁将真实的密钥提交至 Git 仓库**。请确保所有的 API Key 签名与加密密钥都通过部署平台（如 Railway）的环境变量进行配置，并进行定期轮换。
 
 ### 5. 验证
 
@@ -124,6 +130,25 @@ railway up
 cd frontend
 vercel --prod --env NEXT_PUBLIC_API_URL="<后端地址>"
 ```
+
+---
+
+## 数据库自动迁移与版本管理
+
+为了在迭代更新时不丢失用户数据，系统设计了渐进式数据库迁移机制。
+
+### 1. 迁移触发与机制
+- 数据库迁移在后端服务（`init_db`）启动时**自动触发**。
+- 系统首次运行时，会自动创建一个 `schema_version` 表并动态引导（bootstrap）至版本 `1`（legacy 基础版本）。
+- 历史表结构的兼容性代码被保留作为 fallback。未来任何新增字段、表的变更，都必须在 `backend/app/database.py` 的 `run_migrations` 和 `migrations` 字典中登记为增量版本。
+
+### 2. 生产数据库的备份与恢复
+部署更新前，建议先通过 CLI 工具对生产数据库进行备份。
+- 进入容器终端：
+  ```bash
+  python utils/backup.py backup
+  ```
+- 备份包保存在持久卷中的 `/app/data/backups/` 目录下。
 
 ---
 

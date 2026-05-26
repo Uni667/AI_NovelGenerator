@@ -66,6 +66,9 @@ pip install -r backend/requirements.txt
 python run_server.py
 ```
 
+> [!NOTE]
+> `run_server.py` 会自动配置控制台为 UTF-8 编码，并设置 `PYTHONUTF8=1` 环境变量，以解决 Windows 系统下的中文乱码问题。
+
 后端将在 `http://localhost:8001` 启动，API 文档访问 `http://localhost:8001/docs`
 
 ### 4. 启动前端
@@ -133,6 +136,31 @@ AI_NovelGenerator/
 | `GET /api/v1/health` | 健康检查 |
 
 完整的 API 文档请访问 `http://localhost:8001/docs`。
+
+---
+
+## 数据备份与恢复
+
+项目提供了一个跨平台的命令行备份工具 [backup.py](file:///d:/Personal/Desktop/plan/AI_NovelGenerator/utils/backup.py)，可以备份/恢复 SQLite 数据库及本地小说文件资产。
+
+### 1. 备份数据
+```bash
+python utils/backup.py backup
+```
+这将在 `data/backups/` 目录下生成一个形如 `backup_YYYYMMDD_HHMMSS.zip` 的压缩包，包含数据库 `projects.db` 和所有项目文件资产。
+
+### 2. 查看备份列表
+```bash
+python utils/backup.py list
+```
+
+### 3. 恢复数据
+```bash
+python utils/backup.py restore <backup_file_or_path>
+```
+*例如：`python utils/backup.py restore backup_20260526_194116.zip`*
+> [!WARNING]
+> 恢复操作会先自动对当前状态进行安全备份（生成 `pre_restore_safety_*.zip`），然后覆盖现有的数据库和项目文件。
 
 ---
 
