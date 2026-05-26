@@ -51,3 +51,7 @@ data/
 # Claude Code
 .claude/
 .vercel/
+
+# Temporary / Tooling files
+tools/
+_audit_result.txt
