@@ -10,11 +10,13 @@ export function useGenerationState(projectId: string) {
   const [generationTaskId, setGenerationTaskId] = useState<string | null>(null)
   const [generationStopping, setGenerationStopping] = useState(false)
   const [sseAction, setSseAction] = useState<string | null>(null)
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null)
   
   // Settings constraints
   const [generationChapterCount, setGenerationChapterCount] = useState(1)
   const [generationWordCount, setGenerationWordCount] = useState(2000)
   const [batchChapterCount, setBatchChapterCount] = useState(5)
+  const [enableBrainstorming, setEnableBrainstorming] = useState(false)
 
   const generationTaskLabel = sseAction === "architecture" ? "架构与大纲" 
     : sseAction === "blueprint" ? "章节目录"
@@ -52,6 +54,9 @@ export function useGenerationState(projectId: string) {
     quality_rewrite: { label: "自动返修", description: "平台质检未达标时，自动强化开篇和结尾，并修正文风问题" },
     finalize: { label: "章节定稿", description: "定稿章节，并更新全局摘要、角色状态、伏笔暗线和后续上下文" },
     batch: { label: "批量章节生成", description: "按顺序生成多章草稿" },
+    brainstorm_reader: { label: "读者脑暴", description: "毒舌读者 Agent 正在指出原大纲中套路化和缺乏张力的问题" },
+    brainstorm_villain: { label: "反派密谋", description: "反派首脑 Agent 正在谋划突发危机或颠覆性反转" },
+    brainstorm_director: { label: "导演统筹", description: "总导演 Agent 正在融合吐槽与计划，制定突发事件高燃指南" },
   }
 
   const generationStepMeta = (step?: string) => {
@@ -78,7 +83,39 @@ export function useGenerationState(projectId: string) {
   const startTask = (actionName: string, url: string, taskId: string) => {
     setSseAction(actionName)
     setGenerationTaskId(taskId)
-    connect(url)
+    
+    // Ensure the URL has the task_id query parameter and absolute base URL
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+    const urlObj = new URL(url, apiBase)
+    urlObj.searchParams.set("task_id", taskId)
+    const targetUrl = urlObj.toString()
+    
+    setCurrentUrl(targetUrl)
+    connect(targetUrl)
+  }
+
+  const handleRetryGeneration = () => {
+    if (!currentUrl || !generationTaskId || !sseAction) return
+    
+    // Find the last step we were working on
+    let startStep = ""
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].type === "progress" && events[i].data?.step) {
+        startStep = events[i].data.step
+        break
+      }
+    }
+    
+    if (startStep) {
+      toast.info(`尝试从断点 "${generationStepMeta(startStep).label}" 恢复生成...`)
+      const retryUrl = new URL(currentUrl)
+      retryUrl.searchParams.set("start_step", startStep)
+      connect(retryUrl.toString(), { preserveEvents: true })
+    } else {
+      // If no step found, just restart normally
+      toast.info("重新开始生成...")
+      connect(currentUrl, { preserveEvents: false })
+    }
   }
 
   return {
@@ -89,8 +126,9 @@ export function useGenerationState(projectId: string) {
     generationChapterCount, setGenerationChapterCount,
     generationWordCount, setGenerationWordCount,
     batchChapterCount, setBatchChapterCount,
+    enableBrainstorming, setEnableBrainstorming,
     generationTaskLabel, generationProgress, generationRecovering, hasError, generationStepMeta,
-    handleStopGeneration,
+    handleStopGeneration, handleRetryGeneration,
     startTask, stopSse
   }
 }
