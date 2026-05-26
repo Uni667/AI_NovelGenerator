@@ -508,8 +508,7 @@ export interface PlatformDiagnosisItem {
 export function parseDiagnosisItems(diagnosisText: string): PlatformDiagnosisItem[] {
   if (!diagnosisText) return [];
   const items: PlatformDiagnosisItem[] = [];
-  const lines = diagnosisText.split("
-");
+  const lines = diagnosisText.split("\n");
   let currentType = "";
   let currentDesc = "";
   for (const line of lines) {
