@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
-import { getToken } from "@/lib/auth"
+
+import { api } from "@/lib/api-client"
 
 const MAX_EVENTS = 500
 
@@ -88,10 +89,10 @@ export function useSSE() {
     setIsConnected(false)
   }, [clearReconnectTimer])
 
-  const connectRef = useRef<(url: string, options?: ConnectOptions) => void>(() => {})
+  const connectRef = useRef<(url: string, options?: ConnectOptions) => void | Promise<void>>(() => {})
 
   const connect = useCallback(
-    (url: string, options?: ConnectOptions) => {
+    async (url: string, options?: ConnectOptions) => {
       const preserveEvents = options?.preserveEvents ?? false
       const isReconnect = options?.isReconnect ?? false
 
@@ -118,10 +119,21 @@ export function useSSE() {
       const connectionId = connectionSeqRef.current
 
       let sseUrl = url
-      const token = getToken()
-      if (token && !sseUrl.includes("token=")) {
-        sseUrl += sseUrl.includes("?") ? "&" : "?"
-        sseUrl += `token=${encodeURIComponent(token)}`
+      if (!sseUrl.includes("token=")) {
+        try {
+          const res = await api.auth.streamToken()
+          if (res && res.stream_token) {
+            sseUrl += sseUrl.includes("?") ? "&" : "?"
+            sseUrl += `token=${encodeURIComponent(res.stream_token)}`
+          }
+        } catch {
+          setError("获取连接凭证失败，请重试。")
+          return
+        }
+      }
+
+      if (manualDisconnectRef.current || connectionSeqRef.current !== connectionId) {
+        return
       }
 
       const es = new EventSource(sseUrl)

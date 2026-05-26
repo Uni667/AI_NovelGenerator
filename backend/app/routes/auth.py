@@ -51,3 +51,11 @@ def me(request: Request):
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
     return user
+
+
+@router.post("/api/v1/auth/stream-token")
+def get_stream_token(request: Request):
+    from backend.app.auth import create_stream_token
+    user_id = get_current_user(request)
+    token = create_stream_token(user_id)
+    return {"stream_token": token}

@@ -23,10 +23,10 @@ def _get_or_create_secret() -> str:
         return env_secret
     os.makedirs(os.path.dirname(SECRET_FILE), exist_ok=True)
     if os.path.exists(SECRET_FILE):
-        with open(SECRET_FILE, "r") as f:
+        with open(SECRET_FILE, "r", encoding="utf-8") as f:
             return f.read().strip()
     secret = uuid.uuid4().hex
-    with open(SECRET_FILE, "w") as f:
+    with open(SECRET_FILE, "w", encoding="utf-8") as f:
         f.write(secret)
     return secret
 
@@ -108,6 +108,37 @@ def verify_refresh_token(token: str) -> dict:
     except Exception:
         raise HTTPException(status_code=401, detail="无效或过期的刷新令牌")
 
+def create_stream_token(user_id: str) -> str:
+    """创建流式/临时连接令牌（5 分钟）。"""
+    if jwt is None:
+        raise ImportError("pyjwt not installed")
+    secret = _get_or_create_secret()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    payload = {
+        "user_id": user_id,
+        "type": "stream",
+        "aud": "sse",
+        "iat": now,
+        "exp": now + datetime.timedelta(minutes=5),
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def verify_stream_token(token: str) -> dict:
+    """验证流式/临时连接令牌。"""
+    if jwt is None:
+        raise ImportError("pyjwt not installed")
+    secret = _get_or_create_secret()
+    try:
+        payload = jwt.decode(token, secret, audience="sse", algorithms=["HS256"])
+        if payload.get("type") != "stream":
+            raise HTTPException(status_code=401, detail="令牌类型错误")
+        return payload
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="无效或过期的流式认证令牌")
+
 
 def create_token(user_id: str) -> str:
     """兼容旧版，返回 access token。"""
@@ -123,16 +154,11 @@ def get_current_user(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         token = auth.removeprefix("Bearer ")
-        payload = verify_token(token)
+        payload = verify_access_token(token)
         return payload["user_id"]
     # SSE 端点从 query param 传 token（EventSource API 限制）
     token = request.query_params.get("token", "")
     if token:
-        import logging
-        logging.getLogger(__name__).warning(
-            "SSE authentication via query param (token in URL). "
-            "Consider using short-lived tokens for SSE connections."
-        )
-        payload = verify_token(token)
+        payload = verify_stream_token(token)
         return payload["user_id"]
     raise HTTPException(status_code=401, detail="缺少认证令牌")

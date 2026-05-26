@@ -88,3 +88,50 @@ class TestAuthRoutes:
             "Authorization": "Bearer invalid.token.here"
         })
         assert response.status_code == 401
+
+    def test_get_stream_token_success(self, client, auth_headers, test_user):
+        """成功获取短期 stream token并进行验证。"""
+        response = client.post("/api/v1/auth/stream-token", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert "stream_token" in data
+        
+        stream_token = data["stream_token"]
+        from backend.app.auth import verify_stream_token, verify_access_token
+        
+        # 1. verify_stream_token 应该成功解析该 stream token
+        payload = verify_stream_token(stream_token)
+        assert payload["user_id"] == test_user["id"]
+        assert payload["type"] == "stream"
+        assert payload["aud"] == "sse"
+        
+        # 2. verify_access_token 应该拒绝该 stream token
+        with pytest.raises(Exception):
+            verify_access_token(stream_token)
+
+    def test_get_stream_token_unauthorized(self, client):
+        """无 token 请求 stream-token 接口返回 401。"""
+        response = client.post("/api/v1/auth/stream-token")
+        assert response.status_code == 401
+
+    def test_verify_stream_token_rejects_access_token(self, auth_token):
+        """verify_stream_token 应该拒绝标准的 access token。"""
+        from backend.app.auth import verify_stream_token
+        with pytest.raises(Exception):
+            verify_stream_token(auth_token)
+
+    def test_sse_endpoint_rejects_access_token_in_url(self, client, auth_token):
+        """SSE 风格的 URL 参数传入 access token 时应该被拒绝。"""
+        response = client.get("/api/v1/auth/me", params={"token": auth_token})
+        assert response.status_code == 401
+
+    def test_sse_endpoint_accepts_stream_token_in_url(self, client, auth_headers):
+        """SSE 风格的 URL 参数传入 stream token 应成功通过 get_current_user 鉴权。"""
+        response = client.post("/api/v1/auth/stream-token", headers=auth_headers)
+        assert response.status_code == 200
+        stream_token = response.json()["stream_token"]
+        
+        response2 = client.get("/api/v1/auth/me", params={"token": stream_token})
+        assert response2.status_code == 200
+        assert response2.json()["username"] == "testuser"
+

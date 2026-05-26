@@ -1,11 +1,11 @@
 import { getToken } from "./auth"
 import type { 
-  Project, ProjectConfig, Chapter, ProjectFile, GenerationTask, CharacterProfile,
+  Project, ProjectConfig, Chapter, ProjectFile, CharacterProfile,
   CharacterRelationship, CharacterConflict, CharacterAppearance, RelationshipGraph,
-  CharacterDashboard, TimelineEntry, ProjectOverview,
+  CharacterDashboard, TimelineEntry,
   ApiCredential, ModelProfile, ModelAssignment, KnowledgeFile,
   PlatformHookResult, PlatformTitlesResult, PlatformBlurbResult, PlatformTagsResult, PlatformDiagnosisResult,
-  MaterialEntity, DiagnosisReport
+  MaterialEntity, DiagnosisReport, PromptMeta, PromptEntry, ProjectAnalytics
 } from "./types"
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
@@ -119,14 +119,15 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return (await res.text()) as unknown as T
 }
 
-function sseUrl(path: string, taskId?: string): string {
+function sseUrl(path: string, taskId?: string, extraParams?: Record<string, string>): string {
   const url = new URL(`${BASE_URL}${path}`)
-  const token = getToken()
   if (taskId) {
-    url.searchParams.set("task_id", taskId)
+    url.searchParams.append("task_id", taskId)
   }
-  if (token) {
-    url.searchParams.set("token", token)
+  if (extraParams) {
+    Object.entries(extraParams).forEach(([k, v]) => {
+      if (v) url.searchParams.append(k, v)
+    })
   }
   return url.toString()
 }
@@ -140,6 +141,7 @@ export const api = {
     delete: (id: string) => request<void>(`/api/v1/projects/${id}`, { method: "DELETE" }),
     config: (id: string) => request<ProjectConfig>(`/api/v1/projects/${id}/config`),
     updateConfig: (id: string, data: Partial<ProjectConfig>) => request<ProjectConfig>(`/api/v1/projects/${id}/config`, { method: "PUT", body: JSON.stringify(data) }),
+    inferConfig: (data: { user_guidance: string; platform: string }) => request<{ success: boolean; data: any }>("/api/v1/projects/infer-config", { method: "POST", body: JSON.stringify(data) }),
   },
   chapters: {
     list: (projectId: string) => request<Chapter[]>(`/api/v1/projects/${projectId}/chapters`),
@@ -252,12 +254,23 @@ export const api = {
     delete: (projectId: string, fileId: number) => request<void>(`/api/v1/projects/${projectId}/knowledge/files/${fileId}`, { method: "DELETE" }),
     reimport: (projectId: string, fileId: number) => request<KnowledgeFile>(`/api/v1/projects/${projectId}/knowledge/files/${fileId}/reimport`, { method: "POST" }),
     clearVector: (projectId: string) => request<void>(`/api/v1/projects/${projectId}/knowledge/clear-vector`, { method: "DELETE" }),
+    getGraph: (projectId: string) => request<{ nodes: any[]; links: any[] }>(`/api/v1/projects/${projectId}/graph`),
   },
   generate: {
     architecture: (projectId: string, taskId?: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/architecture`, taskId)),
     blueprint: (projectId: string, taskId?: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/blueprint`, taskId)),
-    chapter: (projectId: string, num: number, taskId?: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/chapter/${num}`, taskId)),
-    chapterBatch: (projectId: string, startChapter: number, count: number, taskId?: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/chapters?start_chapter=${startChapter}&count=${count}`, taskId)),
+    chapter: (projectId: string, num: number, taskId?: string, startStep?: string, enableBrainstorming?: boolean) => 
+      new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/chapter/${num}`, taskId, {
+        ...(startStep ? { start_step: startStep } : {}),
+        ...(enableBrainstorming ? { enable_brainstorming: "true" } : {})
+      })),
+    chapterBatch: (projectId: string, startChapter: number, count: number, taskId?: string, startStep?: string, enableBrainstorming?: boolean) => 
+      new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/chapters`, taskId, { 
+        start_chapter: startChapter.toString(), 
+        count: count.toString(), 
+        ...(startStep ? { start_step: startStep } : {}),
+        ...(enableBrainstorming ? { enable_brainstorming: "true" } : {})
+      })),
     finalize: (projectId: string, num: number, taskId?: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/finalize/${num}`, taskId)),
     taskStatus: (projectId: string, taskId: string) => request<any>(`/api/v1/projects/${projectId}/generate/tasks/${taskId}`),
     cancelTask: (projectId: string, taskId: string) => request<any>(`/api/v1/projects/${projectId}/generate/tasks/${taskId}/cancel`, { method: "POST" }),
@@ -306,8 +319,19 @@ export const api = {
     types: () => request<{ types: { value: string; label: string }[]; statuses: string[] }>(`/api/v1/character-appearance-types`),
   },
   export: {
-    download: (projectId: string, format: "txt" | "html" = "txt") => {
-      window.open(sseUrl(`/api/v1/projects/${projectId}/export?format=${format}`), "_blank")
+    download: async (projectId: string, format: "txt" | "html" = "txt") => {
+      const win = window.open("", "_blank")
+      if (!win) return
+      try {
+        const res = await request<{ stream_token: string }>("/api/v1/auth/stream-token", { method: "POST" })
+        const url = new URL(`${BASE_URL}/api/v1/projects/${projectId}/export`)
+        url.searchParams.append("format", format)
+        url.searchParams.append("token", res.stream_token)
+        win.location.href = url.toString()
+      } catch (err) {
+        win.close()
+        console.error("下载失败", err)
+      }
     },
   },
   projectFiles: {
@@ -381,5 +405,47 @@ export const api = {
         method: "POST", 
         body: JSON.stringify({ entities }) 
       }),
+  },
+
+  prompts: {
+    keys: () =>
+      request<{ prompts: PromptMeta[] }>(`/api/v1/prompts/keys`),
+    list: (projectId: string) =>
+      request<{ prompts: PromptEntry[] }>(`/api/v1/projects/${projectId}/prompts`),
+    update: (projectId: string, key: string, content: string) =>
+      request<{ message: string; key: string; is_overridden: boolean }>(`/api/v1/projects/${projectId}/prompts/${key}`, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      }),
+    reset: (projectId: string, key: string) =>
+      request<{ message: string; key: string; is_overridden: boolean }>(`/api/v1/projects/${projectId}/prompts/${key}`, {
+        method: "DELETE",
+      }),
+    snapshots: (projectId: string, key: string) =>
+      request<{ snapshots: { id: string; timestamp: number; readable_time: string; preview: string; content: string }[] }>(`/api/v1/projects/${projectId}/prompts/${key}/snapshots`),
+    restore: (projectId: string, key: string, snapshotId: string) =>
+      request<{ message: string; key: string; content: string }>(`/api/v1/projects/${projectId}/prompts/${key}/restore`, {
+        method: "POST",
+        body: JSON.stringify({ snapshot_id: snapshotId }),
+      }),
+    export: (projectId: string) =>
+      request<{ custom_prompts: Record<string, string> }>(`/api/v1/projects/${projectId}/prompts/export`),
+    import: (projectId: string, customPrompts: Record<string, string>) =>
+      request<{ message: string }>(`/api/v1/projects/${projectId}/prompts/import`, {
+        method: "POST",
+        body: JSON.stringify({ custom_prompts: customPrompts }),
+      }),
+  },
+
+  interactive: {
+    getRewriteUrl: (projectId: string) => `/api/v1/projects/${projectId}/interactive/rewrite`,
+  },
+
+  analytics: {
+    get: (projectId: string) =>
+      request<ProjectAnalytics>(`/api/v1/projects/${projectId}/analytics`),
+  },
+  auth: {
+    streamToken: () => request<{ stream_token: string }>("/api/v1/auth/stream-token", { method: "POST" }),
   },
 }
