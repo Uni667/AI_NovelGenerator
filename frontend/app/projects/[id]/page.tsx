@@ -39,7 +39,7 @@ function ProjectDashboardContent() {
     { value: "reader", label: "读者反馈" },
     { value: "platform", label: (PLATFORM_CONFIG[config?.platform]?.icon || "📖") + " " + (PLATFORM_CONFIG[config?.platform]?.label || "平台") + "工具" },
     { value: "prompts", label: "提示词实验", className: "font-semibold text-purple-400" },
-    { value: "analytics", label: "分析统计" },
+    { value: "analytics", label: "API 使用情况" },
     { value: "settings", label: "参数设置" },
   ] as const
 

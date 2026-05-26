@@ -143,6 +143,56 @@ export interface ChapterContent {
   meta: Chapter | null
 }
 
+// ── Chapter 适配函数 ──
+// 统一章节状态判断和内容访问，避免 DB 状态与文件内容不一致导致的显示问题
+
+export type ChapterStatus = 'pending' | 'draft' | 'final'
+
+export const STATUS_LABEL: Record<ChapterStatus, string> = {
+  pending: '待写',
+  draft: '草稿',
+  final: '定稿',
+}
+
+export const STATUS_BADGE_SHORT: Record<ChapterStatus, string> = {
+  pending: '待',
+  draft: '草',
+  final: '定',
+}
+
+/** 安全获取章节状态，兜底为 pending */
+export function getChapterStatus(chapter: Partial<Chapter> | null | undefined): ChapterStatus {
+  if (!chapter || !chapter.status) return 'pending'
+  if (chapter.status === 'draft' || chapter.status === 'final') return chapter.status
+  return 'pending'
+}
+
+/** 章节是否有草稿内容（status 为 draft 或 final） */
+export function hasDraftContent(chapter: Partial<Chapter> | null | undefined): boolean {
+  const s = getChapterStatus(chapter)
+  return s === 'draft' || s === 'final'
+}
+
+/** 章节是否可编辑（非 final 状态允许编辑） */
+export function isChapterEditable(chapter: Partial<Chapter> | null | undefined): boolean {
+  return getChapterStatus(chapter) !== 'final'
+}
+
+/** 获取章节在中文字符串中状态标记 */
+export function getChapterStatusLabel(status: ChapterStatus): string {
+  return STATUS_LABEL[status] || '待写'
+}
+
+/** 获取章节短状态标记（定/草/待） */
+export function getChapterStatusBadge(status: ChapterStatus): string {
+  return STATUS_BADGE_SHORT[status] || '待'
+}
+
+/** 安全获取字数 */
+export function getChapterWordCount(chapter: Partial<Chapter> | null | undefined): number {
+  return chapter?.word_count || 0
+}
+
 
 export interface SSEProgress {
   step: string

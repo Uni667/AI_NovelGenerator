@@ -9,7 +9,8 @@ import { Loader2, Upload, Sparkles, MoreVertical, Trash2, Copy, Edit3 } from "lu
 import { useProjectContext } from "../ProjectContext"
 import { toast } from "sonner"
 import { api } from "@/lib/api-client"
-import type { Chapter } from "@/lib/types"
+import type { Chapter, ChapterStatus } from "@/lib/types"
+import { getChapterStatus, getChapterStatusBadge } from "@/lib/types"
 import {
   Dialog,
   DialogContent,
@@ -51,6 +52,15 @@ export function WorkbenchSidebar() {
     batchChapterCount,
     setBatchChapterCount,
   } = generation
+
+  // --- Filter state ---
+  const [chapterFilter, setChapterFilter] = useState<ChapterStatus | 'all'>('all')
+
+  const filteredChapters = React.useMemo(() => {
+    if (!chapters) return []
+    if (chapterFilter === 'all') return chapters
+    return chapters.filter((c: Chapter) => c.status === chapterFilter)
+  }, [chapters, chapterFilter])
 
   // --- More-menu state ---
   const [menuOpenChapter, setMenuOpenChapter] = useState<number | null>(null)
@@ -279,13 +289,39 @@ export function WorkbenchSidebar() {
           {completedChapters} 定稿 / {draftChapters} 草稿 / {pendingChapters} 待写
         </CardDescription>
       </CardHeader>
+
+      {/* 筛选标签页 */}
+      <div className="shrink-0 flex items-center gap-0.5 px-3 pb-1.5">
+        {(['all', 'draft', 'final', 'pending'] as const).map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => setChapterFilter(f)}
+            className={`px-2 py-0.5 text-[10px] rounded-md transition-colors ${
+              chapterFilter === f
+                ? 'bg-primary/15 text-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/30'
+            }`}
+          >
+            {f === 'all' ? '全部' : f === 'draft' ? '草稿' : f === 'final' ? '定稿' : '待写'}
+            <span className="ml-1 opacity-60">
+              {f === 'all'
+                ? (chapters?.length || 0)
+                : (chapters?.filter((c: Chapter) => c.status === f).length || 0)}
+            </span>
+          </button>
+        ))}
+      </div>
+
       <CardContent className="p-0 flex-1 min-h-0">
         {!chapters?.length ? (
           <div className="px-4 pb-6 text-sm text-muted-foreground">暂无章节，请新建或导入章节。</div>
+        ) : filteredChapters.length === 0 ? (
+          <div className="px-4 pb-6 text-sm text-muted-foreground">当前筛选条件下没有章节。</div>
         ) : (
           <ScrollArea className="h-full pr-2">
             <div className="space-y-1 p-2">
-              {chapters.map((chapter: Chapter) => (
+              {filteredChapters.map((chapter: Chapter) => (
                 <div
                   key={chapter.chapter_number}
                   className={`group/chapter w-full rounded-lg text-left transition-all duration-200 border flex items-stretch ${
@@ -325,7 +361,7 @@ export function WorkbenchSidebar() {
                             : "bg-secondary text-muted-foreground"
                         }`}
                       >
-                        {chapter.status === "final" ? "定" : chapter.status === "draft" ? "草" : "待"}
+                        {getChapterStatusBadge(getChapterStatus(chapter))}
                       </Badge>
                       {chapter.word_count > 0 && (
                         <span className="text-[8px] text-muted-foreground tabular-nums">{chapter.word_count}</span>

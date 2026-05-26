@@ -63,7 +63,7 @@ export function DeleteChapterDialog({
             确认删除草稿？
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground/80 mt-2 leading-relaxed">
-            删除后第 <strong>{chapter.chapter_number}</strong> 章「{chapter.chapter_title || "未命名"}」的草稿内容将被移除，<strong className="text-destructive">此操作不可撤销</strong>。
+            将清除第 <strong>{chapter.chapter_number}</strong> 章「{chapter.chapter_title || "未命名"}」的正文内容，章节状态将恢复为<strong>待写</strong>，大纲信息保留。<br /><strong className="text-destructive">此操作不可撤销。</strong>
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="mt-4 flex gap-2 justify-end">

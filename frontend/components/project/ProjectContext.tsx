@@ -41,7 +41,15 @@ export function ProjectProvider({ projectId, children }: { projectId: string; ch
 
   const [batchUploading, setBatchUploading] = useState(false)
   const batchFileRef = useRef<HTMLInputElement | null>(null)
-  const [activeTab, setActiveTab] = useState("overview")
+  const [activeTab, setActiveTab] = useState(() => {
+    // 支持从 URL 参数读取初始 tab（例如侧栏点击 API 使用情况）
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const tabParam = params.get('tab')
+      if (tabParam) return tabParam
+    }
+    return "overview"
+  })
   const [selectedOutputFile, setSelectedOutputFile] = useState("Novel_architecture.txt")
 
   const value: ProjectContextType = {

@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BookOpen, Settings, Plus, Home, Menu, Sun, Moon } from "lucide-react"
+import { BookOpen, Settings, Plus, Home, Menu, Sun, Moon, BarChart3 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
@@ -97,6 +97,18 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             模型管理中心
           </Button>
         </Link>
+
+        {/* API 使用情况 — 如果在项目页面则链接到分析面板，否则到设置页 */}
+        <Link
+          href={pathname.startsWith('/projects/') ? `${pathname}?tab=analytics` : '/settings'}
+          onClick={onNavigate}
+        >
+          <Button variant="ghost" className="w-full justify-start gap-2" size="sm">
+            <BarChart3 className="h-4 w-4" />
+            API 使用情况
+          </Button>
+        </Link>
+
         <div className="flex items-center gap-2 px-1 py-1.5 text-sm text-muted-foreground">
           <User className="h-3.5 w-3.5" />
           <span className="truncate">{getUser()?.username || "未登录"}</span>

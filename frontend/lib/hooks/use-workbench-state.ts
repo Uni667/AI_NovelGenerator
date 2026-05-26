@@ -27,13 +27,19 @@ export function useWorkbenchState(projectId: string) {
     }
   }, [projectId])
 
-  const saveWorkbenchChapter = useCallback(async () => {
+  const saveWorkbenchChapter = useCallback(async (): Promise<Chapter | null> => {
     setChapterEditorSaving(true)
     try {
-      await api.chapters.update(projectId, selectedChapterNumber, { content: chapterEditorContent })
+      const res = await api.chapters.update(projectId, selectedChapterNumber, { content: chapterEditorContent })
+      const meta = res.meta || null
+      if (meta) {
+        setActiveChapterMeta(meta)
+      }
       toast.success("保存成功")
+      return meta
     } catch (error) {
       toast.error((error as Error).message || "保存草稿失败")
+      return null
     } finally {
       setChapterEditorSaving(false)
     }

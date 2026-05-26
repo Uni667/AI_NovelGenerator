@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { Play, FileText, FileDown, BookOpen } from "lucide-react"
+import { Play, FileText, FileDown, BookOpen, BarChart3 } from "lucide-react"
 import { ArchitectureStatusCard } from "@/components/files/ArchitectureStatusCard"
 import { OutlineStatusCard } from "@/components/files/OutlineStatusCard"
 import { Progress } from "@/components/ui/progress"
@@ -221,6 +221,9 @@ export function OverviewTab() {
           </Button>
           <Button variant="outline" onClick={() => setActiveTab("workbench")} className="hover:bg-accent/40">
             <BookOpen className="h-4 w-4 mr-2 text-emerald-400" />进入章节工作台
+          </Button>
+          <Button variant="outline" onClick={() => setActiveTab("analytics")} className="hover:bg-accent/40">
+            <BarChart3 className="h-4 w-4 mr-2 text-amber-400" />API 使用情况
           </Button>
         </CardContent>
       </Card>

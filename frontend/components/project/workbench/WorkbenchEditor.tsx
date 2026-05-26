@@ -316,25 +316,75 @@ export function WorkbenchEditor() {
               onClose={() => setToolbarState(prev => ({ ...prev, visible: false }))}
               onSubmit={handleRewriteSubmit}
             />
+
+            {/* Empty draft content warning */}
+            {!chapterEditorContent && activeChapterMeta?.status === 'draft' && (
+              <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                <div className="rounded-full bg-amber-500/10 p-3 mb-3">
+                  <AlertCircle className="h-6 w-6 text-amber-400" />
+                </div>
+                <p className="text-sm font-semibold text-amber-400">草稿内容为空</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                  该章节状态为"草稿"，但正文内容不存在。可能文件已被删除或生成过程出现异常。
+                </p>
+                <p className="text-xs text-muted-foreground mt-3">
+                  请尝试重新生成，或在下方编辑器中直接编写内容后保存。
+                </p>
+              </div>
+            )}
+
+            {/* Final chapter read-only indicator */}
+            {activeChapterMeta?.status === 'final' && (
+              <div className="absolute top-2 right-2 z-10">
+                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 text-[10px]">
+                  <CheckCircle className="h-3 w-3" />
+                  已定稿
+                </span>
+              </div>
+            )}
+
             <Textarea
               ref={textareaRef}
               value={chapterEditorContent}
-              onChange={(event) => setChapterEditorContent(event.target.value)}
-              onMouseUp={handleMouseUp}
+              onChange={(event) => {
+                if (activeChapterMeta?.status === 'final') {
+                  toast.info('该章节已定稿，如需编辑请先取消定稿。')
+                  return
+                }
+                setChapterEditorContent(event.target.value)
+              }}
+              onMouseUp={(e) => {
+                if (activeChapterMeta?.status === 'final') return
+                handleMouseUp(e)
+              }}
               onKeyUp={(e) => {
-                 // Also handle keyboard selection
+                 if (activeChapterMeta?.status === 'final') return
                  if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
                    handleMouseUp(e as any)
                  }
               }}
-              className="h-full w-full resize-none font-serif text-base md:text-lg md:leading-8 leading-7 tracking-wider p-6 md:p-8 bg-background/30 focus-visible:ring-primary/25 border-border/80 rounded-xl transition-all [field-sizing:fixed] overflow-y-auto"
-              placeholder="在这里生成、编辑、保存章节草稿... 选中任意文字即可进行局部指令重写。"
+              className={`h-full w-full resize-none font-serif text-base md:text-lg md:leading-8 leading-7 tracking-wider p-6 md:p-8 bg-background/30 border-border/80 rounded-xl transition-all [field-sizing:fixed] overflow-y-auto ${
+                activeChapterMeta?.status === 'final'
+                  ? 'focus-visible:ring-0 opacity-70 cursor-not-allowed'
+                  : 'focus-visible:ring-primary/25'
+              }`}
+              placeholder={
+                activeChapterMeta?.status === 'final'
+                  ? '该章节已定稿，内容为只读。'
+                  : activeChapterMeta?.status === 'draft' && !chapterEditorContent
+                  ? '草稿内容为空，在此编写后保存可恢复。'
+                  : '在此编写章节内容... 选中任意文字可进行局部改写。'
+              }
+              readOnly={activeChapterMeta?.status === 'final'}
             />
           </div>
         )}
 
         <div className="flex flex-wrap items-center gap-2 pt-2 shrink-0">
-          <Button size="sm" onClick={saveWorkbenchChapter} disabled={chapterEditorSaving || chapterEditorLoading}>
+          <Button size="sm" onClick={async () => {
+            const meta = await saveWorkbenchChapter()
+            if (meta) refetchChapters()
+          }} disabled={chapterEditorSaving || chapterEditorLoading}>
             {chapterEditorSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5 text-primary-foreground" />}
             保存
           </Button>
