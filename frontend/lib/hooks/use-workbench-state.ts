@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { api } from "@/lib/api-client"
 import { toast } from "sonner"
 import type { Chapter } from "@/lib/types"
@@ -12,7 +12,7 @@ export function useWorkbenchState(projectId: string) {
   const [chapterEditorSaving, setChapterEditorSaving] = useState(false)
   const [activeChapterMeta, setActiveChapterMeta] = useState<Chapter | null>(null)
 
-  const loadWorkbenchChapter = async (num: number) => {
+  const loadWorkbenchChapter = useCallback(async (num: number) => {
     setChapterEditorLoading(true)
     try {
       const res = await api.chapters.get(projectId, num)
@@ -25,9 +25,9 @@ export function useWorkbenchState(projectId: string) {
     } finally {
       setChapterEditorLoading(false)
     }
-  }
+  }, [projectId])
 
-  const saveWorkbenchChapter = async () => {
+  const saveWorkbenchChapter = useCallback(async () => {
     setChapterEditorSaving(true)
     try {
       await api.chapters.update(projectId, selectedChapterNumber, { content: chapterEditorContent })
@@ -37,7 +37,7 @@ export function useWorkbenchState(projectId: string) {
     } finally {
       setChapterEditorSaving(false)
     }
-  }
+  }, [projectId, selectedChapterNumber, chapterEditorContent])
 
   return {
     selectedChapterNumber, setSelectedChapterNumber,
