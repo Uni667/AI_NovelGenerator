@@ -32,6 +32,42 @@ def get_db():
         conn.close()
 
 
+def bootstrap_schema_version(conn: sqlite3.Connection) -> int:
+    """检测数据库状态并在不存在 schema_version 表时进行初始化引导。"""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)")
+    except Exception as e:
+        logger.warning(f"Failed to create schema_version table: {e}")
+        return 0
+
+    row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
+    if row:
+        return row[0]
+
+    # 由于 init_db 中的 legacy 建表与历史 ALTER 语句均已执行完毕，
+    # 首次引导时直接将当前版本记为 1 (legacy 基础版本)。
+    conn.execute("INSERT INTO schema_version (version) VALUES (1)")
+    logger.info("Database schema version bootstrapped to version 1 (legacy baseline).")
+    return 1
+
+
+def run_migrations(conn: sqlite3.Connection) -> None:
+    current_version = bootstrap_schema_version(conn)
+    # 定义未来版本化迁移函数
+    migrations = {
+        # 2: migrate_to_version_2, 等
+    }
+    target_version = 1  # 添加新迁移时递增此版本号
+    
+    if current_version < target_version:
+        logger.info(f"Database migrations in progress: version {current_version} -> {target_version}")
+        for v in range(current_version + 1, target_version + 1):
+            if v in migrations:
+                migrations[v](conn)
+                conn.execute("UPDATE schema_version SET version = ?", (v,))
+                logger.info(f"Database successfully migrated to version {v}")
+
+
 def init_db():
     with get_db() as conn:
         # 修复旧版 model_profile 表：如果存在但缺少 api_credential_id 列则删除重建
@@ -230,7 +266,9 @@ def init_db():
                 retryable INTEGER DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                finished_at TEXT
+                finished_at TEXT,
+                current_step TEXT DEFAULT '',
+                step_data TEXT DEFAULT ''
             );
 
             CREATE INDEX IF NOT EXISTS idx_generation_task_project ON generation_task(project_id);
@@ -425,6 +463,8 @@ def init_db():
             ("progress", "INTEGER DEFAULT 0"),
             ("started_at", "TEXT"),
             ("completed_at", "TEXT"),
+            ("current_step", "TEXT DEFAULT ''"),
+            ("step_data", "TEXT DEFAULT ''"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE generation_task ADD COLUMN {col} {defn}")
@@ -519,3 +559,10 @@ def init_db():
                 os.makedirs(os.path.join(row["filepath"], "chapters"), exist_ok=True)
         except Exception as e:
             logger.warning("project filepath migration skipped: %s", e)
+
+        # ── 引导与执行版本化数据库迁移 ──
+        try:
+            bootstrap_schema_version(conn)
+            run_migrations(conn)
+        except Exception as e:
+            logger.error("Failed to run database migrations", exc_info=True)

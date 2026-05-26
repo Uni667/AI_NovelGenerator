@@ -24,245 +24,8 @@ def setup_test_db():
     import backend.app.database as db_module
     db_module.DB_PATH = test_db_path
 
-    # 创建测试数据库
-    conn = get_connection()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS user (
-            id TEXT PRIMARY KEY,
-            username TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS project (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-            name TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            filepath TEXT NOT NULL UNIQUE,
-            status TEXT DEFAULT 'draft',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS project_config (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-            topic TEXT DEFAULT '',
-            genre TEXT DEFAULT '',
-            num_chapters INTEGER DEFAULT 0,
-            word_number INTEGER DEFAULT 3000,
-            user_guidance TEXT DEFAULT '',
-            language TEXT DEFAULT 'zh',
-            platform TEXT DEFAULT 'tomato',
-            category TEXT DEFAULT '',
-            target_reader TEXT DEFAULT '',
-            reader_direction TEXT DEFAULT '',
-            trend_key TEXT DEFAULT '',
-            custom_trend TEXT DEFAULT '',
-            trend_translation TEXT DEFAULT '',
-            forbidden TEXT DEFAULT '',
-            style_requirement TEXT DEFAULT ''
-        );
-        CREATE TABLE IF NOT EXISTS chapter (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT REFERENCES user(id) ON DELETE CASCADE,
-            project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-            chapter_number INTEGER NOT NULL,
-            chapter_title TEXT DEFAULT '',
-            chapter_role TEXT DEFAULT '',
-            chapter_purpose TEXT DEFAULT '',
-            suspense_level TEXT DEFAULT '',
-            foreshadowing TEXT DEFAULT '',
-            plot_twist_level TEXT DEFAULT '',
-            chapter_summary TEXT DEFAULT '',
-            word_count INTEGER DEFAULT 0,
-            status TEXT DEFAULT 'pending',
-            draft_file TEXT DEFAULT '',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            UNIQUE(project_id, chapter_number)
-        );
-        CREATE TABLE IF NOT EXISTS character_profile (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-            name TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            file_path TEXT DEFAULT '',
-            status TEXT DEFAULT 'appeared',
-            source TEXT DEFAULT 'user',
-            first_appearance_chapter INTEGER,
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS api_credential (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-            name TEXT NOT NULL,
-            provider TEXT NOT NULL DEFAULT 'openai',
-            api_key_encrypted TEXT,
-            api_key_last4 TEXT DEFAULT '',
-            api_key_hash TEXT DEFAULT '',
-            base_url TEXT NOT NULL DEFAULT '',
-            headers_encrypted TEXT,
-            status TEXT NOT NULL DEFAULT 'untested',
-            is_default INTEGER NOT NULL DEFAULT 0,
-            last_tested_at TEXT,
-            last_used_at TEXT,
-            last_error TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS model_profile (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-            name TEXT NOT NULL,
-            type TEXT NOT NULL DEFAULT 'chat',
-            purpose TEXT NOT NULL DEFAULT 'general',
-            provider TEXT NOT NULL DEFAULT 'openai',
-            base_url TEXT DEFAULT '',
-            model TEXT NOT NULL DEFAULT '',
-            temperature REAL,
-            max_tokens INTEGER,
-            top_p REAL,
-            supports_streaming INTEGER NOT NULL DEFAULT 1,
-            supports_json INTEGER NOT NULL DEFAULT 1,
-            context_window INTEGER,
-            api_credential_id TEXT REFERENCES api_credential(id) ON DELETE SET NULL,
-            is_default INTEGER NOT NULL DEFAULT 0,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            health_status TEXT NOT NULL DEFAULT 'untested',
-            last_tested_at TEXT,
-            last_used_at TEXT,
-            last_error TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS project_model_assignment (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-            project_id TEXT NOT NULL UNIQUE REFERENCES project(id) ON DELETE CASCADE,
-            architecture_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
-            worldbuilding_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
-            character_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
-            outline_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
-            draft_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
-            polish_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
-            review_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
-            summary_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
-            feedback_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
-            embedding_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
-            rerank_profile_id TEXT REFERENCES model_profile(id) ON DELETE SET NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS generation_task (
-            id TEXT PRIMARY KEY,
-            user_id TEXT REFERENCES user(id) ON DELETE CASCADE,
-            project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-            type TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            input_snapshot TEXT DEFAULT '',
-            output_file_id TEXT,
-            error_message TEXT,
-            error_code TEXT,
-            error_category TEXT,
-            retryable INTEGER DEFAULT 0,
-            purpose TEXT DEFAULT '',
-            model_profile_id TEXT,
-            api_credential_id TEXT,
-            progress INTEGER DEFAULT 0,
-            started_at TEXT,
-            completed_at TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            finished_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS knowledge_file (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT REFERENCES user(id) ON DELETE CASCADE,
-            project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-            filename TEXT NOT NULL,
-            filepath TEXT NOT NULL,
-            file_size INTEGER DEFAULT 0,
-            imported INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS project_file (
-            id TEXT PRIMARY KEY,
-            user_id TEXT REFERENCES user(id) ON DELETE CASCADE,
-            project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-            type TEXT NOT NULL,
-            title TEXT NOT NULL DEFAULT '',
-            filename TEXT NOT NULL,
-            content TEXT NOT NULL DEFAULT '',
-            source TEXT NOT NULL DEFAULT 'ai_generated',
-            is_current INTEGER NOT NULL DEFAULT 0,
-            file_size INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS character_relationship (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-            character_id_a INTEGER NOT NULL REFERENCES character_profile(id) ON DELETE CASCADE,
-            character_id_b INTEGER NOT NULL REFERENCES character_profile(id) ON DELETE CASCADE,
-            rel_type TEXT NOT NULL DEFAULT '',
-            description TEXT DEFAULT '',
-            strength REAL DEFAULT 0.5,
-            direction TEXT DEFAULT 'bidirectional',
-            start_chapter INTEGER,
-            status TEXT DEFAULT 'active',
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS character_conflict (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-            title TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            conflict_type TEXT DEFAULT '',
-            intensity REAL DEFAULT 0.5,
-            start_chapter INTEGER,
-            resolved_chapter INTEGER,
-            resolution TEXT DEFAULT '',
-            status TEXT DEFAULT 'active',
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS character_conflict_participant (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            conflict_id INTEGER NOT NULL REFERENCES character_conflict(id) ON DELETE CASCADE,
-            character_id INTEGER NOT NULL REFERENCES character_profile(id) ON DELETE CASCADE,
-            role TEXT DEFAULT 'participant',
-            UNIQUE(conflict_id, character_id)
-        );
-        CREATE TABLE IF NOT EXISTS character_appearance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-            character_id INTEGER NOT NULL REFERENCES character_profile(id) ON DELETE CASCADE,
-            chapter_number INTEGER NOT NULL,
-            appearance_type TEXT DEFAULT 'present',
-            role_in_chapter TEXT DEFAULT '',
-            summary TEXT DEFAULT '',
-            updated_at TEXT NOT NULL,
-            UNIQUE(character_id, chapter_number)
-        );
-        CREATE TABLE IF NOT EXISTS model_invocation_log (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-            project_id TEXT REFERENCES project(id) ON DELETE SET NULL,
-            task_id TEXT,
-            api_credential_id TEXT,
-            model_profile_id TEXT,
-            provider TEXT NOT NULL DEFAULT '',
-            model TEXT NOT NULL DEFAULT '',
-            purpose TEXT NOT NULL DEFAULT 'general',
-            input_chars INTEGER,
-            output_chars INTEGER,
-            latency_ms INTEGER,
-            success INTEGER NOT NULL DEFAULT 0,
-            error_code TEXT,
-            error_message TEXT,
-            created_at TEXT NOT NULL
-        );
-    """)
-    conn.close()
+    # 创建测试数据库并执行完整的引导/迁移逻辑
+    db_module.init_db()
 
     yield
 
@@ -347,3 +110,91 @@ def test_project(test_user):
         "name": "测试项目",
         "filepath": f"/tmp/test_{project_id}"
     }
+
+
+class MockCancelToken:
+    def raise_if_set(self):
+        pass
+    def bind(self, obj):
+        pass
+    def is_set(self):
+        return False
+
+
+class MockLLMAdapter:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        
+    def invoke(self, prompt: str, **kwargs) -> str:
+        if "【层级压缩与无损瘦身】" in prompt:
+            return "This is a compressed summary."
+        if "更新前文摘要" in prompt:
+            return "A" * 2000
+        if "单章微型剧情摘要" in prompt:
+            return "This is a single chapter summary."
+        if "以下是新完成的章节文本" in prompt:
+            return "This is updated state."
+        if "drafting" in prompt or "生成第" in prompt or "修订" in prompt or "返修" in prompt:
+            return "This is a generated chapter draft"
+        if "质检" in prompt or "分析" in prompt:
+            return '{"score": 8, "has_hook": true, "suggestion": "Looks good"}'
+        return "Mock response"
+
+
+@pytest.fixture
+def mock_llm_adapter(monkeypatch):
+    def _mock_create_adapter(*args, **kwargs):
+        return MockLLMAdapter(**kwargs)
+        
+    # Mock at the entry points where it is actually called
+    monkeypatch.setattr("backend.app.services.model_runtime.create_chat_adapter_from_config", _mock_create_adapter)
+    monkeypatch.setattr("novel_generator.chapter.create_llm_adapter", _mock_create_adapter)
+    monkeypatch.setattr("novel_generator.finalization.create_llm_adapter", _mock_create_adapter)
+    monkeypatch.setattr("novel_generator.chapter_pipeline.adapters.create_llm_adapter", _mock_create_adapter)
+    monkeypatch.setattr("novel_generator.chapter_pipeline.prompt_builder.create_llm_adapter", _mock_create_adapter)
+    return MockLLMAdapter
+
+
+@pytest.fixture
+def test_project_dir(tmp_path):
+    project_dir = tmp_path / "test_project"
+    project_dir.mkdir()
+    
+    # Create required files
+    (project_dir / "Novel_directory.txt").write_text("Chapter 1: The Beginning")
+    (project_dir / "global_summary.txt").write_text("Initial global summary")
+    (project_dir / "character_state.txt").write_text("Initial char state")
+    (project_dir / "plot_arcs.txt").write_text("Initial plot arcs")
+    (project_dir / "chapters").mkdir()
+    
+    return str(project_dir)
+
+
+@pytest.fixture
+def mock_generation_context(test_project_dir):
+    class MockLLMConfig:
+        interface_format = "openai"
+        base_url = "http://mock"
+        model_name = "mock"
+        api_key = "mock"
+        temperature = 0.7
+        max_tokens = 2000
+        timeout = 60
+
+    class MockEmbeddingConfig:
+        interface_format = "openai"
+        base_url = "http://mock"
+        model_name = "mock"
+        api_key = "" # Empty to skip embedding
+        
+    class MockGenerationContext:
+        def __init__(self):
+            self.filepath = test_project_dir
+            self.project_id = "test_123"
+            self.user_id = "user_123"
+            self.llm = MockLLMConfig()
+            self.embedding = MockEmbeddingConfig()
+            self.cancel_token = MockCancelToken()
+
+    return MockGenerationContext()
+
