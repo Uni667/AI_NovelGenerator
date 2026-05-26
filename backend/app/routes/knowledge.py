@@ -8,6 +8,7 @@ from backend.app.database import get_db
 from backend.app.services import project_service
 from novel_generator.knowledge import import_knowledge_file
 from novel_generator.vectorstore_utils import clear_vector_store
+from novel_generator.knowledge_graph import KnowledgeGraphManager
 
 router = APIRouter(tags=["知识库"])
 
@@ -232,3 +233,10 @@ def clear_vector_db(project_id: str, request: Request):
         )
 
     return {"message": "向量库已清空"}
+
+@router.get("/api/v1/projects/{project_id}/graph")
+def get_knowledge_graph(project_id: str, request: Request):
+    project, user_id = _check_project(project_id, request)
+    graph_manager = KnowledgeGraphManager(project["filepath"])
+    return graph_manager.get_frontend_data()
+

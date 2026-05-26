@@ -29,6 +29,8 @@ class TaskState:
     status: str = "pending"
     message: str = ""
     cancel_requested: bool = False
+    current_step: str = ""
+    step_data: str = ""
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     finished_at: Optional[float] = None
@@ -68,8 +70,9 @@ def _persist_task_to_db(state: TaskState) -> None:
                 """INSERT OR REPLACE INTO generation_task
                    (id, user_id, project_id, type, status, input_snapshot, output_file_id,
                     error_message, error_code, error_category, retryable,
+                    current_step, step_data,
                     created_at, updated_at, finished_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     state.task_id,
                     state.user_id,
@@ -82,6 +85,8 @@ def _persist_task_to_db(state: TaskState) -> None:
                     error_code,
                     error_category,
                     retryable,
+                    state.current_step,
+                    state.step_data,
                     created_str,
                     now_str,
                     finished_str,
@@ -114,6 +119,8 @@ def load_tasks_from_db() -> None:
                 kind=r["type"],
                 status="failed",
                 message="服务器重启导致任务中断",
+                current_step=r.get("current_step") or "",
+                step_data=r.get("step_data") or "",
                 created_at=created,
                 metadata={
                     "output_file_id": r.get("output_file_id"),
@@ -326,6 +333,8 @@ def task_payload(task_id: str) -> dict[str, Any]:
     if not state:
         return {}
     d = asdict(state)
+    d["current_step"] = state.current_step or ""
+    d["step_data"] = state.step_data or ""
     # 将 metadata 字段映射到外部期望的名称
     if state.metadata.get("output_file_id"):
         d["output_file_id"] = state.metadata["output_file_id"]

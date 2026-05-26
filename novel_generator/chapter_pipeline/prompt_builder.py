@@ -6,7 +6,7 @@ from novel_generator.commercial_prompts import build_generation_context_block
 from novel_generator.platform_guidance import get_platform_chapter_guidance
 from chapter_directory_parser import get_chapter_info_from_blueprint
 from novel_generator.task_manager import raise_if_cancelled, TaskCancelledError
-from utils import read_file
+from utils import read_file, save_string_to_txt
 from novel_generator.vectorstore_utils import (
     get_relevant_context_from_vector_store,
     load_vector_store,
@@ -20,8 +20,66 @@ from novel_generator.chapter_pipeline.context_retriever import (
 )
 from novel_generator.common import invoke_with_cleaning
 from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter
+from novel_generator.knowledge_graph import KnowledgeGraphManager
+import re
 
 logger = logging.getLogger(__name__)
+
+
+def get_or_generate_chapter_summary(ctx, chapter_num: int, task_id: str | None = None) -> str:
+    """
+    获取指定章节的微型摘要。
+    如果存在 chapter_X_summary.txt 则直接读取，否则读取章节全文并调用 LLM 生成摘要并持久化。
+    """
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        if ctx.cancel_token is not None:
+            ctx.cancel_token.raise_if_set()
+        return False
+
+    chapters_dir = os.path.join(ctx.filepath, "chapters")
+    summary_file = os.path.join(chapters_dir, f"chapter_{chapter_num}_summary.txt")
+    if os.path.exists(summary_file):
+        summary = read_file(summary_file).strip()
+        if summary:
+            return summary
+
+    # 如果摘要不存在，尝试读取章节正文
+    chapter_file = os.path.join(chapters_dir, f"chapter_{chapter_num}.txt")
+    if not os.path.exists(chapter_file):
+        return ""
+
+    chapter_text = read_file(chapter_file).strip()
+    if not chapter_text:
+        return ""
+
+    # 调用 LLM 生成单章微型摘要
+    try:
+        _check_cancel()
+        llm = create_llm_adapter(
+            interface_format=ctx.llm.interface_format,
+            base_url=ctx.llm.base_url,
+            model_name=ctx.llm.model_name,
+            api_key=ctx.llm.api_key,
+            temperature=0.3,
+            max_tokens=ctx.llm.max_tokens,
+            timeout=ctx.llm.timeout,
+        )
+        prompt_single_summary = prompt_definitions.get_prompt_template(ctx.project_id, 'single_chapter_summary_prompt').format(
+            chapter_text=chapter_text
+        )
+        summary = invoke_with_cleaning(llm, prompt_single_summary, cancel_check=_check_cancel)
+        if not summary.strip():
+            summary = chapter_text[:250]
+        else:
+            summary = summary.strip()
+        save_string_to_txt(summary, summary_file)
+        return summary
+    except Exception as e:
+        logger.error(f"Error generating single chapter summary for chapter {chapter_num}: {e}", exc_info=True)
+        return chapter_text[:250]
+
 
 
 def build_chapter_prompt(
@@ -65,7 +123,10 @@ def build_chapter_prompt(
     _check_cancel()
     arch_text = read_file(os.path.join(filepath, "Novel_architecture.txt")).strip() or "（尚未生成小说架构）"
     blueprint_text = read_file(os.path.join(filepath, "Novel_directory.txt")).strip() or "（尚未生成章节目录）"
+    core_summary_text = read_file(os.path.join(filepath, "core_summary.txt")).strip()
     global_summary_text = read_file(os.path.join(filepath, "global_summary.txt")).strip() or "（尚未生成全局摘要）"
+    if core_summary_text:
+        global_summary_text = core_summary_text + "\n\n---\n\n【近期剧情摘要】\n" + global_summary_text
     character_state_text = read_file(os.path.join(filepath, "character_state.txt")).strip() or "（尚未生成角色状态）"
     plot_arcs_text = read_file(os.path.join(filepath, "plot_arcs.txt")).strip() or "（尚未生成伏笔暗线台账）"
 
@@ -75,6 +136,20 @@ def build_chapter_prompt(
 
     chapters_dir = os.path.join(filepath, "chapters")
     os.makedirs(chapters_dir, exist_ok=True)
+
+    # 从大纲中抽取即将出场的实体 (简单的分词)
+    graph_manager = KnowledgeGraphManager(filepath)
+    # 将角色、道具和简述作为潜在实体去匹配图谱
+    potential_entities_text = (
+        getattr(params, "characters_involved", "") + " " + 
+        getattr(params, "key_items", "") + " " + 
+        chapter_info.get("chapter_summary", "")
+    )
+    # 提取所有可能的实体词汇（连续中文字符）
+    words = set(re.findall(r'[\u4e00-\u9fa5]+', potential_entities_text))
+    # 过滤出存在于图谱中的实体
+    matched_entities = [w for w in words if graph_manager.graph.has_node(w)]
+    graph_context = graph_manager.get_subgraph_context(matched_entities, max_depth=1) if matched_entities else "（未匹配到相关图谱记忆）"
 
     # 第一章特殊处理
     if novel_number == 1:
@@ -96,25 +171,33 @@ def build_chapter_prompt(
             user_guidance=params.user_guidance,
             novel_setting=arch_text,
             plot_arcs=plot_arcs_text or "（尚未生成伏笔暗线台账，请优先遵守章节目录中的伏笔操作）",
+            graph_context=graph_context,
             platform_guidance=platform_guidance,
         )
 
-    # 获取前文摘要
-    recent_texts = get_last_n_chapters_text(chapters_dir, novel_number, n=3)
-    try:
-        short_summary = summarize_recent_chapters(
-            ctx, recent_texts, chapter_info, next_chapter_info, task_id=task_id
-        )
-    except Exception:
-        logger.error("Error in summarize_recent_chapters", exc_info=True)
-        short_summary = "（摘要生成失败）"
+    # ── 组装滑动前文摘要 ──
+    # 获取前文微摘要列表：第 N-3, N-2, N-1 章的摘要
+    summaries = []
+    start_chap = max(1, novel_number - 3)
+    for c in range(start_chap, novel_number):
+        c_summary = get_or_generate_chapter_summary(ctx, c, task_id=task_id)
+        if c_summary:
+            summaries.append(f"第 {c} 章剧情摘要：\n{c_summary}")
+    
+    if summaries:
+        short_summary = "\n\n".join(summaries)
+    else:
+        short_summary = "（无前文剧情摘要）"
 
-    # 前一章结尾
+    # 前一章全文正文部分（保留最近一章正文最后 3000 字作为前文承接）
     previous_excerpt = ""
-    for text in reversed(recent_texts):
-        if text.strip():
-            previous_excerpt = text[-800:] if len(text) > 800 else text
-            break
+    if novel_number > 1:
+        prev_file = os.path.join(chapters_dir, f"chapter_{novel_number-1}.txt")
+        if os.path.exists(prev_file):
+            prev_text = read_file(prev_file).strip()
+            if prev_text:
+                previous_excerpt = prev_text[-3000:] if len(prev_text) > 3000 else prev_text
+
 
     # ── 知识库检索 ──
     try:
@@ -159,7 +242,7 @@ def build_chapter_prompt(
                 all_contexts = []
                 for group in keyword_groups:
                     _check_cancel()
-                    context = get_relevant_context_from_vector_store(emb, group, filepath, k=actual_k)
+                    context = get_relevant_context_from_vector_store(emb, group, filepath, k=actual_k, current_chapter_number=novel_number)
                     if context:
                         if any(kw in group.lower() for kw in ["技法", "手法", "模板"]):
                             all_contexts.append(f"[TECHNIQUE] {context}")
@@ -197,6 +280,7 @@ def build_chapter_prompt(
         previous_chapter_excerpt=previous_excerpt,
         character_state=character_state_text,
         plot_arcs=plot_arcs_text or "（尚未生成伏笔暗线台账，请优先遵守章节目录中的伏笔操作）",
+        graph_context=graph_context,
         short_summary=short_summary,
         platform_guidance=platform_guidance,
         novel_number=novel_number,

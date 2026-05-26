@@ -157,6 +157,20 @@ export function useGenerationState(projectId: string) {
   } else if (!lastProgressEvent && isConnected) {
     generationProgress = 2
   }
+  // Derive batch chapter index and total from progress events
+  let batchChapterIndex = 0
+  let batchTotalChapters = 0
+  if (sseAction === "chapterBatch") {
+    const lastBatchEvent = [...progressEvents].reverse().find(e => e.data?.step === "batch")
+    if (lastBatchEvent?.data?.message) {
+      const match = lastBatchEvent.data.message.match(/（(\d+)\/(\d+)）/) || lastBatchEvent.data.message.match(/\((\d+)\/(\d+)\)/)
+      if (match) {
+        batchChapterIndex = parseInt(match[1], 10)
+        batchTotalChapters = parseInt(match[2], 10)
+      }
+    }
+  }
+
   const generationRecovering = !isConnected && generationTaskId && !generationStopping
   const hasError = !!sseError
 
@@ -308,6 +322,7 @@ export function useGenerationState(projectId: string) {
     batchChapterCount, setBatchChapterCount,
     enableBrainstorming, setEnableBrainstorming,
     generationTaskLabel, generationProgress, generationRecovering, hasError, generationStepMeta,
+    batchChapterIndex, batchTotalChapters,
     handleStopGeneration, handleRetryGeneration,
     startTask, stopSse
   }

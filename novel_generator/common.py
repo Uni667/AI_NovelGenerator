@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def call_with_retry(func, max_retries=3, sleep_time=2, fallback_return=None, **kwargs):
-    """Call a function with retries and a fallback return value."""
+    """Call a function with retries and a fallback return value, using exponential backoff."""
     for attempt in range(1, max_retries + 1):
         try:
             return func(**kwargs)
@@ -29,7 +29,9 @@ def call_with_retry(func, max_retries=3, sleep_time=2, fallback_return=None, **k
             logging.warning("[call_with_retry] Attempt %s failed with error: %s", attempt, exc)
             traceback.print_exc()
             if attempt < max_retries:
-                time.sleep(sleep_time)
+                wait_seconds = _get_backoff_time(attempt, base_delay=float(sleep_time))
+                logging.info("[call_with_retry] Waiting %.2f seconds before retry...", wait_seconds)
+                time.sleep(wait_seconds)
             else:
                 logging.error("Max retries reached, returning fallback_return.")
                 return fallback_return

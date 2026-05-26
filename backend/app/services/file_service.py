@@ -115,3 +115,40 @@ def _row_to_dict(row) -> dict:
     d = dict(row)
     d["is_current"] = bool(d.get("is_current", False))
     return d
+
+
+def sync_project_files_to_disk(project_id: str, filepath: str, user_id: str):
+    import os
+    from backend.app.database import get_db
+    from utils import save_string_to_txt
+    os.makedirs(filepath, exist_ok=True)
+    os.makedirs(os.path.join(filepath, "chapters"), exist_ok=True)
+    os.makedirs(os.path.join(filepath, "knowledge"), exist_ok=True)
+    
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT type, filename, content FROM project_file WHERE project_id=? AND user_id=? AND is_current=1",
+            (project_id, user_id)
+        ).fetchall()
+        
+    type_to_filename = {
+        "architecture": "Novel_architecture.txt",
+        "outline": "Novel_directory.txt",
+        "summary": "global_summary.txt",
+        "character_state": "character_state.txt",
+        "plot_arcs": "plot_arcs.txt"
+    }
+    
+    for row in rows:
+        ftype = row["type"]
+        content = row["content"]
+        if ftype in type_to_filename:
+            filename = type_to_filename[ftype]
+            dest = os.path.join(filepath, filename)
+            if not os.path.exists(dest) or os.path.getsize(dest) == 0:
+                save_string_to_txt(content, dest)
+        elif ftype == "chapter":
+            fname = os.path.basename(row["filename"])
+            dest = os.path.join(filepath, "chapters", fname)
+            if not os.path.exists(dest) or os.path.getsize(dest) == 0:
+                save_string_to_txt(content, dest)

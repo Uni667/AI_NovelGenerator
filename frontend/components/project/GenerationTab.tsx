@@ -5,16 +5,24 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Progress } from "@/components/ui/progress"
-import { Play, CheckCircle, Loader2, Ban, AlertCircle } from "lucide-react"
+import { Play, CheckCircle, Loader2, Ban, AlertCircle, RefreshCcw, Sparkles, BookOpen, ArrowRight } from "lucide-react"
 import { useProjectContext } from "./ProjectContext"
+import { useState } from "react"
+import { toast } from "sonner"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 export function GenerationTab() {
-  const { generation } = useProjectContext()
+  const { projectId, generation, workbench, setActiveTab } = useProjectContext()
   const {
     generationTaskId, generationTaskLabel, generationStopping, generationRecovering,
-    isConnected, events, hasError, sseError, handleStopGeneration, generationStepMeta,
-    generationProgress
+    isConnected, events, hasError, sseError, handleStopGeneration, handleRetryGeneration, generationStepMeta,
+    generationProgress, startTask, enableBrainstorming, setEnableBrainstorming,
+    batchChapterIndex, batchTotalChapters, sseAction
   } = generation
+
+  const { selectedChapterNumber } = workbench
+  const [quickChapterNum, setQuickChapterNum] = useState(selectedChapterNumber)
 
   const lastPartial = events.filter((e: any) => e.type === "partial").pop()
 
@@ -31,6 +39,11 @@ export function GenerationTab() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-semibold text-sm truncate">{generationTaskLabel || "当前生成任务"}</p>
+                  {sseAction === "chapterBatch" && batchChapterIndex > 0 && (
+                    <p className="text-xs text-primary font-mono font-semibold mt-0.5">
+                      第 {batchChapterIndex} / {batchTotalChapters} 章
+                    </p>
+                  )}
                   <p className="text-[10px] text-muted-foreground truncate mt-1">
                     任务 ID: <span className="font-mono">{generationTaskId || "待分配"}</span>
                   </p>
@@ -77,10 +90,58 @@ export function GenerationTab() {
           )}
 
           {events.length === 0 && !isConnected && (
-            <div className="text-center py-12 text-muted-foreground border border-dashed border-border/60 rounded-xl bg-card/10">
-              <Play className="h-12 w-12 mx-auto mb-3 opacity-30 text-primary" />
-              <p className="text-sm font-medium">无运行中的任务</p>
-              <p className="text-xs text-muted-foreground mt-1">点击「概览」或「工作台」中的生成按钮开始</p>
+            <div className="text-center py-10 text-muted-foreground border border-dashed border-border/60 rounded-xl bg-card/10 space-y-6">
+              <div>
+                <Play className="h-10 w-10 mx-auto mb-2 opacity-30 text-primary" />
+                <p className="text-sm font-medium">无运行中的任务</p>
+                <p className="text-xs text-muted-foreground mt-1">选择一个方式开始生成</p>
+              </div>
+
+              {/* Quick single chapter generate */}
+              <div className="mx-auto max-w-xs space-y-3 px-4">
+                <div className="rounded-xl border border-border/40 bg-background/50 p-3 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Sparkles className="h-3.5 w-3.5 text-violet-400" />
+                    快速生成单章
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[10px] text-muted-foreground shrink-0">章节号</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={quickChapterNum}
+                      onChange={(e) => setQuickChapterNum(Math.max(1, Number(e.target.value) || 1))}
+                      className="h-7 text-xs w-20 bg-background/60 border-border/60 rounded-lg"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const taskId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)
+                        const url = `/api/v1/projects/${projectId}/generate/chapter/${quickChapterNum}${enableBrainstorming ? "?enable_brainstorming=true" : ""}`
+                        startTask("chapter", url, taskId)
+                        toast.success(`已开始生成第 ${quickChapterNum} 章`)
+                      }}
+                      disabled={isConnected || Boolean(generationTaskId) || generationStopping}
+                      className="h-7 text-xs bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-lg"
+                    >
+                      生成
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveTab("workbench")}
+                    className="flex-1 h-8 text-xs rounded-lg"
+                  >
+                    <BookOpen className="h-3.5 w-3.5 mr-1.5 text-emerald-400" />
+                    前往章节工作台
+                    <ArrowRight className="h-3 w-3 ml-1 opacity-50" />
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -131,9 +192,20 @@ export function GenerationTab() {
           {hasError && (
             <div className="flex items-start gap-3 p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm leading-relaxed">
               <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
-              <div className="space-y-1">
-                <p className="font-semibold">生成过程中出现错误</p>
-                <p className="text-xs opacity-90">{sseError || "未知错误，请检查网络或模型配额"}</p>
+              <div className="space-y-3 flex-1">
+                <div>
+                  <p className="font-semibold">生成过程中出现错误</p>
+                  <p className="text-xs opacity-90">{sseError || "未知错误，请检查网络或模型配额"}</p>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleRetryGeneration} 
+                  className="text-foreground hover:text-foreground/80 h-8"
+                >
+                  <RefreshCcw className="w-3.5 h-3.5 mr-1.5" />
+                  从断点重试
+                </Button>
               </div>
             </div>
           )}

@@ -104,3 +104,72 @@ def revise_chapter_voice(
     return revised.strip() or chapter_text
 
 
+def stream_interactive_rewrite(
+    ctx,
+    context_before: str,
+    selected_text: str,
+    context_after: str,
+    user_instruction: str,
+    emitter=None,
+    task_id: str | None = None,
+    project_config: dict | None = None,
+) -> str:
+    """
+    流式重写选中的文本段落
+    """
+    llm = create_specialized_chat_adapter(ctx, "quality_rewrite")
+
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        return False
+
+    # Extract platform and configuration constraints to prevent style washouts and settings breaches
+    platform_label = "自定义"
+    platform_rules = "无"
+    forbidden = "无"
+    style_requirement = "无"
+    genre = "无"
+    topic = "无"
+
+    if project_config:
+        platform = project_config.get("platform", "tomato")
+        platform_label, platform_rules = get_platform_chapter_guidance(platform)
+        forbidden = project_config.get("forbidden") or "无"
+        style_requirement = project_config.get("style_requirement") or "无"
+        genre = project_config.get("genre") or "无"
+        topic = project_config.get("topic") or "无"
+
+    prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'interactive_rewrite_prompt').format(
+        context_before=context_before,
+        selected_text=selected_text,
+        context_after=context_after,
+        user_instruction=user_instruction,
+        platform_label=platform_label,
+        platform_rules=platform_rules,
+        forbidden=forbidden,
+        style_requirement=style_requirement,
+        genre=genre,
+        topic=topic,
+    )
+
+    if emitter and hasattr(emitter, "emit"):
+        emitter.emit("progress", {"step": "interactive_rewrite", "status": "running", "message": "正在局部重写..."})
+
+    def _on_chunk(text: str):
+        if emitter and hasattr(emitter, "emit"):
+            emitter.emit("partial", {"step": "interactive_rewrite", "content": text})
+
+    revised = invoke_with_cleaning(
+        llm,
+        prompt,
+        cancel_check=_check_cancel,
+        operation_name="划线局部重写",
+        step="interactive_rewrite",
+        stream_callback=_on_chunk,
+    )
+    
+    if emitter and hasattr(emitter, "emit"):
+        emitter.emit("progress", {"step": "interactive_rewrite", "status": "done", "message": "局部重写完成"})
+        
+    return revised.strip() or selected_text

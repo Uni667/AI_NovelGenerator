@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState, type ReactNode } from "react"
+import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
   CheckCircle,
@@ -12,7 +13,8 @@ import {
   Wifi,
   Database,
   Cpu,
-  Fingerprint
+  Fingerprint,
+  ArrowLeft
 } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api-client"
@@ -99,6 +101,7 @@ function providerLabel(provider?: string) {
 }
 
 export default function SettingsPage() {
+  const router = useRouter()
   const [status, setStatus] = useState<ModelStatus | null>(null)
   const [credentials, setCredentials] = useState<ApiCredential[]>([])
   const [profiles, setProfiles] = useState<ModelProfile[]>([])
@@ -192,6 +195,13 @@ export default function SettingsPage() {
       {/* Background ambient gradient to match projects */}
       <div className="absolute top-0 left-0 w-full h-[50vh] bg-gradient-to-b from-primary/5 via-primary/5 to-transparent pointer-events-none -z-10" />
       
+      <div className="shrink-0">
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => router.push("/")}>
+          <ArrowLeft className="h-4 w-4 mr-1.5" />
+          返回项目列表
+        </Button>
+      </div>
+
       <div className="flex items-center justify-between gap-3 bg-card/40 border border-border/50 p-6 rounded-2xl backdrop-blur-xl shadow-lg">
         <div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent flex items-center gap-3">
@@ -238,6 +248,21 @@ export default function SettingsPage() {
         )}
 
         {(state === "empty" || showKeyForm) && <QuickSetupCard onDone={loadAll} />}
+
+        {/* 统一的高级控制台折叠开关，始终可被触及 */}
+        {(state === "empty" || showKeyForm) && (
+          <div className="flex justify-center md:justify-end pr-2 pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAdvanced((value) => !value)}
+              className="text-muted-foreground hover:text-primary transition-colors text-xs font-semibold"
+            >
+              {showAdvanced ? "收起底层控制台" : "展开底层控制台"}
+              <ChevronDown className={`size-3.5 ml-1 transition-transform duration-300 ${showAdvanced ? "rotate-180" : ""}`} />
+            </Button>
+          </div>
+        )}
 
         {showAdvanced && (
           <AdvancedSettings
@@ -413,45 +438,61 @@ function QuickSetupCard({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <Card className="glass-panel border-border/40 shadow-xl overflow-hidden relative">
+    <Card className="glass-panel border-border/40 shadow-xl overflow-hidden relative transition-all duration-500 hover:shadow-glow">
       <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
-        <Fingerprint className="w-32 h-32" />
+        <Fingerprint className="w-32 h-32 text-primary" />
       </div>
-      <CardHeader>
-        <CardTitle className="text-xl flex items-center gap-2">
-          <KeyRound className="text-primary w-5 h-5" /> 挂载算力节点
+      <CardHeader className="pb-4">
+        <CardTitle className="text-xl flex items-center gap-2 text-foreground font-bold">
+          <KeyRound className="text-primary w-5 h-5 animate-pulse" /> 极速挂载算力节点
         </CardTitle>
-        <CardDescription>选择服务商并注入 API Key，系统将自动配置 Chat 与 Embedding 路由。</CardDescription>
+        <CardDescription className="text-muted-foreground mt-1">
+          只需注入您的 API Key，系统将在后台自动完成凭证绑定、文本大模型映射及知识库向量化配置。
+        </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-5 md:grid-cols-[200px_1fr_auto] items-end relative z-10">
-        <Field label="云端服务商 (Provider)">
-          <Select value={provider} onValueChange={(value) => value && setProvider(value)}>
-            <SelectTrigger className="shadow-sm focus:ring-primary/50">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PROVIDERS.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="授权令牌 (API Key)">
-          <Input
-            autoComplete="off"
-            type="password"
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-            placeholder="sk-..."
-            className="shadow-sm focus:ring-primary/50 font-mono"
-          />
-        </Field>
-        <Button className="w-full md:w-auto shadow-glow" onClick={quickSetup} disabled={saving}>
-          {saving ? <RefreshCw className="size-4 mr-2 animate-spin" /> : <Wifi className="size-4 mr-2" />}
-          {saving ? "验证中..." : "挂载并验证"}
-        </Button>
+      <CardContent className="space-y-4 relative z-10">
+        <div className="grid gap-5 md:grid-cols-[220px_1fr_auto] items-end">
+          <Field label="云端服务商 (Provider)">
+            <Select value={provider} onValueChange={(value) => value && setProvider(value)}>
+              <SelectTrigger className="shadow-sm border-border/60 focus:ring-primary/50 bg-background/50 h-10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDERS.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="授权令牌 (API Key)">
+            <Input
+              autoComplete="off"
+              type="password"
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder="sk-..."
+              className="shadow-sm border-border/60 focus:ring-primary/50 font-mono bg-background/50 h-10"
+            />
+          </Field>
+          <Button className="w-full md:w-auto shadow-glow h-10 px-6 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold" onClick={quickSetup} disabled={saving}>
+            {saving ? <RefreshCw className="size-4 mr-2 animate-spin" /> : <Wifi className="size-4 mr-2" />}
+            {saving ? "节点连接中..." : "挂载并上线"}
+          </Button>
+        </div>
+
+        <div className="pt-2 border-t border-border/30 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground/90 font-medium">
+          <span className="text-primary/90 font-semibold">自动化管线配给:</span>
+          <span className="flex items-center gap-1"><span className="text-emerald-400 font-bold">✓</span> 自动加密凭证</span>
+          <span className="flex items-center gap-1"><span className="text-emerald-400 font-bold">✓</span> 映射小说章节草稿路由</span>
+          <span className="flex items-center gap-1"><span className="text-emerald-400 font-bold">✓</span> 开启全局知识检索向量库</span>
+        </div>
+
+        <div className="bg-primary/5 border border-primary/10 rounded-lg p-3 text-xs text-muted-foreground leading-relaxed">
+          <span className="font-bold text-primary block mb-0.5">💡 创作者贴士：</span>
+          建议选择 <span className="font-semibold text-foreground">DeepSeek</span> (或选用硅基流动平台)，在保证极佳中文文风和角色逻辑的前提下，其 Token 价格仅为传统商用模型的数十分之一，更契合长篇小说的海量生成需求。
+        </div>
       </CardContent>
     </Card>
   )

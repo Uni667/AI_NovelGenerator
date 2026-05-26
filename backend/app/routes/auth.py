@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from backend.app.services import user_service
-from backend.app.auth import get_current_user
+from backend.app.auth import create_stream_token, get_current_user, verify_access_token
 
 router = APIRouter(tags=["用户认证"])
 
@@ -53,9 +53,16 @@ def me(request: Request):
     return user
 
 
+def _get_current_user_from_access_header(request: Request) -> str:
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="AUTH_REQUIRED")
+    payload = verify_access_token(auth.removeprefix("Bearer "))
+    return payload["user_id"]
+
+
 @router.post("/api/v1/auth/stream-token")
 def get_stream_token(request: Request):
-    from backend.app.auth import create_stream_token
-    user_id = get_current_user(request)
+    user_id = _get_current_user_from_access_header(request)
     token = create_stream_token(user_id)
     return {"stream_token": token}

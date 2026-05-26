@@ -33,6 +33,10 @@ def get_file(project_id: str, filename: str, request: Request):
     if filename not in ALLOWED_FILES:
         allowed = "、".join(ALLOWED_FILES)
         raise HTTPException(status_code=400, detail=f"不允许访问该文件: {filename}。可访问文件: {allowed}")
+    
+    # Restore any missing files from database to disk
+    file_service.sync_project_files_to_disk(project_id, project["filepath"], user_id)
+
     filepath = os.path.join(project["filepath"], filename)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail=f"文件不存在: {filename}。请先生成对应内容后再读取。")

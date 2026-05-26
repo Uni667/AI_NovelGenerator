@@ -114,6 +114,15 @@ class TestAuthRoutes:
         response = client.post("/api/v1/auth/stream-token")
         assert response.status_code == 401
 
+    def test_get_stream_token_rejects_stream_token_in_url(self, client, auth_headers):
+        """stream-token endpoint only accepts access tokens from Authorization header."""
+        response = client.post("/api/v1/auth/stream-token", headers=auth_headers)
+        assert response.status_code == 200
+        stream_token = response.json()["stream_token"]
+
+        response2 = client.post("/api/v1/auth/stream-token", params={"token": stream_token})
+        assert response2.status_code == 401
+
     def test_verify_stream_token_rejects_access_token(self, auth_token):
         """verify_stream_token 应该拒绝标准的 access token。"""
         from backend.app.auth import verify_stream_token
@@ -134,4 +143,3 @@ class TestAuthRoutes:
         response2 = client.get("/api/v1/auth/me", params={"token": stream_token})
         assert response2.status_code == 200
         assert response2.json()["username"] == "testuser"
-

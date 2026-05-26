@@ -462,3 +462,76 @@ export interface DiagnosisReport {
   missing_elements: string[]
   suggestion: string
 }
+
+export interface PromptMeta {
+  key: string
+  label: string
+  group: string
+  description: string
+}
+
+export interface PromptEntry extends PromptMeta {
+  default_content: string
+  custom_content: string | null
+  is_overridden: boolean
+}
+
+export interface AnalyticsSummary {
+  total_calls: number
+  success_rate: number
+  avg_latency_ms: number
+  total_input_chars: number
+  total_output_chars: number
+  estimated_cost_cny: number
+}
+
+export interface ModelAnalytics {
+  provider: string
+  model: string
+  count: number
+  success_rate: number
+  estimated_cost_cny: number
+  input_chars: number
+  output_chars: number
+  avg_latency_ms: number
+}
+
+export interface PurposeAnalytics {
+  purpose: string
+  count: number
+  success_rate: number
+  estimated_cost_cny: number
+  avg_latency_ms: number
+}
+
+export interface ProviderAnalytics {
+  provider: string
+  count: number
+  success_rate: number
+  estimated_cost_cny: number
+  avg_latency_ms: number
+}
+
+export interface ErrorAnalytics {
+  error_code: string
+  count: number
+  last_message: string
+}
+
+export interface DailyTrendAnalytics {
+  date: string
+  count: number
+  success_rate: number
+  estimated_cost_cny: number
+  input_chars: number
+  output_chars: number
+}
+
+export interface ProjectAnalytics {
+  summary: AnalyticsSummary
+  by_model: ModelAnalytics[]
+  by_purpose: PurposeAnalytics[]
+  by_provider: ProviderAnalytics[]
+  errors: ErrorAnalytics[]
+  daily_trend: DailyTrendAnalytics[]
+}

@@ -73,6 +73,9 @@ first_chapter_draft_prompt = """\
 - 伏笔暗线台账：
 {plot_arcs}
 
+- 图谱记忆 (Graph RAG)：
+{graph_context}
+
 - 平台写作基准：
 {platform_guidance}
 
@@ -137,6 +140,9 @@ next_chapter_draft_prompt = """\
 
 └── 伏笔暗线台账：
     {plot_arcs}
+
+└── 图谱记忆 (Graph RAG)：
+    {graph_context}
 
 └── 当前章节摘要：
     {short_summary}

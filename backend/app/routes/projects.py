@@ -86,6 +86,11 @@ def export_project(project_id: str, request: Request, format: str = Query("txt",
         raise HTTPException(status_code=404, detail="项目不存在")
 
     filepath = project["filepath"]
+    
+    # Restores any missing files from database to disk before exporting
+    from backend.app.services import file_service
+    file_service.sync_project_files_to_disk(project_id, filepath, user_id)
+
     chapters_dir = os.path.join(filepath, "chapters")
     chapters = chapter_service.list_chapters(project_id, user_id)
 

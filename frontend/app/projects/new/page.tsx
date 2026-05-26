@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useCreateProject } from "@/lib/hooks/use-projects"
 import { PLATFORM_CONFIG, PLATFORMS, READER_DIRECTIONS, TREND_KEYS } from "@/lib/types"
@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { ArrowRight, Sparkles, Loader2, ChevronDown, ChevronUp, Check, ArrowLeft } from "lucide-react"
+import { ArrowRight, Sparkles, Loader2, ChevronDown, ChevronUp, Check, ArrowLeft, Upload } from "lucide-react"
 import { api } from "@/lib/api-client"
 import { toast } from "sonner"
 
@@ -22,7 +22,9 @@ export default function NewProjectPage() {
   const [step, setStep] = useState(1)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isInferring, setIsInferring] = useState(false)
+  const [isExtractingDocument, setIsExtractingDocument] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const documentInputRef = useRef<HTMLInputElement>(null)
 
   const [form, setForm] = useState({
     name: "",
@@ -59,15 +61,16 @@ export default function NewProjectPage() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleAiInfer = async () => {
-    if (!form.user_guidance.trim()) {
+  const handleAiInfer = async (guidanceOverride?: string) => {
+    const guidance = guidanceOverride ?? form.user_guidance
+    if (!guidance.trim()) {
       toast.warning("请输入大纲或故事梗概，让 AI 帮您智能推断配置")
       return
     }
     setIsInferring(true)
     try {
       const res = await api.projects.inferConfig({
-        user_guidance: form.user_guidance,
+        user_guidance: guidance,
         platform: form.platform,
       })
       if (res.success && res.data) {
@@ -91,6 +94,47 @@ export default function NewProjectPage() {
       toast.error(e?.message || "智能解析失败，请稍后重试")
     } finally {
       setIsInferring(false)
+    }
+  }
+
+  const extractDocumentText = async (file: File): Promise<string> => {
+    const lowerName = file.name.toLowerCase()
+    if (lowerName.endsWith(".txt") || lowerName.endsWith(".md")) {
+      return file.text()
+    }
+    if (lowerName.endsWith(".docx")) {
+      const mammoth = await import("mammoth")
+      const arrayBuffer = await file.arrayBuffer()
+      const result = await mammoth.extractRawText({ arrayBuffer })
+      return result.value
+    }
+    throw new Error("只支持 .docx、.txt、.md 文档")
+  }
+
+  const handleDocumentImport = async (file: File | undefined) => {
+    if (!file) return
+    setIsExtractingDocument(true)
+    try {
+      const rawText = (await extractDocumentText(file)).replace(/\r\n/g, "\n").trim()
+      if (rawText.length < 20) {
+        toast.error("文档内容太少，无法自动解构")
+        return
+      }
+      const clippedText = rawText.length > 60000 ? rawText.slice(0, 60000) : rawText
+      setForm((prev) => ({
+        ...prev,
+        name: prev.name || file.name.replace(/\.(docx|txt|md)$/i, ""),
+        user_guidance: clippedText,
+      }))
+      toast.success(rawText.length > 60000 ? "文档已读取，已截取前 6 万字用于智能解构" : "文档已读取，正在自动解构")
+      await handleAiInfer(clippedText)
+    } catch (e: any) {
+      toast.error(e?.message || "文档读取失败，请转换为 docx、txt 或 md 后重试")
+    } finally {
+      setIsExtractingDocument(false)
+      if (documentInputRef.current) {
+        documentInputRef.current.value = ""
+      }
     }
   }
 
@@ -188,14 +232,42 @@ export default function NewProjectPage() {
 
               {/* Outline / Guidance & AI inference */}
               <div className="space-y-2 relative">
-                <div className="flex justify-between items-center">
+                <input
+                  ref={documentInputRef}
+                  type="file"
+                  accept=".docx,.txt,.md,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  className="hidden"
+                  onChange={(event) => handleDocumentImport(event.target.files?.[0])}
+                />
+                <div className="flex flex-wrap justify-between items-center gap-2">
                   <Label className="text-xs font-semibold text-muted-foreground">核心故事大纲 / 梗概创意</Label>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={isInferring}
-                    onClick={handleAiInfer}
+                    disabled={isInferring || isExtractingDocument}
+                    onClick={() => documentInputRef.current?.click()}
+                    className="h-8 text-xs font-bold border-violet-500/30 bg-background/50 hover:bg-violet-500/10 text-violet-200 active:scale-95 transition-all flex items-center gap-1"
+                  >
+                    {isExtractingDocument ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        解构中...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-3.5 h-3.5" />
+                        上传文档自动解构
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isInferring || isExtractingDocument}
+                    onClick={() => handleAiInfer()}
                     className="h-8 text-xs font-bold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-none shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/20 active:scale-95 transition-all flex items-center gap-1"
                   >
                     {isInferring ? (
@@ -210,6 +282,7 @@ export default function NewProjectPage() {
                       </>
                     )}
                   </Button>
+                  </div>
                 </div>
                 <Textarea
                   value={form.user_guidance}

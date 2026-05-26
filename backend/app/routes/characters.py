@@ -18,6 +18,7 @@ from novel_generator.character_import import (
     normalize_character_name,
     preferred_character_status,
 )
+from backend.app.services.sync_service import sync_db_to_txt
 
 router = APIRouter(tags=["角色管理"])
 
@@ -180,7 +181,7 @@ def create_character(project_id: str, data: CharacterProfileCreate, request: Req
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (project_id, data.name, data.description, data.status, data.source, data.first_appearance_chapter, now)
         )
-        return {
+        res = {
             "id": cursor.lastrowid,
             "name": data.name,
             "description": data.description,
@@ -189,6 +190,9 @@ def create_character(project_id: str, data: CharacterProfileCreate, request: Req
             "first_appearance_chapter": data.first_appearance_chapter,
             "updated_at": now,
         }
+    
+    sync_db_to_txt(project_id)
+    return res
 
 
 @router.put("/api/v1/projects/{project_id}/characters/{character_id}")
@@ -208,7 +212,9 @@ def update_character(project_id: str, character_id: int, data: CharacterProfileU
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="角色不存在")
         row = conn.execute("SELECT * FROM character_profile WHERE id = ?", (character_id,)).fetchone()
-        return dict(row) if row else {}
+        
+    sync_db_to_txt(project_id)
+    return dict(row) if row else {}
 
 
 @router.delete("/api/v1/projects/{project_id}/characters/{character_id}")
@@ -221,7 +227,9 @@ def delete_character(project_id: str, character_id: int, request: Request):
         )
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="角色不存在")
-        return {"message": "角色已删除"}
+            
+    sync_db_to_txt(project_id)
+    return {"message": "角色已删除"}
 
 
 @router.post("/api/v1/projects/{project_id}/characters/import-from-state/preview")
@@ -293,6 +301,9 @@ def import_characters_from_state(
             imported.append(result)
 
     merged_count = sum(1 for item in imported if item.get("merged"))
+    if imported:
+        sync_db_to_txt(project_id)
+        
     return {
         "message": f"已导入/更新 {len(imported)} 个角色",
         "characters": imported,

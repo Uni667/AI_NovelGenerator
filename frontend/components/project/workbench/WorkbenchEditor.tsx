@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Skeleton } from "@/components/ui/skeleton"
-import { CheckCircle, Loader2, Save, Play, Ban, AlertCircle, RefreshCcw } from "lucide-react"
+import { CheckCircle, Loader2, Save, Play, Ban, AlertCircle, RefreshCcw, Info, MoreVertical, Trash2, ChevronDown } from "lucide-react"
 import { useProjectContext } from "../ProjectContext"
 import { api } from "@/lib/api-client"
 import { toast } from "sonner"
 import type { Chapter } from "@/lib/types"
 import { FloatingToolbar } from "./FloatingToolbar"
+import { DeleteChapterDialog } from "./DeleteChapterDialog"
 
 export function WorkbenchEditor() {
   const {
@@ -40,6 +41,7 @@ export function WorkbenchEditor() {
   const wordCountDeviation = targetWordCount > 0 ? Math.abs(currentWordCount - targetWordCount) / targetWordCount : 0
   const isWordCountDeviating = currentWordCount > 0 && wordCountDeviation > 0.2
   const deviationPercent = wordCountDeviation * 100
+  const wordCountDiff = currentWordCount - targetWordCount
 
   const hookResult = platform?.hookResult
   const hasLowHookScore = hookResult && (hookResult.score || 0) < 7
@@ -48,6 +50,29 @@ export function WorkbenchEditor() {
   const [toolbarState, setToolbarState] = React.useState({ x: 0, y: 0, visible: false, startIndex: 0, endIndex: 0 })
   const [isRewriting, setIsRewriting] = React.useState(false)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
+
+  // -- Delete / More-menu state --
+  const [moreMenuOpen, setMoreMenuOpen] = React.useState(false)
+  const [deleteTarget, setDeleteTarget] = React.useState<Chapter | null>(null)
+  const moreMenuRef = React.useRef<HTMLDivElement | null>(null)
+
+  React.useEffect(() => {
+    if (!moreMenuOpen) return
+    const handleClick = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [moreMenuOpen])
+
+  const handleDeletedChapter = () => {
+    setMoreMenuOpen(false)
+    // After deletion the sidebar logic will handle navigation;
+    // we just clear local state
+    setChapterEditorContent("")
+  }
 
   const handleMouseUp = (e: React.MouseEvent<HTMLTextAreaElement>) => {
     const target = e.target as HTMLTextAreaElement
@@ -183,44 +208,34 @@ export function WorkbenchEditor() {
 
   return (
     <Card className="glass-panel border-border/40 h-full flex flex-col hover:shadow-[0_0_30px_oklch(0.68_0.19_285/0.1)] transition-all duration-500">
-      <CardHeader className="border-b border-border/30 pb-4 shrink-0">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <CardTitle className="truncate text-lg font-bold">
+      <CardHeader className="border-b border-border/20 pb-2 shrink-0 px-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex items-center gap-3">
+            <CardTitle className="truncate text-base font-bold">
               第{selectedChapterNumber}章 {activeChapterMeta?.chapter_title || selectedChapterFromList?.chapter_title || ""}
             </CardTitle>
-            <CardDescription className="truncate text-xs mt-1 max-w-[500px]">
-              {activeChapterMeta?.chapter_summary || selectedChapterFromList?.chapter_summary || "章节内容编辑区"}
-            </CardDescription>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {isWordCountDeviating && (
-              <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20 animate-pulse flex items-center gap-1">
-                <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                字数偏离 {Math.round(deviationPercent)}%
-              </Badge>
-            )}
-            {hasLowHookScore && (
-              <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 animate-pulse flex items-center gap-1">
-                <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0" />
-                开篇抓力低 ({hookResult.score}分)
-              </Badge>
-            )}
             <Badge
               variant={activeChapterMeta?.status === "final" ? "default" : activeChapterMeta?.status === "draft" ? "secondary" : "outline"}
               className={
                 activeChapterMeta?.status === "final"
-                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px] px-1.5 py-0"
                   : activeChapterMeta?.status === "draft"
-                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                  : "bg-secondary text-muted-foreground"
+                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px] px-1.5 py-0"
+                  : "bg-secondary text-muted-foreground text-[10px] px-1.5 py-0"
               }
             >
-              {activeChapterMeta?.status === "final" ? "已定稿" : activeChapterMeta?.status === "draft" ? "草稿" : "待生成"}
+              {activeChapterMeta?.status === "final" ? "定稿" : activeChapterMeta?.status === "draft" ? "草稿" : "待生成"}
             </Badge>
-            <Badge variant="outline" className="border-border bg-card/50">
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Badge variant="outline" className="border-border bg-card/50 text-[10px] px-1.5 py-0">
               {activeChapterMeta?.word_count || chapterEditorContent.length || 0} 字
             </Badge>
+            {isWordCountDeviating && (
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px] px-1.5 py-0">
+                ±{Math.round(deviationPercent)}%
+              </Badge>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -268,17 +283,17 @@ export function WorkbenchEditor() {
           <div className="flex flex-col gap-2 rounded-xl border border-border/30 bg-secondary/10 p-3 text-xs shrink-0">
             {isWordCountDeviating && (
               <div className="flex items-start gap-2 text-amber-500">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <Info className="h-4 w-4 shrink-0 mt-0.5" />
                 <span>
-                  <strong>字数偏离警告：</strong>当前章节字数已达 {currentWordCount} 字，偏离了目标值 ({targetWordCount} 字) {Math.round(deviationPercent)}%。可能存在剧情拖沓灌水或细节不够饱满，请注意把控节奏。
+                  <strong>字数建议：</strong>当前 {wordCountDiff > 0 ? `比目标多 ${wordCountDiff} 字` : `比目标少 ${Math.abs(wordCountDiff)} 字`}（偏差 {Math.round(deviationPercent)}%）。可考虑{wordCountDiff > 0 ? '拆章或精简冗余描写' : '丰富细节或增加情节铺垫'}。
                 </span>
               </div>
             )}
             {hasLowHookScore && (
-              <div className="flex items-start gap-2 text-destructive">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-2 text-amber-500">
+                <Info className="h-4 w-4 shrink-0 mt-0.5" />
                 <span>
-                  <strong>开篇抓力预警：</strong>当前章节作为开篇，首章抓力评分仅为 {hookResult.score}/10分，低于安全基准线（7分）。强烈建议参考右侧状态面板的“平台辅助质检”改写意见，进行细节打磨。
+                  <strong>开篇建议：</strong>当前首章抓力评分 {hookResult.score}/10，低于参考线 7 分。可参考右侧质检面板的改写建议进行打磨。
                 </span>
               </div>
             )}
@@ -292,7 +307,7 @@ export function WorkbenchEditor() {
             <Skeleton className="flex-1 w-full rounded-xl" />
           </div>
         ) : (
-          <div className="flex-1 min-h-0 relative">
+          <div className="flex-1 min-h-0">
             <FloatingToolbar
               x={toolbarState.x}
               y={toolbarState.y}
@@ -312,56 +327,96 @@ export function WorkbenchEditor() {
                    handleMouseUp(e as any)
                  }
               }}
-              className="h-full w-full resize-none font-serif text-base md:text-lg leading-8 tracking-wider p-4 bg-background/30 focus-visible:ring-primary/25 border-border/80 rounded-xl transition-all"
+              className="h-full w-full resize-none font-serif text-base md:text-lg md:leading-8 leading-7 tracking-wider p-6 md:p-8 bg-background/30 focus-visible:ring-primary/25 border-border/80 rounded-xl transition-all [field-sizing:fixed] overflow-y-auto"
               placeholder="在这里生成、编辑、保存章节草稿... 选中任意文字即可进行局部指令重写。"
             />
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-3 pt-2 shrink-0">
-          <Button onClick={saveWorkbenchChapter} disabled={chapterEditorSaving || chapterEditorLoading}>
-            {chapterEditorSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2 text-primary-foreground" />}
-            保存草稿
+        <div className="flex flex-wrap items-center gap-2 pt-2 shrink-0">
+          <Button size="sm" onClick={saveWorkbenchChapter} disabled={chapterEditorSaving || chapterEditorLoading}>
+            {chapterEditorSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5 text-primary-foreground" />}
+            保存
           </Button>
-          <Button variant="outline" onClick={handleGenerateWorkbenchChapter} disabled={isConnected || Boolean(generationTaskId) || generationStopping} className="hover:bg-accent/40">
-            <Play className="h-4 w-4 mr-2 text-emerald-400" />AI 生成本章
+          <Button size="sm" variant="outline" onClick={handleGenerateWorkbenchChapter} disabled={isConnected || Boolean(generationTaskId) || generationStopping} className="hover:bg-accent/40">
+            <Play className="h-4 w-4 mr-1.5 text-emerald-400" />AI 生成
           </Button>
-          <Button variant="secondary" onClick={handleFinalizeWorkbenchChapter} disabled={isConnected || Boolean(generationTaskId) || generationStopping || !chapterEditorContent.trim()} className="hover:bg-accent/50">
-            <CheckCircle className="h-4 w-4 mr-2 text-indigo-400" />定稿
+          <Button size="sm" variant="secondary" onClick={handleFinalizeWorkbenchChapter} disabled={isConnected || Boolean(generationTaskId) || generationStopping || !chapterEditorContent.trim()} className="hover:bg-accent/50">
+            <CheckCircle className="h-4 w-4 mr-1.5 text-indigo-400" />定稿
           </Button>
           {generationTaskId && (
-            <Button variant="destructive" onClick={handleStopGeneration} disabled={generationStopping}>
-              {generationStopping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Ban className="h-4 w-4 mr-2" />}
-              中断生成
+            <Button size="sm" variant="destructive" onClick={handleStopGeneration} disabled={generationStopping}>
+              {generationStopping ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Ban className="h-4 w-4 mr-1.5" />}
+              中断
             </Button>
           )}
-          <div className="flex items-center space-x-2 ml-auto">
+
+          {/* More actions dropdown */}
+          <div className="relative ml-auto">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+              className="h-7 px-2 text-muted-foreground hover:text-foreground text-[11px]"
+            >
+              <MoreVertical className="h-3.5 w-3.5 mr-1" />
+              更多
+              <ChevronDown className={`h-3 w-3 ml-0.5 transition-transform ${moreMenuOpen ? 'rotate-180' : ''}`} />
+            </Button>
+
+            {moreMenuOpen && (
+              <div
+                ref={moreMenuRef}
+                className="absolute right-0 bottom-full mb-1 z-50 min-w-[140px] rounded-lg border border-border/50 bg-popover backdrop-blur-xl shadow-xl py-1 animate-in fade-in zoom-in-95 duration-150"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 transition-colors"
+                  onClick={() => {
+                    const target = chapters?.find((c: Chapter) => c.chapter_number === selectedChapterNumber) || null
+                    setDeleteTarget(target)
+                    setMoreMenuOpen(false)
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  删除草稿
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Brainstorm toggle */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-muted-foreground select-none">脑暴</span>
             <button
               type="button"
               role="switch"
               aria-checked={enableBrainstorming}
               disabled={isConnected || Boolean(generationTaskId) || generationStopping}
               onClick={() => setEnableBrainstorming(!enableBrainstorming)}
-              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${
                 enableBrainstorming ? "bg-primary" : "bg-muted-foreground/30"
               }`}
             >
               <span
-                className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-md ring-0 transition-transform duration-300 ${
-                  enableBrainstorming ? "translate-x-4" : "translate-x-0.5"
+                className={`pointer-events-none block h-3 w-3 rounded-full bg-background shadow-md ring-0 transition-transform duration-300 ${
+                  enableBrainstorming ? "translate-x-3.5" : "translate-x-0.5"
                 }`}
               />
             </button>
-            <span className="text-xs text-muted-foreground select-none cursor-pointer" onClick={() => {
-              if (!isConnected && !generationTaskId && !generationStopping) {
-                setEnableBrainstorming(!enableBrainstorming)
-              }
-            }}>
-              开启多智能体脑暴
-            </span>
           </div>
         </div>
       </CardContent>
+
+      {/* Delete confirmation dialog */}
+      <DeleteChapterDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
+        chapter={deleteTarget}
+        projectId={projectId}
+        onDeleted={handleDeletedChapter}
+      />
     </Card>
   )
 }

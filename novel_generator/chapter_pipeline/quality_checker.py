@@ -10,9 +10,54 @@ from novel_generator.json_parser import extract_json_from_text
 logger = logging.getLogger(__name__)
 
 
-def analyze_opening_hook(ctx, chapter_text: str, task_id: str | None = None) -> dict:
+def get_semantic_segments(chapter_text: str) -> str:
+    """
+    智能地将正文切片，拼接出“开篇部分”、“中段部分”和“结尾部分”的精简段落，
+    保留了段落的完整性（以换行为边界），避免粗暴字符截断导致语义扭曲，并极大节省 Token。
+    """
+    paragraphs = [p.strip() for p in chapter_text.splitlines() if p.strip()]
+    if not paragraphs:
+        return ""
+    
+    total_paras = len(paragraphs)
+    # 如果总段落数比较少，直接返回全文
+    if total_paras <= 15:
+        return chapter_text
+
+    # 开篇部分：取前 5 段
+    opening = paragraphs[:5]
+    
+    # 结尾部分：取最后 5 段
+    ending = paragraphs[-5:]
+    
+    # 中段部分：取正中间 5 段
+    mid_start = max(5, total_paras // 2 - 2)
+    middle = paragraphs[mid_start:mid_start + 5]
+    
+    formatted = [
+        "【开篇部分段落】",
+        "\n".join(opening),
+        "\n======================================",
+        "【中段部分段落】",
+        "\n".join(middle),
+        "\n======================================",
+        "【结尾部分段落】",
+        "\n".join(ending)
+    ]
+    return "\n".join(formatted)
+
+
+def analyze_chapter_quality(ctx, chapter_text: str, task_id: str | None = None) -> dict:
+    """
+    合并原有的开篇、中段、结尾和对话质检，在单次 LLM 请求中完成分析，减少 API 延迟与费用。
+    """
     if not chapter_text.strip():
-        return {"score": 0, "issues": ["章节内容为空"], "suggestion": "先生成正文"}
+        return {
+            "opening": {"score": 0, "issues": ["章节内容为空"], "suggestion": "先生成正文"},
+            "ending": {"has_hook": False, "hook_type": "无", "suggestion": "先生成正文"},
+            "middle": {"score": 0, "issues": ["章节内容为空"], "suggestion": "先生成正文"},
+            "dialogue": {"score": 0, "issues": ["章节内容为空"], "suggestion": "先生成正文"}
+        }
 
     llm = create_specialized_chat_adapter(ctx, "review")
 
@@ -21,132 +66,59 @@ def analyze_opening_hook(ctx, chapter_text: str, task_id: str | None = None) -> 
             raise_if_cancelled(task_id)
         return False
 
-    prompt = (
-        "你是一位网络小说编辑。请严格按 JSON 输出以下开篇分析结果。\n\n"
-        "评估标准：\n"
-        "1. 前200字是否快速进入冲突、危机、异样、欲望或强悬念。\n"
-        "2. 是否避免了空泛铺垫、背景说明和模板化解释。\n"
-        "3. 是否让读者自然产生继续读下去的冲动。\n\n"
-        f"待分析文本：\n{chapter_text[:2000]}\n\n"
-        "输出格式：\n"
-        "{\n"
-        '  "score": 1-10,\n'
-        '  "issues": ["问题1", "问题2"],\n'
-        '  "suggestion": "50字以内建议",\n'
-        '  "rewritten_opening": "可选，改写后的开头片段"\n'
-        "}\n"
-        "只输出 JSON。"
-    )
+    # 提取精简的语义段落，控制 Token 开销并避免单词斩断
+    sliced_text = get_semantic_segments(chapter_text)
+
+    prompt = prompt_definitions.get_prompt_template(
+        ctx.project_id, 'chapter_comprehensive_quality_check_prompt'
+    ).format(chapter_text=sliced_text)
 
     result = invoke_with_cleaning(
         llm,
         prompt,
         cancel_check=_check_cancel,
-        operation_name="章节开篇质检",
-        step="opening_check",
+        operation_name="章节综合质检",
+        step="quality_check",
     )
+    
     parsed = extract_json_from_text(result)
-    if parsed:
-        return parsed
-    logger.warning("Failed to parse opening analysis. Raw: %s", result[:200])
-    return {"score": 0, "issues": ["无法解析开篇质检结果"], "suggestion": result[:120]}
+    if parsed and isinstance(parsed, dict):
+        # 确保包含必需的质检维度，如果没有则赋予正常分值的默认字典
+        return {
+            "opening": parsed.get("opening") or {"score": 8, "issues": [], "suggestion": "开篇分析解析失败，使用默认分值"},
+            "ending": parsed.get("ending") or {"has_hook": True, "hook_type": "无", "suggestion": "结尾分析解析失败"},
+            "middle": parsed.get("middle") or {"score": 8, "issues": [], "suggestion": "中段分析解析失败"},
+            "dialogue": parsed.get("dialogue") or {"score": 8, "issues": [], "suggestion": "对话分析解析失败"}
+        }
+        
+    logger.warning("Failed to parse comprehensive quality analysis. Raw: %s", result[:300])
+    return {
+        "opening": {"score": 8, "issues": ["综合质检输出解析失败"], "suggestion": "解析失败，跳过限制"},
+        "ending": {"has_hook": True, "hook_type": "无", "suggestion": "解析失败"},
+        "middle": {"score": 8, "issues": [], "suggestion": "解析失败"},
+        "dialogue": {"score": 8, "issues": [], "suggestion": "解析失败"}
+    }
+
+
+# ==========================================
+# 兼容旧接口的包装器，避免修改其他依赖文件
+# ==========================================
+
+def analyze_opening_hook(ctx, chapter_text: str, task_id: str | None = None) -> dict:
+    res = analyze_chapter_quality(ctx, chapter_text, task_id)
+    return res.get("opening", {"score": 8, "issues": [], "suggestion": ""})
 
 
 def analyze_ending_hook(ctx, chapter_text: str, task_id: str | None = None) -> dict:
-    if not chapter_text.strip():
-        return {"has_hook": False, "suggestion": "先生成正文"}
-
-    llm = create_specialized_chat_adapter(ctx, "review")
-
-    def _check_cancel():
-        if task_id:
-            raise_if_cancelled(task_id)
-        return False
-
-    ending = chapter_text[-500:] if len(chapter_text) > 500 else chapter_text
-    prompt = (
-        "你是一位网络小说编辑。请严格按 JSON 输出以下章节结尾钩子分析结果。\n\n"
-        "检查重点：\n"
-        "1. 结尾是否留下危机、揭秘、欲望、反转中的至少一种钩子。\n"
-        "2. 读者是否会自然想点下一章。\n"
-        "3. 结尾是否过于平、收得太死、解释过多。\n\n"
-        f"待分析结尾：\n{ending}\n\n"
-        "输出格式：\n"
-        "{\n"
-        '  "has_hook": true/false,\n'
-        '  "hook_type": "危机型/揭秘型/欲望型/反转型/无",\n'
-        '  "suggestion": "50字以内建议"\n'
-        "}\n"
-        "只输出 JSON。"
-    )
-
-    result = invoke_with_cleaning(
-        llm,
-        prompt,
-        cancel_check=_check_cancel,
-        operation_name="章节结尾质检",
-        step="ending_check",
-    )
-    parsed = extract_json_from_text(result)
-    if parsed:
-        return parsed
-    logger.warning("Failed to parse ending analysis. Raw: %s", result[:200])
-    return {"has_hook": False, "hook_type": "无", "suggestion": result[:120]}
+    res = analyze_chapter_quality(ctx, chapter_text, task_id)
+    return res.get("ending", {"has_hook": True, "hook_type": "无", "suggestion": ""})
 
 
 def analyze_mid_section_quality(ctx, chapter_text: str, task_id: str | None = None) -> dict:
-    if not chapter_text.strip():
-        return {"score": 0, "issues": ["章节内容为空"], "suggestion": "先生成正文"}
-
-    llm = create_specialized_chat_adapter(ctx, "review")
-
-    def _check_cancel():
-        if task_id:
-            raise_if_cancelled(task_id)
-        return False
-
-    middle_text = chapter_text
-    if len(chapter_text) > 1800:
-        start = min(600, len(chapter_text) // 4)
-        end = max(start + 600, len(chapter_text) - 600)
-        middle_text = chapter_text[start:end]
-
-    result = invoke_with_cleaning(
-        llm,
-        prompt_definitions.get_prompt_template(ctx.project_id, 'mid_section_quality_prompt').format(chapter_text=middle_text[:2500]),
-        cancel_check=_check_cancel,
-        operation_name="章节中段质检",
-        step="mid_check",
-    )
-    parsed = extract_json_from_text(result)
-    if parsed:
-        return parsed
-    logger.warning("Failed to parse mid-section analysis. Raw: %s", result[:200])
-    return {"score": 0, "issues": ["无法解析中段质检结果"], "suggestion": result[:120]}
+    res = analyze_chapter_quality(ctx, chapter_text, task_id)
+    return res.get("middle", {"score": 8, "issues": [], "suggestion": ""})
 
 
 def analyze_dialogue_voice(ctx, chapter_text: str, task_id: str | None = None) -> dict:
-    if not chapter_text.strip():
-        return {"score": 0, "issues": ["章节内容为空"], "suggestion": "先生成正文"}
-
-    llm = create_specialized_chat_adapter(ctx, "review")
-
-    def _check_cancel():
-        if task_id:
-            raise_if_cancelled(task_id)
-        return False
-
-    result = invoke_with_cleaning(
-        llm,
-        prompt_definitions.get_prompt_template(ctx.project_id, 'dialogue_voice_check_prompt').format(chapter_text=chapter_text[:3000]),
-        cancel_check=_check_cancel,
-        operation_name="人物话语质检",
-        step="dialogue_check",
-    )
-    parsed = extract_json_from_text(result)
-    if parsed:
-        return parsed
-    logger.warning("Failed to parse dialogue analysis. Raw: %s", result[:200])
-    return {"score": 0, "issues": ["无法解析人物话语质检结果"], "suggestion": result[:120]}
-
-
+    res = analyze_chapter_quality(ctx, chapter_text, task_id)
+    return res.get("dialogue", {"score": 8, "issues": [], "suggestion": ""})

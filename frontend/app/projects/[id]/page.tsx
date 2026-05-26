@@ -6,7 +6,8 @@ import { PLATFORM_CONFIG } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, ChevronDown, ChevronUp } from "lucide-react"
+import { useState } from "react"
 
 import ProjectLoading from "./loading"
 import { ProjectProvider, useProjectContext } from "@/components/project/ProjectContext"
@@ -29,6 +30,18 @@ import { GraphTab } from "@/components/project/GraphTab"
 
 function ProjectDashboardContent() {
   const { project, config, activeTab, setActiveTab } = useProjectContext()
+  const [showMoreTabs, setShowMoreTabs] = useState(false)
+
+  const moreTabs = [
+    { value: "characters", label: "人物规划" },
+    { value: "plotarcs", label: "伏笔暗线" },
+    { value: "pipeline", label: "素材加工站" },
+    { value: "reader", label: "读者反馈" },
+    { value: "platform", label: (PLATFORM_CONFIG[config?.platform]?.icon || "📖") + " " + (PLATFORM_CONFIG[config?.platform]?.label || "平台") + "工具" },
+    { value: "prompts", label: "提示词实验", className: "font-semibold text-purple-400" },
+    { value: "analytics", label: "分析统计" },
+    { value: "settings", label: "参数设置" },
+  ] as const
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -45,23 +58,31 @@ function ProjectDashboardContent() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0 gap-6">
-        <TabsList className="flex flex-nowrap overflow-x-auto max-w-full md:flex-wrap p-1 gap-1 bg-muted/60 backdrop-blur-md rounded-xl w-full md:w-fit shrink-0 scrollbar-none">
+        <TabsList className="flex flex-nowrap overflow-x-auto max-w-full md:flex-wrap p-1 gap-1 bg-muted/60 backdrop-blur-md rounded-xl w-full shrink-0 scrollbar-none">
           <TabsTrigger value="overview" className="rounded-lg px-4 py-2 text-sm shrink-0">概览</TabsTrigger>
           <TabsTrigger value="workbench" className="rounded-lg px-4 py-2 text-sm shrink-0">章节工作台</TabsTrigger>
           <TabsTrigger value="generation" className="rounded-lg px-4 py-2 text-sm shrink-0">AI 生成</TabsTrigger>
           <TabsTrigger value="files" className="rounded-lg px-4 py-2 text-sm shrink-0">文件输出</TabsTrigger>
           <TabsTrigger value="knowledge" className="rounded-lg px-4 py-2 text-sm shrink-0">知识库</TabsTrigger>
           <TabsTrigger value="graph" className="rounded-lg px-4 py-2 text-sm shrink-0">知识图谱</TabsTrigger>
-          <TabsTrigger value="characters" className="rounded-lg px-4 py-2 text-sm shrink-0">人物规划</TabsTrigger>
-          <TabsTrigger value="plotarcs" className="rounded-lg px-4 py-2 text-sm shrink-0">伏笔暗线</TabsTrigger>
-          <TabsTrigger value="pipeline" className="rounded-lg px-4 py-2 text-sm shrink-0">素材加工站</TabsTrigger>
-          <TabsTrigger value="reader" className="rounded-lg px-4 py-2 text-sm shrink-0">读者反馈</TabsTrigger>
-          <TabsTrigger value="platform" className="rounded-lg px-4 py-2 text-sm shrink-0">
-            {PLATFORM_CONFIG[config?.platform]?.icon || "📖"} {PLATFORM_CONFIG[config?.platform]?.label || "平台"}工具
-          </TabsTrigger>
-          <TabsTrigger value="prompts" className="rounded-lg px-4 py-2 text-sm font-semibold text-purple-400 shrink-0">提示词实验</TabsTrigger>
-          <TabsTrigger value="analytics" className="rounded-lg px-4 py-2 text-sm shrink-0">分析统计</TabsTrigger>
-          <TabsTrigger value="settings" className="rounded-lg px-4 py-2 text-sm shrink-0">参数设置</TabsTrigger>
+          {/* 更多按钮 — 展开低频 tab */}
+          <button
+            type="button"
+            onClick={() => setShowMoreTabs(!showMoreTabs)}
+            className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm shrink-0 transition-colors ${
+              showMoreTabs || moreTabs.some(t => t.value === activeTab)
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {showMoreTabs ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            更多
+          </button>
+          {showMoreTabs && moreTabs.map(tab => (
+            <TabsTrigger key={tab.value} value={tab.value} className={`rounded-lg px-3 py-2 text-sm shrink-0 ${tab.className || ""}`}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="overview" className="mt-0 outline-none">

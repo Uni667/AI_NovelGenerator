@@ -44,3 +44,13 @@ export function useChapter(projectId: string, num: number) {
     enabled: !!projectId && num > 0
   })
 }
+
+export function useDeleteChapter(projectId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (chapterNumber: number) => api.chapters.delete(projectId, chapterNumber),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["chapters", projectId] })
+    }
+  })
+}

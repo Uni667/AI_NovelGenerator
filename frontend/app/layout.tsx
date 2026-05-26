@@ -21,11 +21,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
       style={{ colorScheme: "dark" } as React.CSSProperties}
     >
-      <body className="min-h-full flex bg-background text-foreground">
+      <body className="h-screen flex overflow-hidden bg-background text-foreground">
         <Providers>
           <AuthGuard>
             <Sidebar />
-            <main className="flex-1 overflow-auto p-4 pt-14 lg:p-6 lg:pt-6">{children}</main>
+            <main className="flex-1 flex flex-col min-h-0 overflow-y-auto p-4 pt-14 lg:p-6 lg:pt-6">{children}</main>
           </AuthGuard>
         </Providers>
       </body>

@@ -128,9 +128,9 @@ export default function ChapterPage() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 h-auto lg:h-[calc(100vh-6rem)]">
+    <div className="flex flex-col lg:flex-row gap-6 h-full">
       {/* 左侧章节内容 */}
-      <div className="flex-1 flex flex-col min-h-[500px] lg:min-h-0">
+      <div className="flex-1 flex flex-col min-h-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 shrink-0">
           <div className="flex flex-wrap items-center gap-2 md:gap-3 min-w-0">
             <Button variant="ghost" size="sm" className="h-8 px-2.5 text-muted-foreground hover:text-foreground shrink-0" onClick={() => router.push(`/projects/${projectId}`)}>
@@ -181,17 +181,17 @@ export default function ChapterPage() {
         )}
 
         {/* 内容区 */}
-        <div className="flex-1 border rounded-lg overflow-hidden h-[50vh] lg:h-auto min-h-[300px]">
+        <div className="flex-1 border rounded-lg overflow-hidden min-h-0">
           {isEditing ? (
             <Textarea
               value={content}
               onChange={e => setContent(e.target.value)}
-              className="h-full resize-none font-serif text-base leading-relaxed p-6"
+              className="h-full w-full resize-none font-serif text-base md:text-lg leading-relaxed md:leading-8 p-6 md:p-8 [field-sizing:fixed] overflow-y-auto"
               placeholder="在此编写章节内容..."
             />
           ) : (
             <ScrollArea className="h-full">
-              <div className="p-6 font-serif text-base leading-relaxed whitespace-pre-wrap">
+              <div className="p-6 md:p-8 font-serif text-base md:text-lg leading-relaxed md:leading-8 whitespace-pre-wrap">
                 {content || (
                   <div className="text-center py-16 text-muted-foreground">
                     <PenLine className="h-12 w-12 mx-auto mb-3 opacity-50" />
@@ -230,7 +230,7 @@ export default function ChapterPage() {
       </div>
 
       {/* 右侧章节信息 */}
-      <div className="w-full lg:w-72 shrink-0 space-y-4 pb-6 lg:pb-0">
+      <div className="w-full lg:w-72 shrink-0 flex flex-col gap-4 pb-6 lg:pb-0 min-h-0">
         {chapterData?.meta && (
           <Card>
             <CardHeader><CardTitle className="text-sm">章节信息</CardTitle></CardHeader>
@@ -247,10 +247,10 @@ export default function ChapterPage() {
         )}
 
         {/* 章节目录导航 */}
-        <Card>
-          <CardHeader><CardTitle className="text-sm">章节目录</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="h-96">
+        <Card className="flex-1 flex flex-col min-h-0">
+          <CardHeader className="pb-2 shrink-0"><CardTitle className="text-sm">章节目录</CardTitle></CardHeader>
+          <CardContent className="p-0 flex-1 min-h-0">
+            <ScrollArea className="h-full">
               <div className="p-2 space-y-1">
                 {chapters?.map((ch: any) => (
                   <Button

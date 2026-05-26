@@ -394,10 +394,16 @@ def Novel_architecture_generate(
         partial_data["global_summary_result"] = global_summary_result
         save_partial_architecture_data(filepath, partial_data)
         save_tracking_file(filepath, "global_summary.txt", global_summary_result)
+        
+        core_summary_content = f"# 核心设定\n\n## 核心种子\n{core_seed_result.strip()}\n\n## 角色架构\n{character_dynamics_result.strip()}\n\n## 世界观\n{world_building_result.strip()}\n\n## 核心主线\n{plot_arch_result.strip()}"
+        save_tracking_file(filepath, "core_summary.txt", core_summary_content)
+        
         _emit("progress", {"step": "global_summary_init", "status": "done", "message": "初始全局摘要已生成"})
     else:
         logger.info("Initial global summary already done. Skipping...")
         save_tracking_file(filepath, "global_summary.txt", partial_data["global_summary_result"])
+        core_summary_content = f"# 核心设定\n\n## 核心种子\n{core_seed_result.strip()}\n\n## 角色架构\n{character_dynamics_result.strip()}\n\n## 世界观\n{world_building_result.strip()}\n\n## 核心主线\n{plot_arch_result.strip()}"
+        save_tracking_file(filepath, "core_summary.txt", core_summary_content)
 
     # ── Step 6: 伏笔暗线台账 ──
     if "plot_arcs_result" not in partial_data:

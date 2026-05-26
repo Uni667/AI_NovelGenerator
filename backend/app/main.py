@@ -5,7 +5,7 @@ from logging.handlers import RotatingFileHandler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import init_db
-from backend.app.routes import auth, chapters, character_appearances, character_conflicts, character_relationships, characters, files, generation, knowledge, platform_tools, projects, user_api_config, material_processor
+from backend.app.routes import auth, chapters, character_appearances, character_conflicts, character_relationships, characters, files, generation, knowledge, platform_tools, projects, prompts, user_api_config, material_processor, interactive, analytics, plot_arcs
 from backend.app.rate_limiter import limiter, rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -38,7 +38,7 @@ logging.basicConfig(
 
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000"
+    "http://localhost:3000,http://127.0.0.1:3000,https://frontend-chi-one-84.vercel.app"
 ).split(",")
 
 @asynccontextmanager
@@ -80,6 +80,10 @@ app.include_router(character_conflicts.router)
 app.include_router(character_appearances.router)
 app.include_router(user_api_config.router)
 app.include_router(material_processor.router)
+app.include_router(prompts.router)
+app.include_router(interactive.router)
+app.include_router(analytics.router)
+app.include_router(plot_arcs.router)
 
 
 @app.get("/api/v1/health")

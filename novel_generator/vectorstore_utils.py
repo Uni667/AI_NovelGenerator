@@ -83,7 +83,7 @@ def clear_vector_store(filepath: str) -> bool:
         traceback.print_exc()
         return False
 
-def init_vector_store(embedding_adapter, texts, filepath: str):
+def init_vector_store(embedding_adapter, texts, filepath: str, chapter_number: int | None = None):
     """
     在 filepath 下创建/加载一个 Chroma 向量库并插入 texts。
     如果Embedding失败，则返回 None，不中断任务。
@@ -94,7 +94,8 @@ def init_vector_store(embedding_adapter, texts, filepath: str):
 
     store_dir = get_vectorstore_dir(filepath)
     os.makedirs(store_dir, exist_ok=True)
-    documents = [_Document(page_content=str(t)) for t in texts]
+    metadata = {"chapter_number": chapter_number} if chapter_number is not None else {}
+    documents = [_Document(page_content=str(t), metadata=metadata) for t in texts]
 
     try:
         class LCEmbeddingWrapper(LCEmbeddings):
@@ -215,9 +216,9 @@ def split_text_for_vectorstore(chapter_text: str, max_length: int = 500, similar
     
     return final_segments
 
-def update_vector_store(embedding_adapter, new_chapter: str, filepath: str):
+def update_vector_store(embedding_adapter, new_chapter: str, filepath: str, chapter_number: int | None = None):
     """
-    将最新章节文本插入到向量库中。
+    将最新章节文本插入到向量库中，并标记章节号。
     若库不存在则初始化；若初始化/更新失败，则跳过。
     """
     from utils import read_file, clear_file_content, save_string_to_txt
@@ -229,7 +230,7 @@ def update_vector_store(embedding_adapter, new_chapter: str, filepath: str):
     store = load_vector_store(embedding_adapter, filepath)
     if not store:
         logging.info("Vector store does not exist or failed to load. Initializing a new one for new chapter...")
-        store = init_vector_store(embedding_adapter, splitted_texts, filepath)
+        store = init_vector_store(embedding_adapter, splitted_texts, filepath, chapter_number=chapter_number)
         if not store:
             logging.warning("Init vector store failed, skip embedding.")
         else:
@@ -238,16 +239,24 @@ def update_vector_store(embedding_adapter, new_chapter: str, filepath: str):
 
     _ensure_langchain_doc()
     try:
-        docs = [_Document(page_content=str(t)) for t in splitted_texts]
+        metadata = {"chapter_number": chapter_number} if chapter_number is not None else {}
+        docs = [_Document(page_content=str(t), metadata=metadata) for t in splitted_texts]
         store.add_documents(docs)
         logging.info("Vector store updated with the new chapter splitted segments.")
     except Exception as e:
         logging.warning(f"Failed to update vector store: {e}")
         traceback.print_exc()
 
-def get_relevant_context_from_vector_store(embedding_adapter, query: str, filepath: str, k: int = 2) -> str:
+def get_relevant_context_from_vector_store(
+    embedding_adapter,
+    query: str,
+    filepath: str,
+    k: int = 2,
+    current_chapter_number: int | None = None
+) -> str:
     """
     从向量库中检索与 query 最相关的 k 条文本，拼接后返回。
+    如果指定了 current_chapter_number，则只会召回严格属于前序章节的内容，实现时序过滤，防因果倒置。
     如果向量库加载/检索失败，则返回空字符串。
     最终只返回最多2000字符的检索片段。
     """
@@ -257,10 +266,26 @@ def get_relevant_context_from_vector_store(embedding_adapter, query: str, filepa
         return ""
 
     try:
-        docs = store.similarity_search(query, k=k)
-        if not docs:
+        # 适当增加检索量（召回3倍），用于在内存中基于时序进行精准过滤
+        fetch_k = k * 3 if current_chapter_number is not None else k
+        raw_docs = store.similarity_search(query, k=fetch_k)
+        if not raw_docs:
             logging.info(f"No relevant documents found for query '{query}'. Returning empty context.")
             return ""
+            
+        filtered_docs = []
+        for d in raw_docs:
+            doc_chap = d.metadata.get("chapter_number")
+            if doc_chap is not None and current_chapter_number is not None:
+                try:
+                    if int(doc_chap) >= current_chapter_number:
+                        # 过滤掉未来的章节设定，防止剧情因果错乱
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            filtered_docs.append(d)
+            
+        docs = filtered_docs[:k]
         combined = "\n".join([d.page_content for d in docs])
         if len(combined) > 2000:
             combined = combined[:2000]

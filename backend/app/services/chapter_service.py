@@ -75,6 +75,13 @@ def sync_chapters_from_directory(project_id: str, filepath: str, user_id: str | 
 
 
 def get_chapter_content(project_id: str, chapter_number: int, filepath: str) -> str:
+    with get_db() as conn:
+        row = conn.execute("SELECT user_id FROM project WHERE id=?", (project_id,)).fetchone()
+    user_id = row["user_id"] if row else None
+    if user_id:
+        from backend.app.services import file_service
+        file_service.sync_project_files_to_disk(project_id, filepath, user_id)
+
     chapter_file = os.path.join(filepath, "chapters", f"chapter_{chapter_number}.txt")
     if os.path.exists(chapter_file):
         return read_file(chapter_file)
@@ -90,16 +97,49 @@ def update_chapter_content(project_id: str, chapter_number: int, filepath: str, 
     word_count = get_word_count(content)
     now = datetime.datetime.now().isoformat()
     with get_db() as conn:
+        row = conn.execute("SELECT user_id FROM project WHERE id=?", (project_id,)).fetchone()
+        user_id = row["user_id"] if row else "unknown"
         conn.execute(
             "UPDATE chapter SET word_count=?, status='draft', updated_at=? WHERE project_id=? AND chapter_number=?",
             (word_count, now, project_id, chapter_number)
         )
+    from backend.app.services import file_service
+    file_service.create_project_file(
+        project_id=project_id,
+        user_id=user_id,
+        type="chapter",
+        title=f"第{chapter_number}章",
+        filename=f"chapters/chapter_{chapter_number}.txt",
+        content=content,
+        source="user_edited",
+        is_current=True
+    )
     return get_chapter(project_id, chapter_number)
 
 
 def mark_chapter_draft(project_id: str, chapter_number: int, word_count: int = 0):
     now = datetime.datetime.now().isoformat()
     with get_db() as conn:
+        row = conn.execute("SELECT filepath, user_id FROM project WHERE id=?", (project_id,)).fetchone()
+        if row:
+            filepath = row["filepath"]
+            user_id = row["user_id"]
+            from backend.app.services import file_service
+            file_service.sync_project_files_to_disk(project_id, filepath, user_id)
+            chapter_file = os.path.join(filepath, "chapters", f"chapter_{chapter_number}.txt")
+            if not os.path.exists(chapter_file) or os.path.getsize(chapter_file) == 0:
+                raise FileNotFoundError(f"章节物理文件未生成或内容为空，无法标记为草稿: {chapter_file}")
+            content = read_file(chapter_file)
+            file_service.create_project_file(
+                project_id=project_id,
+                user_id=user_id,
+                type="chapter",
+                title=f"第{chapter_number}章",
+                filename=f"chapters/chapter_{chapter_number}.txt",
+                content=content,
+                source="ai_generated",
+                is_current=True
+            )
         conn.execute(
             "UPDATE chapter SET status='draft', word_count=?, updated_at=? WHERE project_id=? AND chapter_number=?",
             (word_count, now, project_id, chapter_number)
@@ -115,6 +155,11 @@ def batch_upsert_from_upload(project_id: str, filepath: str, chapters_data: list
     chapters_dir = os.path.join(filepath, "chapters")
     os.makedirs(chapters_dir, exist_ok=True)
     results = []
+
+    if not user_id:
+        with get_db() as conn:
+            row = conn.execute("SELECT user_id FROM project WHERE id=?", (project_id,)).fetchone()
+            user_id = row["user_id"] if row else "unknown"
 
     with get_db() as conn:
         for ch in chapters_data:
@@ -140,6 +185,17 @@ def batch_upsert_from_upload(project_id: str, filepath: str, chapters_data: list
                        VALUES (?,?,?,'draft',?,?,?)""",
                     (user_id, project_id, cn, wc, now, now)
                 )
+            from backend.app.services import file_service
+            file_service.create_project_file(
+                project_id=project_id,
+                user_id=user_id,
+                type="chapter",
+                title=f"第{cn}章",
+                filename=f"chapters/chapter_{cn}.txt",
+                content=content,
+                source="user_imported",
+                is_current=True
+            )
             results.append({"chapter_number": cn, "word_count": wc, "status": "ok"})
     return results
 
@@ -158,12 +214,40 @@ def delete_chapter(project_id: str, chapter_number: int, filepath: str) -> bool:
             (project_id, chapter_number)
         )
         deleted = deleted or conn.total_changes > 0
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "DELETE FROM project_file WHERE project_id=? AND type='chapter' AND filename LIKE ?",
+                (project_id, f"%chapter_{chapter_number}.txt")
+            )
+    except Exception:
+        pass
     return deleted
 
 
 def mark_chapter_final(project_id: str, chapter_number: int, word_count: int = 0):
     now = datetime.datetime.now().isoformat()
     with get_db() as conn:
+        row = conn.execute("SELECT filepath, user_id FROM project WHERE id=?", (project_id,)).fetchone()
+        if row:
+            filepath = row["filepath"]
+            user_id = row["user_id"]
+            from backend.app.services import file_service
+            file_service.sync_project_files_to_disk(project_id, filepath, user_id)
+            chapter_file = os.path.join(filepath, "chapters", f"chapter_{chapter_number}.txt")
+            if not os.path.exists(chapter_file) or os.path.getsize(chapter_file) == 0:
+                raise FileNotFoundError(f"章节物理文件未生成或内容为空，无法标记为定稿: {chapter_file}")
+            content = read_file(chapter_file)
+            file_service.create_project_file(
+                project_id=project_id,
+                user_id=user_id,
+                type="chapter",
+                title=f"第{chapter_number}章",
+                filename=f"chapters/chapter_{chapter_number}.txt",
+                content=content,
+                source="ai_generated",
+                is_current=True
+            )
         conn.execute(
             "UPDATE chapter SET status='final', word_count=?, updated_at=? WHERE project_id=? AND chapter_number=?",
             (word_count, now, project_id, chapter_number)

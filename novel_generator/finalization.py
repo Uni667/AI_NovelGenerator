@@ -16,6 +16,9 @@ from novel_generator.common import invoke_with_cleaning
 from novel_generator.task_manager import raise_if_cancelled
 from utils import read_file, clear_file_content, save_string_to_txt
 from novel_generator.vectorstore_utils import update_vector_store
+from novel_generator.knowledge_graph import KnowledgeGraphManager
+from novel_generator.json_parser import extract_json_from_text
+from backend.app.services.sync_service import sync_txt_to_db
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +79,17 @@ def finalize_chapter(
     new_global_summary = invoke_with_cleaning(llm, prompt_summary, cancel_check=_check_cancel)
     if not new_global_summary.strip():
         new_global_summary = old_global_summary
+        
+    # Check if compression is needed (threshold: 1500 chars)
+    if len(new_global_summary) > 1500:
+        _emit("progress", {"step": "summary_update", "status": "running", "message": "全局摘要过长，正在触发长线记忆压缩..."})
+        prompt_compress = prompt_definitions.get_prompt_template(ctx.project_id, 'compress_global_summary_prompt').format(
+            global_summary=new_global_summary
+        )
+        compressed_summary = invoke_with_cleaning(llm, prompt_compress, cancel_check=_check_cancel)
+        if compressed_summary.strip():
+            new_global_summary = compressed_summary
+            
     _emit("progress", {"step": "summary_update", "status": "done", "message": "全局摘要已更新"})
 
     _check_cancel()
@@ -103,12 +117,43 @@ def finalize_chapter(
     _emit("progress", {"step": "plot_arcs_update", "status": "done", "message": "伏笔暗线台账已更新"})
 
     _check_cancel()
+    _emit("progress", {"step": "graph_extraction", "status": "running", "message": "正在抽取知识图谱关系..."})
+    prompt_graph = prompt_definitions.get_prompt_template(ctx.project_id, 'graph_extraction_prompt').format(
+        chapter_text=chapter_text
+    )
+    graph_response = invoke_with_cleaning(llm, prompt_graph, cancel_check=_check_cancel)
+    triples = extract_json_from_text(graph_response)
+    if isinstance(triples, list):
+        graph_manager = KnowledgeGraphManager(filepath)
+        graph_manager.add_triples(triples)
+        _emit("progress", {"step": "graph_extraction", "status": "done", "message": "知识图谱更新完成"})
+    else:
+        _emit("progress", {"step": "graph_extraction", "status": "error", "message": "图谱关系抽取解析失败"})
+
+    _check_cancel()
+    _emit("progress", {"step": "single_summary_update", "status": "running", "message": "正在生成本章微型摘要..."})
+    prompt_single_summary = prompt_definitions.get_prompt_template(ctx.project_id, 'single_chapter_summary_prompt').format(
+        chapter_text=chapter_text
+    )
+    new_single_summary = invoke_with_cleaning(llm, prompt_single_summary, cancel_check=_check_cancel)
+    if not new_single_summary.strip():
+        new_single_summary = chapter_text[:800]
+    _emit("progress", {"step": "single_summary_update", "status": "done", "message": "本章微型摘要已生成"})
+
+    _check_cancel()
     clear_file_content(global_summary_file)
     save_string_to_txt(new_global_summary, global_summary_file)
     clear_file_content(character_state_file)
     save_string_to_txt(new_char_state, character_state_file)
+    
+    # Sync character state back to the database
+    sync_txt_to_db(ctx.project_id)
     clear_file_content(plot_arcs_file)
     save_string_to_txt(new_plot_arcs, plot_arcs_file)
+
+    single_summary_file = os.path.join(chapters_dir, f"chapter_{novel_number}_summary.txt")
+    clear_file_content(single_summary_file)
+    save_string_to_txt(new_single_summary, single_summary_file)
 
     _check_cancel()
     if ctx.embedding.api_key:
@@ -118,7 +163,7 @@ def finalize_chapter(
             base_url=ctx.embedding.base_url,
             model_name=ctx.embedding.model_name,
         )
-        update_vector_store(emb, chapter_text, filepath)
+        update_vector_store(emb, chapter_text, filepath, chapter_number=novel_number)
 
     logger.info(f"Chapter {novel_number} has been finalized.")
 
