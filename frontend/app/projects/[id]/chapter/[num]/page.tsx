@@ -12,7 +12,8 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
-import { AlertCircle, ChevronLeft, ChevronRight, Save, PenLine, CheckCircle, Loader2, Play } from "lucide-react"
+import { AlertCircle, ChevronLeft, ChevronRight, Save, PenLine, CheckCircle, Loader2, Play, ArrowLeft } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 
 export default function ChapterPage() {
   const params = useParams()
@@ -64,7 +65,67 @@ export default function ChapterPage() {
   const prevChapter = chapters?.find((c: any) => c.chapter_number === chapterNum - 1)
   const nextChapter = chapters?.find((c: any) => c.chapter_number === chapterNum + 1)
 
-  if (isLoading) return <div className="text-center py-12 text-muted-foreground">加载中...</div>
+  if (isLoading) {
+    return (
+      <div className="flex gap-6 h-[calc(100vh-6rem)] animate-pulse">
+        {/* Left column loading skeleton */}
+        <div className="flex-1 flex flex-col space-y-4">
+          <div className="flex items-center justify-between border-b border-border/10 pb-4">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-8 w-24 bg-muted/40 rounded-xl" />
+              <Separator orientation="vertical" className="h-4 bg-border/20" />
+              <Skeleton className="h-8 w-8 bg-muted/40 rounded-full" />
+              <Skeleton className="h-7 w-48 bg-muted/50 rounded-xl" />
+              <Skeleton className="h-8 w-8 bg-muted/40 rounded-full" />
+            </div>
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-6 w-16 bg-muted/40 rounded-full" />
+              <Skeleton className="h-6 w-20 bg-muted/40 rounded-full" />
+            </div>
+          </div>
+          <div className="flex-1 border border-border/30 rounded-2xl p-6 bg-card/10 backdrop-blur-md space-y-4">
+            <Skeleton className="h-6 w-1/4 bg-muted/40 rounded-lg" />
+            <div className="space-y-3">
+              <Skeleton className="h-4 w-full bg-muted/30 rounded-md" />
+              <Skeleton className="h-4 w-11/12 bg-muted/30 rounded-md" />
+              <Skeleton className="h-4 w-full bg-muted/30 rounded-md" />
+              <Skeleton className="h-4 w-4/5 bg-muted/30 rounded-md" />
+              <Skeleton className="h-4 w-full bg-muted/30 rounded-md" />
+              <Skeleton className="h-4 w-3/4 bg-muted/30 rounded-md" />
+            </div>
+          </div>
+          <div className="flex items-center gap-3 mt-2">
+            <Skeleton className="h-9 w-20 bg-muted/40 rounded-xl" />
+            <Skeleton className="h-9 w-32 bg-muted/40 rounded-xl" />
+          </div>
+        </div>
+
+        {/* Right column loading skeleton */}
+        <div className="w-72 shrink-0 space-y-4">
+          <div className="border border-border/30 rounded-2xl p-4 bg-card/10 backdrop-blur-md space-y-3">
+            <Skeleton className="h-4 w-20 bg-muted/40 rounded-lg" />
+            <Separator className="bg-border/20" />
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex flex-col gap-1.5">
+                <Skeleton className="h-3 w-12 bg-muted/40 rounded" />
+                <Skeleton className="h-4 w-full bg-muted/30 rounded" />
+              </div>
+            ))}
+          </div>
+
+          <div className="border border-border/30 rounded-2xl p-4 bg-card/10 backdrop-blur-md space-y-3">
+            <Skeleton className="h-4 w-20 bg-muted/40 rounded-lg" />
+            <Separator className="bg-border/20" />
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full bg-muted/20 rounded-xl" />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex gap-6 h-[calc(100vh-6rem)]">
@@ -72,6 +133,11 @@ export default function ChapterPage() {
       <div className="flex-1 flex flex-col">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" className="h-8 px-2.5 text-muted-foreground hover:text-foreground shrink-0" onClick={() => router.push(`/projects/${projectId}`)}>
+              <ArrowLeft className="h-4 w-4 mr-1.5" />
+              返回项目
+            </Button>
+            <Separator orientation="vertical" className="h-4 bg-border shrink-0" />
             <Button variant="ghost" size="icon" disabled={!prevChapter} onClick={() => router.push(`/projects/${projectId}/chapter/${chapterNum - 1}`)}>
               <ChevronLeft className="h-5 w-5" />
             </Button>

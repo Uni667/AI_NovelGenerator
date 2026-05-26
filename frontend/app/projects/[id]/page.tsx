@@ -6,9 +6,9 @@ import { PLATFORM_CONFIG } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
 import { AlertCircle } from "lucide-react"
 
+import ProjectLoading from "./loading"
 import { ProjectProvider, useProjectContext } from "@/components/project/ProjectContext"
 
 // Import modular tab components
@@ -22,14 +22,17 @@ import { ReaderTab } from "@/components/project/ReaderTab"
 import { PlatformToolsTab } from "@/components/project/PlatformToolsTab"
 import { SettingsTab } from "@/components/project/SettingsTab"
 import { MaterialPipelineTab } from "@/components/project/MaterialPipelineTab"
+import { PromptsTab } from "@/components/project/PromptsTab"
+import { AnalyticsTab } from "@/components/project/AnalyticsTab"
+import { PlotArcsTab } from "@/components/project/PlotArcsTab"
+import { GraphTab } from "@/components/project/GraphTab"
 
 function ProjectDashboardContent() {
-  const router = useRouter()
   const { project, config, activeTab, setActiveTab } = useProjectContext()
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col flex-1 min-h-0">
+      <div className="flex items-center justify-between mb-6 shrink-0">
         <div>
           <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
             {project.name}
@@ -41,19 +44,23 @@ function ProjectDashboardContent() {
         </Badge>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="flex flex-wrap p-1 gap-1 bg-muted/60 backdrop-blur-md rounded-xl w-fit">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0 gap-6">
+        <TabsList className="flex flex-wrap p-1 gap-1 bg-muted/60 backdrop-blur-md rounded-xl w-fit shrink-0">
           <TabsTrigger value="overview" className="rounded-lg px-4 py-2 text-sm">概览</TabsTrigger>
           <TabsTrigger value="workbench" className="rounded-lg px-4 py-2 text-sm">章节工作台</TabsTrigger>
           <TabsTrigger value="generation" className="rounded-lg px-4 py-2 text-sm">AI 生成</TabsTrigger>
           <TabsTrigger value="files" className="rounded-lg px-4 py-2 text-sm">文件输出</TabsTrigger>
           <TabsTrigger value="knowledge" className="rounded-lg px-4 py-2 text-sm">知识库</TabsTrigger>
+          <TabsTrigger value="graph" className="rounded-lg px-4 py-2 text-sm">知识图谱</TabsTrigger>
           <TabsTrigger value="characters" className="rounded-lg px-4 py-2 text-sm">人物规划</TabsTrigger>
+          <TabsTrigger value="plotarcs" className="rounded-lg px-4 py-2 text-sm">伏笔暗线</TabsTrigger>
           <TabsTrigger value="pipeline" className="rounded-lg px-4 py-2 text-sm">素材加工站</TabsTrigger>
           <TabsTrigger value="reader" className="rounded-lg px-4 py-2 text-sm">读者反馈</TabsTrigger>
           <TabsTrigger value="platform" className="rounded-lg px-4 py-2 text-sm">
             {PLATFORM_CONFIG[config?.platform]?.icon || "📖"} {PLATFORM_CONFIG[config?.platform]?.label || "平台"}工具
           </TabsTrigger>
+          <TabsTrigger value="prompts" className="rounded-lg px-4 py-2 text-sm font-semibold text-purple-400">提示词实验</TabsTrigger>
+          <TabsTrigger value="analytics" className="rounded-lg px-4 py-2 text-sm">分析统计</TabsTrigger>
           <TabsTrigger value="settings" className="rounded-lg px-4 py-2 text-sm">参数设置</TabsTrigger>
         </TabsList>
 
@@ -61,7 +68,7 @@ function ProjectDashboardContent() {
           <OverviewTab />
         </TabsContent>
 
-        <TabsContent value="workbench" className="mt-0 outline-none">
+        <TabsContent value="workbench" className="mt-0 outline-none flex-1 min-h-0 flex flex-col">
           <WorkbenchTab />
         </TabsContent>
 
@@ -76,9 +83,17 @@ function ProjectDashboardContent() {
         <TabsContent value="knowledge" className="mt-0 outline-none">
           <KnowledgeTab />
         </TabsContent>
+        
+        <TabsContent value="graph" className="mt-0 outline-none">
+          <GraphTab />
+        </TabsContent>
 
         <TabsContent value="characters" className="mt-0 outline-none">
           <CharactersTab id={project.id} />
+        </TabsContent>
+        
+        <TabsContent value="plotarcs" className="mt-0 outline-none">
+          <PlotArcsTab />
         </TabsContent>
 
         <TabsContent value="pipeline" className="mt-0 outline-none">
@@ -96,6 +111,14 @@ function ProjectDashboardContent() {
         <TabsContent value="settings" className="mt-0 outline-none">
           <SettingsTab />
         </TabsContent>
+
+        <TabsContent value="prompts" className="mt-0 outline-none">
+          <PromptsTab />
+        </TabsContent>
+
+        <TabsContent value="analytics" className="mt-0 outline-none">
+          <AnalyticsTab />
+        </TabsContent>
       </Tabs>
     </div>
   )
@@ -108,18 +131,7 @@ export default function ProjectDashboard() {
   const { data: project, isLoading, error: projectError } = useProject(id)
 
   if (isLoading) {
-    return (
-      <div className="max-w-4xl mx-auto space-y-6">
-        <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
-        </div>
-        <Skeleton className="h-10 w-full max-w-md" />
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
-        </div>
-      </div>
-    )
+    return <ProjectLoading />
   }
 
   if (projectError || !project) {

@@ -14,6 +14,7 @@ import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { LogOut, User } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
+import { Skeleton } from "@/components/ui/skeleton"
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
@@ -46,23 +47,40 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             </Button>
           </Link>
 
-          {projects?.map((p: any) => {
-            const isActive = pathname.startsWith(`/projects/${p.id}`)
-            return (
-              <Link key={p.id} href={`/projects/${p.id}`} onClick={onNavigate} className="block relative mt-1">
-                {isActive && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-2/3 bg-primary rounded-r-md shadow-[0_0_10px_var(--primary)] animate-glow-pulse" />
-                )}
-                <Button
-                  variant={isActive ? "secondary" : "ghost"}
-                  className={`w-full justify-start gap-2 text-sm transition-all duration-300 ${isActive ? "bg-primary/10 text-primary hover:bg-primary/20 shadow-[inset_2px_0_0_0_transparent]" : "hover:bg-primary/5"}`}
-                >
-                  <BookOpen className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{p.name}</span>
-                </Button>
-              </Link>
-            )
-          })}
+          {projects === undefined ? (
+            <div className="px-3 py-2 space-y-3">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-4 bg-muted/40 rounded shrink-0 animate-pulse" />
+                <Skeleton className="h-3 w-28 bg-muted/30 rounded animate-pulse" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-4 bg-muted/40 rounded shrink-0 animate-pulse" />
+                <Skeleton className="h-3 w-20 bg-muted/30 rounded animate-pulse" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-4 bg-muted/40 rounded shrink-0 animate-pulse" />
+                <Skeleton className="h-3 w-24 bg-muted/30 rounded animate-pulse" />
+              </div>
+            </div>
+          ) : (
+            projects.map((p: any) => {
+              const isActive = pathname.startsWith(`/projects/${p.id}`)
+              return (
+                <Link key={p.id} href={`/projects/${p.id}`} onClick={onNavigate} className="block relative mt-1">
+                  {isActive && (
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-2/3 bg-primary rounded-r-md shadow-[0_0_10px_var(--primary)] animate-glow-pulse" />
+                  )}
+                  <Button
+                    variant={isActive ? "secondary" : "ghost"}
+                    className={`w-full justify-start gap-2 text-sm transition-all duration-300 ${isActive ? "bg-primary/10 text-primary hover:bg-primary/20 shadow-[inset_2px_0_0_0_transparent]" : "hover:bg-primary/5"}`}
+                  >
+                    <BookOpen className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{p.name}</span>
+                  </Button>
+                </Link>
+              )
+            })
+          )}
         </nav>
       </ScrollArea>
 
@@ -121,11 +139,11 @@ export function Sidebar() {
       {/* Mobile: Sheet drawer */}
       <div className="lg:hidden">
         <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger>
+          <SheetTrigger render={
             <Button variant="ghost" size="icon" className="fixed top-3 left-3 z-50">
               <Menu className="h-5 w-5" />
             </Button>
-          </SheetTrigger>
+          } />
           <SheetContent side="left" className="w-64 p-0 flex flex-col">
             <SidebarContent onNavigate={() => setOpen(false)} />
           </SheetContent>
