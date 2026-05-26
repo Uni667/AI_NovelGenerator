@@ -28,8 +28,7 @@ export function OverviewTab() {
   const [architectureFile, setArchitectureFile] = useState<ProjectFile | null>(null)
   const [outlineFile, setOutlineFile] = useState<ProjectFile | null>(null)
   const [archOutlineLoading, setArchOutlineLoading] = useState(true)
-  const [importDialogOpen, setImportDialogOpen] = useState(false)
-  const [importDialogFileType, setImportDialogFileType] = useState<"architecture" | "outline" | "summary" | "character_state" | "plot_arcs">("architecture")
+
 
   const loadArchitectureAndOutline = useCallback(async () => {
     if (!projectId) return
@@ -54,8 +53,8 @@ export function OverviewTab() {
 
   const handleGenerateArchitecture = async () => {
     try {
-      const { task_id } = await api.generate.architecture(projectId) as any
-      startTask("architecture", `/api/v1/projects/${projectId}/generate/architecture`, task_id)
+      const taskId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)
+      startTask("architecture", `/api/v1/projects/${projectId}/generate/architecture`, taskId)
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -63,8 +62,8 @@ export function OverviewTab() {
 
   const handleGenerateBlueprint = async () => {
     try {
-      const { task_id } = await api.generate.blueprint(projectId) as any
-      startTask("blueprint", `/api/v1/projects/${projectId}/generate/blueprint`, task_id)
+      const taskId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)
+      startTask("blueprint", `/api/v1/projects/${projectId}/generate/blueprint`, taskId)
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -217,8 +216,7 @@ export function OverviewTab() {
           architecture={architectureFile}
           isLoading={archOutlineLoading}
           onImport={() => {
-            setImportDialogFileType("architecture")
-            setImportDialogOpen(true)
+            toast.info("导入功能处于规划中，暂未启用")
           }}
           onRegenerate={handleGenerateArchitecture}
           onPreview={() => {
@@ -231,8 +229,7 @@ export function OverviewTab() {
           hasArchitecture={!!architectureFile}
           isLoading={archOutlineLoading}
           onImport={() => {
-            setImportDialogFileType("outline")
-            setImportDialogOpen(true)
+            toast.info("导入功能处于规划中，暂未启用")
           }}
           onRegenerate={handleGenerateBlueprint}
           onPreview={() => {

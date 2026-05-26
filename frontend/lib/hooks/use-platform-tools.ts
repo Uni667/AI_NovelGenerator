@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { api } from "@/lib/api-client"
 import { toast } from "sonner"
-import type { PlatformHookResult, PlatformDiagnosisResult } from "@/lib/types"
+import type { PlatformHookResult } from "@/lib/types"
 
 export function usePlatformTools(projectId: string) {
   const [platformLoading, setPlatformLoading] = useState("")

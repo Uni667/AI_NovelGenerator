@@ -12,7 +12,7 @@ import { useProjectContext } from "./ProjectContext"
 export function PlatformToolsTab() {
   const { config, platform } = useProjectContext()
   const {
-    titles, blurbs, hookResult, chapterHookResult, batchHookResult, tagsResult,
+    titles, blurbs, hookResult, batchHookResult, tagsResult,
     chapterTitles, platformLoading, hookChapterNum, setHookChapterNum,
     handleGenTitles, handleGenBlurb, handleWorkbenchOpeningHook,
     handleBatchHookCheck, handleGenTags, handleGenSelectedChapterTitle

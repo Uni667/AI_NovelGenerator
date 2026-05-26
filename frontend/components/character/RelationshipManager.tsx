@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/lib/api-client"
 import { toast } from "sonner"
-import { Plus, Trash2, Edit3, GitBranch, ArrowRightLeft, Info } from "lucide-react"
+import { Plus, Trash2, Edit3, GitBranch, Info } from "lucide-react"
 import type { CharacterRelationship, CharacterProfile, RelationshipGraph } from "@/lib/types"
 import { RELATIONSHIP_TYPE_LABELS } from "@/lib/types"
 

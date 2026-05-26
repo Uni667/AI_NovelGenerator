@@ -1,11 +1,11 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, UploadCloud, Zap, ShieldAlert, CheckCircle2, ChevronRight, FileJson } from "lucide-react"
+import { Loader2, UploadCloud, Zap, ShieldAlert, CheckCircle2, FileJson } from "lucide-react"
 import { api } from "@/lib/api-client"
 import { useProjectContext } from "./ProjectContext"
 import { toast } from "sonner"
@@ -43,7 +43,7 @@ export function MaterialPipelineTab() {
       }
       setRawText(combinedText)
       toast.success(`成功读取 ${files.length} 个文件，共 ${combinedText.length} 字`)
-    } catch (err) {
+    } catch {
       toast.error("读取文件失败")
     } finally {
       setIsProcessing(false)

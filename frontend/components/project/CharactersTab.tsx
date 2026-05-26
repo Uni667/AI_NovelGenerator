@@ -357,7 +357,7 @@ export function CharactersTab({ id }: CharactersTabProps) {
               value: dashboardSummary.total_appearances,
               sub: `${dashboardSummary.chapters_with_data} 章有数据`,
             },
-          ].map((s, idx) => (
+          ].map((s) => (
             <Card key={s.label} className="glass-card border-border/40 hover:border-primary/20 transition-all duration-300">
               <CardContent className="p-4 text-center">
                 <p className="text-3xl font-extrabold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
