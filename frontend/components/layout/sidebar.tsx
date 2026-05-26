@@ -136,18 +136,26 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile: Sheet drawer */}
+      {/* Mobile Header and Drawer */}
       <div className="lg:hidden">
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger render={
-            <Button variant="ghost" size="icon" className="fixed top-3 left-3 z-50">
-              <Menu className="h-5 w-5" />
-            </Button>
-          } />
-          <SheetContent side="left" className="w-64 p-0 flex flex-col">
-            <SidebarContent onNavigate={() => setOpen(false)} />
-          </SheetContent>
-        </Sheet>
+        <header className="fixed top-0 left-0 right-0 h-14 bg-background/60 backdrop-blur-xl border-b border-border/30 z-40 flex items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <Sheet open={open} onOpenChange={setOpen}>
+              <SheetTrigger render={
+                <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-accent/40 rounded-lg">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              } />
+              <SheetContent side="left" className="w-64 p-0 flex flex-col">
+                <SidebarContent onNavigate={() => setOpen(false)} />
+              </SheetContent>
+            </Sheet>
+            <div className="flex items-center gap-1.5 ml-1">
+              <BookOpen className="h-4.5 w-4.5 text-primary" />
+              <span className="font-bold text-sm bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">AI 小说生成器</span>
+            </div>
+          </div>
+        </header>
       </div>
 
       {/* Desktop: fixed sidebar */}

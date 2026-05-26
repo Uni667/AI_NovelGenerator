@@ -32,36 +32,36 @@ function ProjectDashboardContent() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex items-center justify-between mb-6 shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 shrink-0">
+        <div className="min-w-0">
+          <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent truncate">
             {project.name}
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">{project.description || "暂无简介"}</p>
+          <p className="text-muted-foreground text-xs md:text-sm mt-0.5 truncate">{project.description || "暂无简介"}</p>
         </div>
-        <Badge variant={project.status === "ready" ? "default" : "secondary"} className="text-xs px-3 py-1">
+        <Badge variant={project.status === "ready" ? "default" : "secondary"} className="text-xs px-3 py-1 w-fit">
           {project.status === "draft" ? "草稿" : project.status === "ready" ? "就绪" : project.status}
         </Badge>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0 gap-6">
-        <TabsList className="flex flex-wrap p-1 gap-1 bg-muted/60 backdrop-blur-md rounded-xl w-fit shrink-0">
-          <TabsTrigger value="overview" className="rounded-lg px-4 py-2 text-sm">概览</TabsTrigger>
-          <TabsTrigger value="workbench" className="rounded-lg px-4 py-2 text-sm">章节工作台</TabsTrigger>
-          <TabsTrigger value="generation" className="rounded-lg px-4 py-2 text-sm">AI 生成</TabsTrigger>
-          <TabsTrigger value="files" className="rounded-lg px-4 py-2 text-sm">文件输出</TabsTrigger>
-          <TabsTrigger value="knowledge" className="rounded-lg px-4 py-2 text-sm">知识库</TabsTrigger>
-          <TabsTrigger value="graph" className="rounded-lg px-4 py-2 text-sm">知识图谱</TabsTrigger>
-          <TabsTrigger value="characters" className="rounded-lg px-4 py-2 text-sm">人物规划</TabsTrigger>
-          <TabsTrigger value="plotarcs" className="rounded-lg px-4 py-2 text-sm">伏笔暗线</TabsTrigger>
-          <TabsTrigger value="pipeline" className="rounded-lg px-4 py-2 text-sm">素材加工站</TabsTrigger>
-          <TabsTrigger value="reader" className="rounded-lg px-4 py-2 text-sm">读者反馈</TabsTrigger>
-          <TabsTrigger value="platform" className="rounded-lg px-4 py-2 text-sm">
+        <TabsList className="flex flex-nowrap overflow-x-auto max-w-full md:flex-wrap p-1 gap-1 bg-muted/60 backdrop-blur-md rounded-xl w-full md:w-fit shrink-0 scrollbar-none">
+          <TabsTrigger value="overview" className="rounded-lg px-4 py-2 text-sm shrink-0">概览</TabsTrigger>
+          <TabsTrigger value="workbench" className="rounded-lg px-4 py-2 text-sm shrink-0">章节工作台</TabsTrigger>
+          <TabsTrigger value="generation" className="rounded-lg px-4 py-2 text-sm shrink-0">AI 生成</TabsTrigger>
+          <TabsTrigger value="files" className="rounded-lg px-4 py-2 text-sm shrink-0">文件输出</TabsTrigger>
+          <TabsTrigger value="knowledge" className="rounded-lg px-4 py-2 text-sm shrink-0">知识库</TabsTrigger>
+          <TabsTrigger value="graph" className="rounded-lg px-4 py-2 text-sm shrink-0">知识图谱</TabsTrigger>
+          <TabsTrigger value="characters" className="rounded-lg px-4 py-2 text-sm shrink-0">人物规划</TabsTrigger>
+          <TabsTrigger value="plotarcs" className="rounded-lg px-4 py-2 text-sm shrink-0">伏笔暗线</TabsTrigger>
+          <TabsTrigger value="pipeline" className="rounded-lg px-4 py-2 text-sm shrink-0">素材加工站</TabsTrigger>
+          <TabsTrigger value="reader" className="rounded-lg px-4 py-2 text-sm shrink-0">读者反馈</TabsTrigger>
+          <TabsTrigger value="platform" className="rounded-lg px-4 py-2 text-sm shrink-0">
             {PLATFORM_CONFIG[config?.platform]?.icon || "📖"} {PLATFORM_CONFIG[config?.platform]?.label || "平台"}工具
           </TabsTrigger>
-          <TabsTrigger value="prompts" className="rounded-lg px-4 py-2 text-sm font-semibold text-purple-400">提示词实验</TabsTrigger>
-          <TabsTrigger value="analytics" className="rounded-lg px-4 py-2 text-sm">分析统计</TabsTrigger>
-          <TabsTrigger value="settings" className="rounded-lg px-4 py-2 text-sm">参数设置</TabsTrigger>
+          <TabsTrigger value="prompts" className="rounded-lg px-4 py-2 text-sm font-semibold text-purple-400 shrink-0">提示词实验</TabsTrigger>
+          <TabsTrigger value="analytics" className="rounded-lg px-4 py-2 text-sm shrink-0">分析统计</TabsTrigger>
+          <TabsTrigger value="settings" className="rounded-lg px-4 py-2 text-sm shrink-0">参数设置</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-0 outline-none">

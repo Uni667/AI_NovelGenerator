@@ -373,17 +373,17 @@ export function CharactersTab({ id }: CharactersTabProps) {
 
       {/* 角色管理子标签 */}
       <Tabs defaultValue="roster" className="space-y-4">
-        <TabsList className="bg-background/40 backdrop-blur-md border border-border/40 p-1 flex-wrap h-auto">
-          <TabsTrigger value="roster" className="data-[state=active]:bg-primary/25">
+        <TabsList className="bg-background/40 backdrop-blur-md border border-border/40 p-1 flex flex-nowrap overflow-x-auto max-w-full scrollbar-none h-auto">
+          <TabsTrigger value="roster" className="data-[state=active]:bg-primary/25 shrink-0">
             <Users className="h-4 w-4 mr-1.5" />人物列表
           </TabsTrigger>
-          <TabsTrigger value="relationships" className="data-[state=active]:bg-primary/25">
+          <TabsTrigger value="relationships" className="data-[state=active]:bg-primary/25 shrink-0">
             <GitBranch className="h-4 w-4 mr-1.5" />关系图
           </TabsTrigger>
-          <TabsTrigger value="conflicts" className="data-[state=active]:bg-primary/25">
+          <TabsTrigger value="conflicts" className="data-[state=active]:bg-primary/25 shrink-0">
             <Swords className="h-4 w-4 mr-1.5" />冲突网
           </TabsTrigger>
-          <TabsTrigger value="timeline" className="data-[state=active]:bg-primary/25">
+          <TabsTrigger value="timeline" className="data-[state=active]:bg-primary/25 shrink-0">
             <Clock className="h-4 w-4 mr-1.5" />登场时间线
           </TabsTrigger>
         </TabsList>

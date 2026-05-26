@@ -128,33 +128,35 @@ export default function ChapterPage() {
   }
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-6rem)]">
+    <div className="flex flex-col lg:flex-row gap-6 h-auto lg:h-[calc(100vh-6rem)]">
       {/* 左侧章节内容 */}
-      <div className="flex-1 flex flex-col">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
+      <div className="flex-1 flex flex-col min-h-[500px] lg:min-h-0">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 md:gap-3 min-w-0">
             <Button variant="ghost" size="sm" className="h-8 px-2.5 text-muted-foreground hover:text-foreground shrink-0" onClick={() => router.push(`/projects/${projectId}`)}>
               <ArrowLeft className="h-4 w-4 mr-1.5" />
               返回项目
             </Button>
-            <Separator orientation="vertical" className="h-4 bg-border shrink-0" />
-            <Button variant="ghost" size="icon" disabled={!prevChapter} onClick={() => router.push(`/projects/${projectId}/chapter/${chapterNum - 1}`)}>
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-            <h1 className="text-xl font-bold">
-              第{chapterNum}章 {chapterData?.meta?.chapter_title || ""}
-            </h1>
-            <Button variant="ghost" size="icon" disabled={!nextChapter} onClick={() => router.push(`/projects/${projectId}/chapter/${chapterNum + 1}`)}>
-              <ChevronRight className="h-5 w-5" />
-            </Button>
+            <Separator orientation="vertical" className="hidden sm:block h-4 bg-border shrink-0" />
+            <div className="flex items-center gap-1 shrink-0">
+              <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!prevChapter} onClick={() => router.push(`/projects/${projectId}/chapter/${chapterNum - 1}`)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <h1 className="text-base sm:text-lg font-bold truncate max-w-[150px] sm:max-w-xs">
+                第{chapterNum}章 {chapterData?.meta?.chapter_title || ""}
+              </h1>
+              <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!nextChapter} onClick={() => router.push(`/projects/${projectId}/chapter/${chapterNum + 1}`)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {chapterData?.meta && (
-              <Badge variant={chapterData.meta.status === "final" ? "default" : "secondary"}>
+              <Badge variant={chapterData.meta.status === "final" ? "default" : "secondary"} className="text-[10px] px-2 py-0.5">
                 {chapterData.meta.status === "final" ? "已定稿" : "草稿"}
               </Badge>
             )}
-            <Badge variant="outline">{chapterData?.meta?.word_count || content.length} 字</Badge>
+            <Badge variant="outline" className="text-[10px] px-2 py-0.5">{chapterData?.meta?.word_count || content.length} 字</Badge>
           </div>
         </div>
 
@@ -179,7 +181,7 @@ export default function ChapterPage() {
         )}
 
         {/* 内容区 */}
-        <div className="flex-1 border rounded-lg overflow-hidden">
+        <div className="flex-1 border rounded-lg overflow-hidden h-[50vh] lg:h-auto min-h-[300px]">
           {isEditing ? (
             <Textarea
               value={content}
@@ -203,22 +205,22 @@ export default function ChapterPage() {
         </div>
 
         {/* 操作按钮 */}
-        <div className="flex items-center gap-3 mt-4">
+        <div className="flex flex-wrap items-center gap-3 mt-4">
           {isEditing ? (
             <>
-              <Button onClick={handleSave}><Save className="h-4 w-4 mr-2" />保存</Button>
-              <Button variant="outline" onClick={() => setIsEditing(false)}>取消</Button>
+              <Button onClick={handleSave} className="w-full sm:w-auto"><Save className="h-4 w-4 mr-2" />保存</Button>
+              <Button variant="outline" onClick={() => setIsEditing(false)} className="w-full sm:w-auto">取消</Button>
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={() => setIsEditing(true)} disabled={isConnected}>
+              <Button variant="outline" onClick={() => setIsEditing(true)} disabled={isConnected} className="w-full sm:w-auto">
                 <PenLine className="h-4 w-4 mr-2" />编辑
               </Button>
-              <Button onClick={handleGenerate} disabled={isConnected}>
+              <Button onClick={handleGenerate} disabled={isConnected} className="w-full sm:w-auto">
                 <Play className="h-4 w-4 mr-2" />AI 生成本章
               </Button>
               {content && chapterData?.meta?.status !== "final" && (
-                <Button onClick={handleFinalize} disabled={isConnected} variant="secondary">
+                <Button onClick={handleFinalize} disabled={isConnected} variant="secondary" className="w-full sm:w-auto">
                   <CheckCircle className="h-4 w-4 mr-2" />定稿
                 </Button>
               )}
@@ -228,7 +230,7 @@ export default function ChapterPage() {
       </div>
 
       {/* 右侧章节信息 */}
-      <div className="w-72 shrink-0 space-y-4">
+      <div className="w-full lg:w-72 shrink-0 space-y-4 pb-6 lg:pb-0">
         {chapterData?.meta && (
           <Card>
             <CardHeader><CardTitle className="text-sm">章节信息</CardTitle></CardHeader>

@@ -98,7 +98,7 @@ export function OverviewTab() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 grid-flow-row-dense">
         <Card className="glass-card border-border/50 transition-all duration-300 hover:shadow-[0_0_20px_oklch(0.68_0.19_285/0.15)] hover:border-primary/40 relative overflow-hidden group">
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           <CardHeader className="pb-2 relative z-10">
