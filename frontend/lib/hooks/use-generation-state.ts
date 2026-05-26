@@ -25,8 +25,138 @@ export function useGenerationState(projectId: string) {
     : sseAction === "finalize" ? `定稿章节`
     : ""
     
+  // Helper to map single chapter/blueprint/architecture steps to percentages
+  const getStepPercentage = (action: string, step: string, status: string): number => {
+    if (status === "done" && (step === "all" || step === "finalize" || step === "blueprint" || step === "draft")) {
+      return 100
+    }
+
+    if (action === "architecture") {
+      const mapping: Record<string, { running: number; done: number }> = {
+        core_seed: { running: 5, done: 15 },
+        character: { running: 20, done: 35 },
+        character_state: { running: 40, done: 50 },
+        world: { running: 55, done: 70 },
+        plot: { running: 75, done: 85 },
+        global_summary_init: { running: 90, done: 95 },
+        plot_arcs_init: { running: 98, done: 100 },
+        all: { running: 100, done: 100 }
+      }
+      const stepMap = mapping[step]
+      if (stepMap) {
+        return status === "done" ? stepMap.done : stepMap.running
+      }
+      return 0
+    }
+    
+    if (action === "blueprint") {
+      const mapping: Record<string, { running: number; done: number }> = {
+        blueprint: { running: 10, done: 100 },
+        blueprint_polish: { running: 50, done: 90 }
+      }
+      const stepMap = mapping[step]
+      if (stepMap) {
+        return status === "done" ? stepMap.done : stepMap.running
+      }
+      return 0
+    }
+
+    if (action === "finalize") {
+      const mapping: Record<string, { running: number; done: number }> = {
+        finalize: { running: 5, done: 100 },
+        summary_update: { running: 10, done: 25 },
+        character_state_update: { running: 30, done: 45 },
+        plot_arcs_update: { running: 50, done: 65 },
+        graph_extraction: { running: 70, done: 85 },
+        single_summary_update: { running: 90, done: 95 }
+      }
+      const stepMap = mapping[step]
+      if (stepMap) {
+        return status === "done" ? stepMap.done : stepMap.running
+      }
+      return 0
+    }
+
+    return 0
+  }
+
+  const getSingleChapterProgress = (step: string, status: string): number => {
+    const mapping: Record<string, { running: number; done: number }> = {
+      build_prompt: { running: 5, done: 10 },
+      brainstorm_reader: { running: 15, done: 20 },
+      brainstorm_villain: { running: 22, done: 25 },
+      brainstorm_director: { running: 28, done: 30 },
+      draft: { running: 35, done: 100 },
+      drafting: { running: 40, done: 65 },
+      voice_polish: { running: 70, done: 80 },
+      quality_check: { running: 85, done: 95 },
+      quality_rewrite: { running: 88, done: 92 }
+    }
+    const stepMap = mapping[step]
+    if (stepMap) {
+      return status === "done" ? stepMap.done : stepMap.running
+    }
+    return 0
+  }
+
+  // Find the last progress event to calculate progress based on steps
+  const progressEvents = events.filter((e) => e.type === "progress")
+  const lastProgressEvent = progressEvents[progressEvents.length - 1]
+  
+  let rawProgress = 0
+  if (lastProgressEvent && sseAction) {
+    const step = lastProgressEvent.data?.step || ""
+    const status = lastProgressEvent.data?.status || ""
+    
+    if (sseAction === "architecture") {
+      if (step === "architecture_polish") {
+        // Find the last progress event before this one that was NOT architecture_polish
+        const lastNonPolish = [...progressEvents].reverse().find(e => e.data?.step && e.data.step !== "architecture_polish")
+        const basePercent = lastNonPolish ? getStepPercentage("architecture", lastNonPolish.data.step, lastNonPolish.data.status) : 5
+        rawProgress = basePercent + (status === "done" ? 8 : 4)
+      } else {
+        rawProgress = getStepPercentage("architecture", step, status)
+      }
+    } else if (sseAction === "blueprint") {
+      rawProgress = getStepPercentage("blueprint", step, status)
+    } else if (sseAction === "finalize") {
+      rawProgress = getStepPercentage("finalize", step, status)
+    } else if (sseAction === "chapterBatch") {
+      const lastBatchEvent = [...progressEvents].reverse().find(e => e.data?.step === "batch")
+      if (lastBatchEvent) {
+        let currentChapterIndex = 1
+        let totalChapters = 1
+        if (lastBatchEvent.data?.message) {
+          const match = lastBatchEvent.data.message.match(/（(\d+)\/(\d+)）/) || lastBatchEvent.data.message.match(/\((\d+)\/(\d+)\)/)
+          if (match) {
+            currentChapterIndex = parseInt(match[1], 10)
+            totalChapters = parseInt(match[2], 10)
+          }
+        }
+        
+        const batchIdx = progressEvents.indexOf(lastBatchEvent)
+        const subEvents = progressEvents.slice(batchIdx + 1)
+        const lastSubEvent = subEvents[subEvents.length - 1]
+        const subStep = lastSubEvent?.data?.step || ""
+        const subStatus = lastSubEvent?.data?.status || ""
+        
+        const chapterProgress = getSingleChapterProgress(subStep, subStatus)
+        rawProgress = Math.round(((currentChapterIndex - 1) / totalChapters) * 100 + (chapterProgress / totalChapters))
+      } else {
+        rawProgress = getSingleChapterProgress(step, status)
+      }
+    } else if (sseAction === "chapter") {
+      rawProgress = getSingleChapterProgress(step, status)
+    }
+  }
+
   const lastEvent = events[events.length - 1]
-  const generationProgress = lastEvent?.type === "progress" ? (lastEvent.data.progress || 0) : 0
+  let generationProgress = rawProgress
+  if (lastEvent?.type === "done") {
+    generationProgress = 100
+  } else if (!lastProgressEvent && isConnected) {
+    generationProgress = 2
+  }
   const generationRecovering = !isConnected && generationTaskId && !generationStopping
   const hasError = !!sseError
 
