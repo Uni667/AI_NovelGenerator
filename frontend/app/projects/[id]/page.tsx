@@ -79,7 +79,7 @@ function ProjectDashboardContent() {
             更多
           </button>
           {showMoreTabs && moreTabs.map(tab => (
-            <TabsTrigger key={tab.value} value={tab.value} className={`rounded-lg px-3 py-2 text-sm shrink-0 ${tab.className || ""}`}>
+            <TabsTrigger key={tab.value} value={tab.value} className="rounded-lg px-3 py-2 text-sm shrink-0">
               {tab.label}
             </TabsTrigger>
           ))}
