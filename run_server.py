@@ -6,6 +6,16 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Harden standard output/error to UTF-8 on Windows
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
+
+os.environ["PYTHONUTF8"] = "1"
+
 
 if __name__ == "__main__":
     import uvicorn
