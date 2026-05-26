@@ -15,6 +15,7 @@ import { DiagnosisFixDialog } from "./DiagnosisFixDialog"
 
 export function WorkbenchStatusPane() {
   const {
+    projectId,
     chapters,
     config,
     generation: {
