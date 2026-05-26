@@ -20,7 +20,7 @@ import { toast } from "sonner"
 export function OverviewTab() {
   const router = useRouter()
   const { projectId, config, chapters, generation, setActiveTab, setSelectedOutputFile } = useProjectContext()
-  const { isConnected, generationTaskId, generationStopping, generationTaskLabel, generationProgress, startTask } = generation
+  const { isConnected, generationTaskId, generationStopping, generationTaskLabel, generationProgress, startTask, generationRecovering } = generation
 
   const completedChapters = chapters?.filter((c: Chapter) => c.status === "final").length || 0
   const draftChapters = chapters?.filter((c: Chapter) => c.status === "draft").length || 0
@@ -47,9 +47,12 @@ export function OverviewTab() {
     }
   }, [projectId])
 
+  const lastEvent = generation.events[generation.events.length - 1]
+  const isDone = lastEvent?.type === "done"
+
   useEffect(() => {
     loadArchitectureAndOutline()
-  }, [loadArchitectureAndOutline])
+  }, [loadArchitectureAndOutline, isDone])
 
   const handleGenerateArchitecture = async () => {
     try {
@@ -84,8 +87,19 @@ export function OverviewTab() {
               </div>
               <p className="text-xs text-muted-foreground">{generationTaskLabel || "准备生成中..."}</p>
             </div>
-            <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 animate-pulse text-xs">
-              {generationStopping ? "正在中断..." : "进行中"}
+            <Badge
+              variant={generationStopping ? "secondary" : "outline"}
+              className={
+                generationStopping
+                  ? "bg-secondary text-muted-foreground"
+                  : isConnected
+                  ? "bg-primary/10 text-primary border-primary/20 animate-glow-pulse text-xs"
+                  : generationRecovering
+                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse text-xs"
+                  : "bg-muted text-muted-foreground text-xs"
+              }
+            >
+              {generationStopping ? "停止中" : isConnected ? "进行中" : generationRecovering ? "后台继续中" : "待完成"}
             </Badge>
           </div>
           <div className="space-y-1.5">

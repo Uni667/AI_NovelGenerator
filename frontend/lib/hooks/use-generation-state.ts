@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useSSE } from "./use-sse"
 import { api } from "@/lib/api-client"
 import { toast } from "sonner"
@@ -247,6 +247,56 @@ export function useGenerationState(projectId: string) {
       connect(currentUrl, { preserveEvents: false })
     }
   }
+
+  // Automatically clear task ID when done event arrives
+  useEffect(() => {
+    if (events.length > 0) {
+      const lastEvent = events[events.length - 1]
+      if (lastEvent.type === "done") {
+        const timer = setTimeout(() => {
+          setGenerationTaskId(null)
+          setSseAction(null)
+        }, 2000)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [events])
+
+  // Poll backend task status if disconnected but task ID is still set
+  useEffect(() => {
+    if (isConnected || !generationTaskId) return
+
+    let active = true
+    const checkStatus = async () => {
+      try {
+        const task = await api.generate.taskStatus(projectId, generationTaskId)
+        if (!active) return
+        if (task && (task.status === "done" || task.status === "failed" || task.status === "cancelled")) {
+          // Task completed in the background
+          setGenerationTaskId(null)
+          setSseAction(null)
+          if (task.status === "done") {
+            toast.success("任务生成完成")
+          } else {
+            toast.error(`后台任务执行失败: ${task.message || "未知原因"}`)
+          }
+        }
+      } catch (err) {
+        console.error("Failed to query task status:", err)
+      }
+    }
+
+    // Initial check
+    checkStatus()
+
+    // Poll every 3 seconds
+    const interval = setInterval(checkStatus, 3000)
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [isConnected, generationTaskId, projectId])
+
 
   return {
     generationTaskId, setGenerationTaskId,
