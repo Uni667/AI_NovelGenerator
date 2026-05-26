@@ -156,7 +156,7 @@ export function WorkbenchStatusPane() {
           <CardTitle className="text-xs font-bold text-muted-foreground">章节属性与质检</CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-3">
-          <Accordion type="multiple" value={accordionValue} onValueChange={setAccordionValue} className="w-full">
+          <Accordion multiple value={accordionValue} onValueChange={setAccordionValue} className="w-full">
             {/* 基础信息 */}
             <AccordionItem value="basic">
               <AccordionTrigger className="py-1.5 text-xs font-semibold">基础信息</AccordionTrigger>
