@@ -239,7 +239,7 @@ export function WorkbenchEditor() {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 min-h-0 flex flex-col space-y-4 pt-4 pb-4">
+      <CardContent className="flex-1 min-h-0 min-w-0 flex flex-col space-y-4 pt-4 pb-4">
         {(sseAction === "chapter" || sseAction === "chapterBatch" || sseAction === "finalize") && isConnected && (
           <div className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 p-3 text-sm text-primary animate-glow-pulse relative overflow-hidden shrink-0">
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-primary/20 to-transparent -translate-x-[100%] animate-[shimmer_2s_infinite]" />
@@ -301,13 +301,13 @@ export function WorkbenchEditor() {
         )}
 
         {chapterEditorLoading ? (
-          <div className="space-y-3 py-6 flex-1 flex flex-col min-h-0">
+          <div className="space-y-3 py-6 flex-1 flex flex-col min-h-0 min-w-0">
             <Skeleton className="h-4 w-1/3 shrink-0" />
             <Skeleton className="h-4 w-2/3 shrink-0" />
             <Skeleton className="flex-1 w-full rounded-xl" />
           </div>
         ) : (
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 min-w-0 relative">
             <FloatingToolbar
               x={toolbarState.x}
               y={toolbarState.y}
@@ -319,7 +319,7 @@ export function WorkbenchEditor() {
 
             {/* Empty draft content warning */}
             {!chapterEditorContent && activeChapterMeta?.status === 'draft' && (
-              <div className="flex flex-col items-center justify-center h-full text-center p-8">
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8 z-10 bg-background/30 pointer-events-none">
                 <div className="rounded-full bg-amber-500/10 p-3 mb-3">
                   <AlertCircle className="h-6 w-6 text-amber-400" />
                 </div>
@@ -363,11 +363,12 @@ export function WorkbenchEditor() {
                    handleMouseUp(e as any)
                  }
               }}
-              className={`h-full w-full resize-none font-serif text-base md:text-lg md:leading-8 leading-7 tracking-wider p-6 md:p-8 bg-background/30 border-border/80 rounded-xl transition-all [field-sizing:fixed] overflow-y-auto ${
+              className={`h-full w-full resize-none font-serif text-base md:text-lg md:leading-8 leading-7 tracking-wider p-6 md:p-8 bg-background/30 border-border/80 rounded-xl transition-all overflow-y-auto ${
                 activeChapterMeta?.status === 'final'
                   ? 'focus-visible:ring-0 opacity-70 cursor-not-allowed'
                   : 'focus-visible:ring-primary/25'
               }`}
+              style={{ fieldSizing: 'fixed' } as React.CSSProperties}
               placeholder={
                 activeChapterMeta?.status === 'final'
                   ? '该章节已定稿，内容为只读。'

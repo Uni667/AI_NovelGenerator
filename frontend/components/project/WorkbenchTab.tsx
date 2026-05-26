@@ -33,7 +33,7 @@ export function WorkbenchTab() {
       </div>
 
       {/* 编辑器 —— 主工作区（含浮动控制按钮） */}
-      <div className="xl:min-h-0 flex-1 min-h-[35vh] xl:min-h-0 flex flex-col">
+      <div className="xl:min-h-0 flex-1 min-h-[35vh] xl:min-h-0 min-w-0 flex flex-col">
         {/* 浮动控制条 */}
         <div className="hidden xl:flex items-center justify-end gap-1 mb-2 shrink-0">
           <Button
