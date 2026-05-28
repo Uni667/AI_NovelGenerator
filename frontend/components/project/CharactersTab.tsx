@@ -56,6 +56,7 @@ export function CharactersTab({ id }: CharactersTabProps) {
   const [deleteCharTarget, setDeleteCharTarget] = useState<number | null>(null)
   const [characterSuggestions, setCharacterSuggestions] = useState<any[]>([])
   const [characterLoading, setCharacterLoading] = useState("")
+  const [planOutline, setPlanOutline] = useState("")
 
   const [characterImportPreviewOpen, setCharacterImportPreviewOpen] = useState(false)
   const [characterImportCandidates, setCharacterImportCandidates] = useState<any[]>([])
@@ -217,9 +218,27 @@ export function CharactersTab({ id }: CharactersTabProps) {
     try {
       const result = await api.characters.suggest(id)
       setCharacterSuggestions(result.characters || [])
+      setPlanOutline("")
       toast.success(`已生成 ${result.characters?.length || 0} 个角色建议`)
     } catch (error: any) {
       toast.error(error?.message || "角色建议生成失败")
+    } finally {
+      setCharacterLoading("")
+    }
+  }
+
+  const handlePlanCharacters = async () => {
+    setCharacterLoading("plan")
+    setPlanOutline("")
+    try {
+      const result = await api.characters.plan(id)
+      setCharacterSuggestions(result.characters || [])
+      if (result.outline) {
+        setPlanOutline(result.outline)
+      }
+      toast.success(`已生成 ${result.characters?.length || 0} 个规划角色及剧情大纲`)
+    } catch (error: any) {
+      toast.error(error?.message || "人物规划生成失败")
     } finally {
       setCharacterLoading("")
     }
@@ -321,6 +340,20 @@ export function CharactersTab({ id }: CharactersTabProps) {
                 AI 建议人物
               </Button>
               <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePlanCharacters}
+                disabled={characterLoading === "plan"}
+                className="hover:bg-accent/40 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border-indigo-500/30 transition-transform duration-200 hover:scale-105"
+              >
+                {characterLoading === "plan" ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4 mr-2 text-indigo-400" />
+                )}
+                规划人物大纲
+              </Button>
+              <Button
                 size="sm"
                 onClick={() => openCreateDialog("planned", "user")}
                 className="shadow-md shadow-primary/20 hover:scale-102 transition-transform duration-200"
@@ -389,6 +422,30 @@ export function CharactersTab({ id }: CharactersTabProps) {
         </TabsList>
 
         <TabsContent value="roster" className="space-y-4">
+          {planOutline && (
+            <Card className="glass-panel border-border/40 border-l-indigo-500/50 border-l-4">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-bold flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-indigo-400" />
+                  本次规划大纲剧情建议
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <pre className="text-xs text-muted-foreground leading-relaxed font-sans whitespace-pre-wrap bg-muted/10 p-3 rounded-lg border border-border/20">
+                  {planOutline}
+                </pre>
+                <div className="flex justify-end">
+                  <Button size="sm" variant="outline" onClick={() => {
+                    navigator.clipboard.writeText(planOutline);
+                    toast.success("已复制到剪贴板");
+                  }} className="h-7 text-xs border-indigo-500/25 hover:bg-indigo-500/10">
+                    复制大纲
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {characterSuggestions.length > 0 && (
             <Card className="glass-panel border-border/40 border-l-purple-500/50 border-l-4">
               <CardHeader className="pb-3">

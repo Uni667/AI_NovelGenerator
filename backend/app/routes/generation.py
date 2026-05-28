@@ -89,6 +89,13 @@ def _run_architecture(emitter: SSEEmitter, project: dict, pconfig: dict, user_id
         project_service.update_project(project["id"], {"status": "generating"}, user_id)
         Novel_architecture_generate(ctx, proj_cfg, emitter=emitter, task_id=task_id)
 
+        # 自动同步角色设定从 character_state.txt 到数据库，以便人物规划页立即可见
+        try:
+            from backend.app.services.sync_service import sync_txt_to_db
+            sync_txt_to_db(project["id"])
+        except Exception as e:
+            logger.warning(f"自动同步角色设定到数据库失败: {e}")
+
         arch_path = os.path.join(project["filepath"], "Novel_architecture.txt")
         arch_content = read_file(arch_path) if os.path.exists(arch_path) else ""
         if arch_content.strip():

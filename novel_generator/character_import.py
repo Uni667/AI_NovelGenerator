@@ -206,7 +206,9 @@ class CharacterImportCandidate:
 
 
 def normalize_character_name(name: str) -> str:
-    text = re.sub(r"[\s\u3000]+", "", name or "")
+    # 剥离末尾的括号及其内容，如 (已登场, 第1章登场)
+    name = re.sub(r"[\s\u3000]*[（(][^）)]*[）)][\s\u3000]*$", "", name or "")
+    text = re.sub(r"[\s\u3000]+", "", name)
     text = text.strip(" -_*#|:：[]（）()【】<>《》\"'“”‘’，,。.!?;；·")
     text = re.sub(r"[（(][^)）]*?[暂待]?定[)）]$", "", text)
     text = re.sub(r"[（(][^)）]*?[建议|候选|AI|测试][)）]$", "", text)

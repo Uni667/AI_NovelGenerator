@@ -49,6 +49,21 @@ class CharacterImportTests(unittest.TestCase):
         self.assertIn("寻找失踪的妹妹", matches[0].description)
         self.assertIn("隐瞒真实能力", matches[0].description)
 
+    def test_preview_supports_parenthesis_metadata(self):
+        state_text = """
+# 角色状态
+
+## 林逸 (已登场, 第1章登场)
+- 身份：神医
+- 目标：拯救苍生
+"""
+        preview = build_character_import_preview(state_text, [])
+        by_name = {item.name: item for item in preview}
+        
+        self.assertIn("林逸", by_name)
+        self.assertEqual(by_name["林逸"].name, "林逸")
+        self.assertEqual(by_name["林逸"].first_appearance_chapter, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
