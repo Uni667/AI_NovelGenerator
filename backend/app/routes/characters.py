@@ -18,7 +18,7 @@ from novel_generator.character_import import (
     normalize_character_name,
     preferred_character_status,
 )
-from backend.app.services.sync_service import sync_db_to_txt
+from backend.app.services.sync_service import sync_db_to_txt, sync_txt_to_db
 
 router = APIRouter(tags=["角色管理"])
 
