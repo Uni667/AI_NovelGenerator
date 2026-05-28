@@ -27,7 +27,9 @@ export function WorkbenchTab() {
       {/* 侧边栏章节列表 */}
       <div
         className={`xl:min-h-0 shrink-0 max-h-[35vh] xl:max-h-full overflow-hidden transition-all duration-300 ${
-          !leftSidebarOpen || focusMode ? "xl:opacity-0 xl:pointer-events-none xl:w-0 xl:overflow-hidden" : ""
+          !leftSidebarOpen || focusMode 
+            ? "xl:opacity-0 xl:pointer-events-none xl:w-0 xl:overflow-hidden" 
+            : "xl:w-[260px]"
         }`}
       >
         <WorkbenchSidebar />
@@ -74,7 +76,9 @@ export function WorkbenchTab() {
       {/* 状态与质检面板 */}
       <div
         className={`xl:min-h-0 shrink-0 max-h-[30vh] xl:max-h-full overflow-hidden transition-all duration-300 ${
-          !rightPanelOpen || focusMode ? "xl:opacity-0 xl:pointer-events-none xl:w-0 xl:overflow-hidden" : ""
+          !rightPanelOpen || focusMode 
+            ? "xl:opacity-0 xl:pointer-events-none xl:w-0 xl:overflow-hidden" 
+            : "xl:w-[300px]"
         }`}
       >
         <WorkbenchStatusPane />

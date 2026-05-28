@@ -146,7 +146,8 @@ export const api = {
   chapters: {
     list: (projectId: string) => request<Chapter[]>(`/api/v1/projects/${projectId}/chapters`),
     get: (projectId: string, num: number) => request<{ chapter_number: number, content: string, meta: Chapter }>(`/api/v1/projects/${projectId}/chapters/${num}`),
-    update: (projectId: string, num: number, data: Partial<{content: string}>) => request<{ meta: Chapter }>(`/api/v1/projects/${projectId}/chapters/${num}`, { method: "PUT", body: JSON.stringify(data) }),
+    update: (projectId: string, num: number, data: Partial<Chapter & {content: string}>) => request<{ meta: Chapter }>(`/api/v1/projects/${projectId}/chapters/${num}`, { method: "PUT", body: JSON.stringify(data) }),
+    copy: (projectId: string, num: number) => request<{ message: string; meta: Chapter }>(`/api/v1/projects/${projectId}/chapters/${num}/copy`, { method: "POST" }),
     delete: (projectId: string, num: number) => request<{ message: string; chapter_number: number }>(`/api/v1/projects/${projectId}/chapters/${num}`, { method: "DELETE" }),
     upload: (projectId: string, files: File[]) => {
       const formData = new FormData()

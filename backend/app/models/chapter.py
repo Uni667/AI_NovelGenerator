@@ -28,6 +28,13 @@ class ChapterContentResponse(BaseModel):
 class ChapterUpdate(BaseModel):
     chapter_title: Optional[str] = None
     content: Optional[str] = None
+    chapter_role: Optional[str] = None
+    chapter_purpose: Optional[str] = None
+    suspense_level: Optional[str] = None
+    foreshadowing: Optional[str] = None
+    plot_twist_level: Optional[str] = None
+    chapter_summary: Optional[str] = None
+
 
 
 class KnowledgeFileResponse(BaseModel):

@@ -67,6 +67,60 @@ export function WorkbenchSidebar() {
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
+  // --- Edit chapter state ---
+  const [editChapter, setEditChapter] = useState<Chapter | null>(null)
+  const [editTitle, setEditTitle] = useState("")
+  const [editRole, setEditRole] = useState("")
+  const [editPurpose, setEditPurpose] = useState("")
+  const [editTwist, setEditTwist] = useState("")
+  const [editSuspense, setEditSuspense] = useState("")
+  const [editForeshadowing, setEditForeshadowing] = useState("")
+  const [editSummary, setEditSummary] = useState("")
+  const [editSaving, setEditSaving] = useState(false)
+
+  useEffect(() => {
+    if (editChapter) {
+      setEditTitle(editChapter.chapter_title || "")
+      setEditRole(editChapter.chapter_role || "")
+      setEditPurpose(editChapter.chapter_purpose || "")
+      setEditTwist(editChapter.plot_twist_level || "")
+      setEditSuspense(editChapter.suspense_level || "")
+      setEditForeshadowing(editChapter.foreshadowing || "")
+      setEditSummary(editChapter.chapter_summary || "")
+    } else {
+      setEditTitle("")
+      setEditRole("")
+      setEditPurpose("")
+      setEditTwist("")
+      setEditSuspense("")
+      setEditForeshadowing("")
+      setEditSummary("")
+    }
+  }, [editChapter])
+
+  const handleSaveEdit = async () => {
+    if (!editChapter) return
+    setEditSaving(true)
+    try {
+      await api.chapters.update(projectId, editChapter.chapter_number, {
+        chapter_title: editTitle,
+        chapter_role: editRole,
+        chapter_purpose: editPurpose,
+        plot_twist_level: editTwist,
+        suspense_level: editSuspense,
+        foreshadowing: editForeshadowing,
+        chapter_summary: editSummary,
+      })
+      toast.success("修改成功")
+      setEditChapter(null)
+      refetchChapters()
+    } catch (error) {
+      toast.error((error as Error).message || "修改失败")
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
   // Close menu on outside click
   useEffect(() => {
     if (menuOpenChapter === null) return
@@ -391,7 +445,7 @@ export function WorkbenchSidebar() {
                           type="button"
                           className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-foreground hover:bg-accent/40 transition-colors"
                           onClick={() => {
-                            toast.info("章节编辑功能开发中")
+                            setEditChapter(chapter)
                             setMenuOpenChapter(null)
                           }}
                         >
@@ -401,9 +455,16 @@ export function WorkbenchSidebar() {
                         <button
                           type="button"
                           className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-foreground hover:bg-accent/40 transition-colors"
-                          onClick={() => {
-                            toast.info("复制章节功能开发中")
+                          onClick={async () => {
                             setMenuOpenChapter(null)
+                            try {
+                              const res = await api.chapters.copy(projectId, chapter.chapter_number)
+                              toast.success(`章节复制成功，生成第 ${res.meta.chapter_number} 章`)
+                              refetchChapters()
+                              setSelectedChapterNumber(res.meta.chapter_number)
+                            } catch (error) {
+                              toast.error((error as Error).message || "复制章节失败")
+                            }
                           }}
                         >
                           <Copy className="h-3.5 w-3.5" />
@@ -460,6 +521,109 @@ export function WorkbenchSidebar() {
           }
         }}
       />
+
+      {/* Edit chapter meta dialog */}
+      <Dialog open={editChapter !== null} onOpenChange={(open) => { if (!open) setEditChapter(null) }}>
+        <DialogContent className="max-w-md bg-background/95 backdrop-blur-xl border-border/60 p-5 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-primary">
+              编辑章节信息 (第 {editChapter?.chapter_number} 章)
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground/80 mt-1">
+              修改章节的大纲角色、推进目标、伏笔设定等元信息。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3.5 my-3 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground font-semibold">章节标题</Label>
+              <Input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="例如：第一卷 开启新篇章"
+                className="bg-background/40 focus:bg-background/85 border-border/60 h-8 text-xs rounded-lg"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground font-semibold">章节定位</Label>
+                <Input
+                  type="text"
+                  value={editRole}
+                  onChange={(e) => setEditRole(e.target.value)}
+                  placeholder="例如：铺垫、高潮、过渡"
+                  className="bg-background/40 focus:bg-background/85 border-border/60 h-8 text-xs rounded-lg"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground font-semibold">核心作用</Label>
+                <Input
+                  type="text"
+                  value={editPurpose}
+                  onChange={(e) => setEditPurpose(e.target.value)}
+                  placeholder="例如：引入危机、打脸"
+                  className="bg-background/40 focus:bg-background/85 border-border/60 h-8 text-xs rounded-lg"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground font-semibold">认知颠覆 (评分)</Label>
+                <Input
+                  type="text"
+                  value={editTwist}
+                  onChange={(e) => setEditTwist(e.target.value)}
+                  placeholder="例如：★★☆☆☆"
+                  className="bg-background/40 focus:bg-background/85 border-border/60 h-8 text-xs rounded-lg"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground font-semibold">悬念密度</Label>
+                <Input
+                  type="text"
+                  value={editSuspense}
+                  onChange={(e) => setEditSuspense(e.target.value)}
+                  placeholder="例如：强/中/弱"
+                  className="bg-background/40 focus:bg-background/85 border-border/60 h-8 text-xs rounded-lg"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground font-semibold">伏笔操作</Label>
+              <Input
+                type="text"
+                value={editForeshadowing}
+                onChange={(e) => setEditForeshadowing(e.target.value)}
+                placeholder="输入埋下的伏笔或呼应的伏笔"
+                className="bg-background/40 focus:bg-background/85 border-border/60 h-8 text-xs rounded-lg"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground font-semibold">本章推进大纲 (最核心)</Label>
+              <textarea
+                value={editSummary}
+                onChange={(e) => setEditSummary(e.target.value)}
+                placeholder="详细输入本章要推进的情节、人物互动大纲..."
+                className="w-full min-h-[70px] bg-background/40 focus:bg-background/85 border border-border/60 focus:border-primary p-2 text-xs rounded-lg focus-visible:outline-none text-foreground"
+              />
+            </div>
+          </div>
+          <DialogFooter className="mt-2 flex gap-2 justify-end">
+            <Button variant="outline" size="sm" onClick={() => setEditChapter(null)} className="h-8 text-xs rounded-lg" disabled={editSaving}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveEdit}
+              disabled={editSaving}
+              className="h-8 text-xs bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-lg"
+            >
+              {editSaving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+              保存修改
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

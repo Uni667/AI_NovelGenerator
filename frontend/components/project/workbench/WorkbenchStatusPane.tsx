@@ -28,6 +28,7 @@ export function WorkbenchStatusPane() {
       selectedChapterNumber,
       activeChapterMeta,
       chapterEditorContent,
+      setChapterEditorContent,
     },
     platform: {
       platformLoading, chapterTitles, hookResult, chapterHookResult, diagnosisResult,
@@ -429,6 +430,7 @@ export function WorkbenchStatusPane() {
         projectId={projectId}
         chapterNumber={selectedChapterNumber}
         onApply={(optimizedContent) => {
+          setChapterEditorContent(optimizedContent)
           setFixDialogOpen(false)
         }}
       />

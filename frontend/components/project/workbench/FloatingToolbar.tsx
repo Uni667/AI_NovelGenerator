@@ -32,12 +32,59 @@ export function FloatingToolbar({
 }: FloatingToolbarProps) {
   const [instruction, setInstruction] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const dragStartRef = useRef<{ startX: number; startY: number; initialOffsetX: number; initialOffsetY: number } | null>(null)
+
+  // Reset drag offset when parent position changes
+  useEffect(() => {
+    setDragOffset({ x: 0, y: 0 })
+  }, [x, y])
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    const target = e.target as HTMLElement
+    if (target.closest("button") || target.closest("input")) return
+
+    dragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialOffsetX: dragOffset.x,
+      initialOffsetY: dragOffset.y
+    }
+
+    document.addEventListener("mousemove", handleMouseMove)
+    document.addEventListener("mouseup", handleMouseUp)
+    e.preventDefault()
+  }
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!dragStartRef.current) return
+    const dx = e.clientX - dragStartRef.current.startX
+    const dy = e.clientY - dragStartRef.current.startY
+    setDragOffset({
+      x: dragStartRef.current.initialOffsetX + dx,
+      y: dragStartRef.current.initialOffsetY + dy
+    })
+  }
+
+  const handleMouseUp = () => {
+    dragStartRef.current = null
+    document.removeEventListener("mousemove", handleMouseMove)
+    document.removeEventListener("mouseup", handleMouseUp)
+  }
 
   useEffect(() => {
     if (visible && inputRef.current) {
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [visible])
+
+  useEffect(() => {
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [])
 
   if (!visible) return null
 
@@ -56,13 +103,16 @@ export function FloatingToolbar({
     <div
       className="absolute z-50 flex flex-col gap-2 p-2.5 rounded-xl border border-white/10 bg-black/70 backdrop-blur-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 min-w-[320px]"
       style={{
-        left: Math.max(10, x),
-        top: Math.max(10, y),
+        left: Math.max(10, x + dragOffset.x),
+        top: Math.max(10, y + dragOffset.y),
         transform: 'translate(-50%, calc(-100% - 12px))',
       }}
     >
       {/* 顶部提示 */}
-      <div className="flex items-center justify-between px-1">
+      <div 
+        onMouseDown={handleMouseDown} 
+        className="flex items-center justify-between px-1 cursor-move select-none"
+      >
         <span className="text-[10px] text-gray-500">选中文本 — 选择操作方式：</span>
         <Button
           type="button"

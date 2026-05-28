@@ -38,10 +38,33 @@ def get_chapter(project_id: str, chapter_number: int, request: Request):
 @router.put("/api/v1/projects/{project_id}/chapters/{chapter_number}")
 def update_chapter(project_id: str, chapter_number: int, data: ChapterUpdate, request: Request):
     project, _user_id = _check_project(project_id, request)
-    if data.content:
+    
+    meta_updated = False
+    meta_fields = ["chapter_title", "chapter_role", "chapter_purpose", "suspense_level", "foreshadowing", "plot_twist_level", "chapter_summary"]
+    if any(getattr(data, f) is not None for f in meta_fields):
+        chapter_service.update_chapter_meta(project_id, chapter_number, data)
+        meta_updated = True
+        
+    result = None
+    if data.content is not None:
         result = chapter_service.update_chapter_content(project_id, chapter_number, project["filepath"], data.content)
+    elif meta_updated:
+        result = chapter_service.get_chapter(project_id, chapter_number)
+        
+    if result:
         return {"message": "已保存", "meta": result}
-    raise HTTPException(status_code=400, detail="未提供内容")
+        
+    raise HTTPException(status_code=400, detail="未提供修改内容")
+
+
+@router.post("/api/v1/projects/{project_id}/chapters/{chapter_number}/copy")
+def copy_chapter(project_id: str, chapter_number: int, request: Request):
+    project, _user_id = _check_project(project_id, request)
+    result = chapter_service.copy_chapter(project_id, chapter_number, project["filepath"])
+    if not result:
+        raise HTTPException(status_code=404, detail="章节不存在，复制失败")
+    return {"message": "复制成功", "meta": result}
+
 
 
 def _parse_chapter_number(filename: str) -> int | None:

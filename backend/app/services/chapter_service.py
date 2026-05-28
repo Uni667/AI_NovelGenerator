@@ -252,3 +252,76 @@ def mark_chapter_final(project_id: str, chapter_number: int, word_count: int = 0
             "UPDATE chapter SET status='final', word_count=?, updated_at=? WHERE project_id=? AND chapter_number=?",
             (word_count, now, project_id, chapter_number)
         )
+
+
+def update_chapter_meta(project_id: str, chapter_number: int, data) -> dict | None:
+    now = datetime.datetime.now().isoformat()
+    fields = []
+    params = []
+    
+    meta_fields = ["chapter_title", "chapter_role", "chapter_purpose", "suspense_level", "foreshadowing", "plot_twist_level", "chapter_summary"]
+    for field in meta_fields:
+        val = getattr(data, field)
+        if val is not None:
+            fields.append(f"{field}=?")
+            params.append(val)
+            
+    if not fields:
+        return get_chapter(project_id, chapter_number)
+        
+    params.append(now)
+    params.append(project_id)
+    params.append(chapter_number)
+    
+    query = f"UPDATE chapter SET {', '.join(fields)}, updated_at=? WHERE project_id=? AND chapter_number=?"
+    
+    with get_db() as conn:
+        conn.execute(query, tuple(params))
+        
+    return get_chapter(project_id, chapter_number)
+
+
+def copy_chapter(project_id: str, chapter_number: int, filepath: str) -> dict | None:
+    now = datetime.datetime.now().isoformat()
+    with get_db() as conn:
+        max_row = conn.execute("SELECT MAX(chapter_number) as max_num FROM chapter WHERE project_id=?", (project_id,)).fetchone()
+        next_number = (max_row["max_num"] or 0) + 1
+        
+        src = conn.execute("SELECT * FROM chapter WHERE project_id=? AND chapter_number=?", (project_id, chapter_number)).fetchone()
+        if not src:
+            return None
+            
+        conn.execute(
+            """INSERT INTO chapter (user_id, project_id, chapter_number, chapter_title, chapter_role, chapter_purpose,
+               suspense_level, foreshadowing, plot_twist_level, chapter_summary, word_count, status, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (src["user_id"], project_id, next_number, f"{src['chapter_title'] or '未命名'} - 副本", src["chapter_role"], src["chapter_purpose"],
+             src["suspense_level"], src["foreshadowing"], src["plot_twist_level"], src["chapter_summary"], src["word_count"], "draft", now, now)
+        )
+        user_id = src["user_id"]
+        
+    src_file = os.path.join(filepath, "chapters", f"chapter_{chapter_number}.txt")
+    dst_file = os.path.join(filepath, "chapters", f"chapter_{next_number}.txt")
+    content = ""
+    if os.path.exists(src_file):
+        with open(src_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        os.makedirs(os.path.dirname(dst_file), exist_ok=True)
+        with open(dst_file, "w", encoding="utf-8") as f:
+            f.write(content)
+            
+    if content:
+        from backend.app.services import file_service
+        file_service.create_project_file(
+            project_id=project_id,
+            user_id=user_id,
+            type="chapter",
+            title=f"第{next_number}章",
+            filename=f"chapters/chapter_{next_number}.txt",
+            content=content,
+            source="user_edited",
+            is_current=True
+        )
+        
+    return get_chapter(project_id, next_number)
+

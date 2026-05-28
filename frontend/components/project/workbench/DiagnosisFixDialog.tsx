@@ -73,32 +73,39 @@ export function DiagnosisFixDialog({
         selected_issues: selectedIssues,
       })
       
-      // Handle SSE response
-      if (res.content) {
-        setOptimizedContent(res.content)
-        setState("preview")
-      } else if (res.diagnosis) {
-        setOptimizedContent(res.diagnosis)
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "")
+        throw new Error(errText || `请求失败 (${res.status})`)
+      }
+
+      const text = await res.text()
+      const lines = text.split("\n")
+      let content = ""
+      let errorFromStream = ""
+      
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(trimmed.substring(6))
+            if (data.content) {
+              content = data.content
+            } else if (data.message && !data.step) {
+              errorFromStream = data.message
+            }
+          } catch {}
+        }
+      }
+
+      if (errorFromStream) {
+        throw new Error(errorFromStream)
+      }
+
+      if (content) {
+        setOptimizedContent(content)
         setState("preview")
       } else {
-        // Try to read as SSE stream
-        const text = await new Response(res).text()
-        const lines = text.split("\n")
-        let content = ""
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.substring(6))
-              if (data.content) content = data.content
-            } catch {}
-          }
-        }
-        if (content) {
-          setOptimizedContent(content)
-          setState("preview")
-        } else {
-          throw new Error("响应中没有优化内容")
-        }
+        throw new Error("优化后正文内容为空")
       }
     } catch (e) {
       setErrorMessage((e as Error).message || "优化失败")
