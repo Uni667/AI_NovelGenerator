@@ -49,6 +49,7 @@ export function WorkbenchEditor() {
   // -- Interactive Editing State --
   const [toolbarState, setToolbarState] = React.useState({ x: 0, y: 0, visible: false, startIndex: 0, endIndex: 0 })
   const [isRewriting, setIsRewriting] = React.useState(false)
+  const [showReference, setShowReference] = React.useState(false)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
 
   // -- Delete / More-menu state --
@@ -236,6 +237,16 @@ export function WorkbenchEditor() {
                 ±{Math.round(deviationPercent)}%
               </Badge>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowReference(!showReference)}
+              className={`h-6 px-1.5 text-[10px] transition-colors ${showReference ? 'bg-secondary text-secondary-foreground border-secondary-foreground/20' : 'text-muted-foreground hover:text-foreground'}`}
+              title="查看当前大纲和参考资料"
+            >
+              <Info className="h-3 w-3 mr-1" />
+              参考资料
+            </Button>
           </div>
         </div>
       </CardHeader>
@@ -307,93 +318,144 @@ export function WorkbenchEditor() {
             <Skeleton className="flex-1 w-full rounded-xl" />
           </div>
         ) : (
-          <div className="flex-1 min-h-0 min-w-0 relative">
-            <FloatingToolbar
-              x={toolbarState.x}
-              y={toolbarState.y}
-              visible={toolbarState.visible}
-              isSubmitting={isRewriting}
-              onClose={() => setToolbarState(prev => ({ ...prev, visible: false }))}
-              onSubmit={handleRewriteSubmit}
-            />
+          <div className="flex-1 min-h-0 min-w-0 flex gap-4 relative">
+            <div className="flex-1 min-w-0 h-full relative">
+              <FloatingToolbar
+                x={toolbarState.x}
+                y={toolbarState.y}
+                visible={toolbarState.visible}
+                isSubmitting={isRewriting}
+                onClose={() => setToolbarState(prev => ({ ...prev, visible: false }))}
+                onSubmit={handleRewriteSubmit}
+              />
 
-            {/* Empty draft content warning */}
-            {!chapterEditorContent && activeChapterMeta?.status === 'draft' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8 z-10 bg-background/30 pointer-events-none">
-                <div className="rounded-full bg-amber-500/10 p-3 mb-3">
-                  <AlertCircle className="h-6 w-6 text-amber-400" />
+              {/* Empty draft content warning */}
+              {!chapterEditorContent && activeChapterMeta?.status === 'draft' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8 z-10 bg-background/30 pointer-events-none">
+                  <div className="rounded-full bg-amber-500/10 p-3 mb-3">
+                    <AlertCircle className="h-6 w-6 text-amber-400" />
+                  </div>
+                  <p className="text-sm font-semibold text-amber-400">草稿内容为空</p>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                    该章节状态为"草稿"，但正文内容不存在。可能文件已被删除或生成过程出现异常。
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-3">
+                    请尝试重新生成，或在下方编辑器中直接编写内容后保存。
+                  </p>
                 </div>
-                <p className="text-sm font-semibold text-amber-400">草稿内容为空</p>
-                <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                  该章节状态为"草稿"，但正文内容不存在。可能文件已被删除或生成过程出现异常。
-                </p>
-                <p className="text-xs text-muted-foreground mt-3">
-                  请尝试重新生成，或在下方编辑器中直接编写内容后保存。
-                </p>
-              </div>
-            )}
+              )}
 
-            {/* Final chapter read-only indicator */}
-            {activeChapterMeta?.status === 'final' && (
-              <div className="absolute top-2 right-2 z-10">
-                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 text-[10px]">
-                  <CheckCircle className="h-3 w-3" />
-                  已定稿
-                </span>
-              </div>
-            )}
+              {/* Final chapter read-only indicator */}
+              {activeChapterMeta?.status === 'final' && (
+                <div className="absolute top-2 right-2 z-10">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 text-[10px]">
+                    <CheckCircle className="h-3 w-3" />
+                    已定稿
+                  </span>
+                </div>
+              )}
 
-            <Textarea
-              ref={textareaRef}
-              value={chapterEditorContent}
-              onChange={(event) => {
-                if (activeChapterMeta?.status === 'final') {
-                  toast.info('该章节已定稿，如需编辑请先取消定稿。')
-                  return
+              <Textarea
+                ref={textareaRef}
+                value={chapterEditorContent}
+                onChange={(event) => {
+                  if (activeChapterMeta?.status === 'final') {
+                    toast.info('该章节已定稿，如需编辑请先取消定稿。')
+                    return
+                  }
+                  setChapterEditorContent(event.target.value)
+                }}
+                onMouseUp={(e) => {
+                  if (activeChapterMeta?.status === 'final') return
+                  handleMouseUp(e)
+                }}
+                onKeyUp={(e) => {
+                   if (activeChapterMeta?.status === 'final') return
+                   if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                     handleMouseUp(e as any)
+                   }
+                }}
+                className={`h-full w-full resize-none font-serif text-base md:text-lg md:leading-8 leading-7 tracking-wider p-6 md:p-8 bg-background/30 border-border/80 rounded-xl transition-all overflow-y-auto ${
+                  activeChapterMeta?.status === 'final'
+                    ? 'focus-visible:ring-0 opacity-70 cursor-not-allowed'
+                    : 'focus-visible:ring-primary/25'
+                }`}
+                style={{ fieldSizing: 'fixed' } as React.CSSProperties}
+                placeholder={
+                  activeChapterMeta?.status === 'final'
+                    ? '该章节已定稿，内容为只读。'
+                    : activeChapterMeta?.status === 'draft' && !chapterEditorContent
+                    ? '草稿内容为空，在此编写后保存可恢复。'
+                    : '在此编写章节内容... 选中任意文字可进行局部改写。'
                 }
-                setChapterEditorContent(event.target.value)
-              }}
-              onMouseUp={(e) => {
-                if (activeChapterMeta?.status === 'final') return
-                handleMouseUp(e)
-              }}
-              onKeyUp={(e) => {
-                 if (activeChapterMeta?.status === 'final') return
-                 if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-                   handleMouseUp(e as any)
-                 }
-              }}
-              className={`h-full w-full resize-none font-serif text-base md:text-lg md:leading-8 leading-7 tracking-wider p-6 md:p-8 bg-background/30 border-border/80 rounded-xl transition-all overflow-y-auto ${
-                activeChapterMeta?.status === 'final'
-                  ? 'focus-visible:ring-0 opacity-70 cursor-not-allowed'
-                  : 'focus-visible:ring-primary/25'
-              }`}
-              style={{ fieldSizing: 'fixed' } as React.CSSProperties}
-              placeholder={
-                activeChapterMeta?.status === 'final'
-                  ? '该章节已定稿，内容为只读。'
-                  : activeChapterMeta?.status === 'draft' && !chapterEditorContent
-                  ? '草稿内容为空，在此编写后保存可恢复。'
-                  : '在此编写章节内容... 选中任意文字可进行局部改写。'
-              }
-              readOnly={activeChapterMeta?.status === 'final'}
-            />
+                readOnly={activeChapterMeta?.status === 'final'}
+              />
+            </div>
+
+            {showReference && (
+              <div className="w-[280px] shrink-0 border-l border-border/20 pl-4 overflow-y-auto hidden md:flex flex-col space-y-4 animate-in slide-in-from-right-4 duration-300">
+                <div className="flex items-center justify-between pb-1 border-b border-border/20">
+                  <h4 className="text-xs font-bold text-foreground">本章大纲与参考</h4>
+                  <Button variant="ghost" size="icon" className="h-5 w-5 hover:bg-muted" onClick={() => setShowReference(false)}>
+                    <span className="text-xs">×</span>
+                  </Button>
+                </div>
+                
+                {/* 章节大纲定位 */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] text-muted-foreground uppercase font-semibold">章节大纲</span>
+                  <div className="bg-muted/40 border border-border/50 rounded-lg p-2.5 space-y-1 text-xs">
+                    <p><strong>定位：</strong>{activeChapterMeta?.chapter_role || "未指定"}</p>
+                    <p><strong>作用：</strong>{activeChapterMeta?.chapter_purpose || "未指定"}</p>
+                    {activeChapterMeta?.chapter_summary && (
+                      <p className="mt-1.5 leading-relaxed text-muted-foreground"><strong>推进目标：</strong>{activeChapterMeta.chapter_summary}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 伏笔悬念 */}
+                {activeChapterMeta?.foreshadowing && (
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">伏笔悬念</span>
+                    <div className="bg-muted/40 border border-border/50 rounded-lg p-2.5 text-xs leading-relaxed text-muted-foreground">
+                      {activeChapterMeta.foreshadowing}
+                    </div>
+                  </div>
+                )}
+
+                {/* 写作配置要求 */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] text-muted-foreground uppercase font-semibold">写作配置要求</span>
+                  <div className="bg-muted/40 border border-border/50 rounded-lg p-2.5 space-y-2 text-xs">
+                    {config?.topic && (
+                      <p><strong>主题/金手指：</strong>{config.topic}</p>
+                    )}
+                    {config?.style_requirement && (
+                      <p><strong>文风要求：</strong>{config.style_requirement}</p>
+                    )}
+                    {config?.forbidden && (
+                      <p className="text-amber-500/90"><strong>避雷限制：</strong>{config.forbidden}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         <div className="flex flex-wrap items-center gap-2 pt-2 shrink-0">
-          <Button size="sm" onClick={async () => {
+          <Button size="sm" variant="outline" onClick={async () => {
             const meta = await saveWorkbenchChapter()
             if (meta) refetchChapters()
           }} disabled={chapterEditorSaving || chapterEditorLoading}>
-            {chapterEditorSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5 text-primary-foreground" />}
+            {chapterEditorSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
             保存
           </Button>
-          <Button size="sm" variant="outline" onClick={handleGenerateWorkbenchChapter} disabled={isConnected || Boolean(generationTaskId) || generationStopping} className="hover:bg-accent/40">
-            <Play className="h-4 w-4 mr-1.5 text-emerald-400" />AI 生成
+          <Button size="sm" onClick={handleGenerateWorkbenchChapter} disabled={isConnected || Boolean(generationTaskId) || generationStopping} className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border-0 shadow-sm shadow-purple-500/20 hover:shadow transition-all duration-200">
+            <Play className="h-4 w-4 mr-1.5 fill-current" />AI 生成
           </Button>
-          <Button size="sm" variant="secondary" onClick={handleFinalizeWorkbenchChapter} disabled={isConnected || Boolean(generationTaskId) || generationStopping || !chapterEditorContent.trim()} className="hover:bg-accent/50">
-            <CheckCircle className="h-4 w-4 mr-1.5 text-indigo-400" />定稿
+          <Button size="sm" onClick={handleFinalizeWorkbenchChapter} disabled={isConnected || Boolean(generationTaskId) || generationStopping || !chapterEditorContent.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-sm transition-all duration-200">
+            <CheckCircle className="h-4 w-4 mr-1.5 text-emerald-100" />定稿
           </Button>
           {generationTaskId && (
             <Button size="sm" variant="destructive" onClick={handleStopGeneration} disabled={generationStopping}>

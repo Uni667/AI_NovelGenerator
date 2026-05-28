@@ -560,6 +560,42 @@ def init_db():
         except Exception as e:
             logger.warning("project filepath migration skipped: %s", e)
 
+        # ── 迁移：generation_task status CHECK 约束增加 'cancelling' ──
+        try:
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='generation_task'"
+            ).fetchone()
+            if row and row[0] and "cancelling" not in (row[0] or ""):
+                logger.info("Migrating generation_task table to add 'cancelling' status...")
+                import re
+                sql = row[0]
+                sql_new = sql.replace("CREATE TABLE generation_task", "CREATE TABLE generation_task_new", 1)
+                sql_new = re.sub(
+                    r"CHECK\s*\(\s*status\s+IN\s*\([^\)]+\)\s*\)",
+                    "CHECK(status IN ('pending','running','completed','failed','cancelled','cancelling'))",
+                    sql_new,
+                    flags=re.IGNORECASE
+                )
+                
+                # Get existing columns dynamically
+                cols = [r["name"] for r in conn.execute("PRAGMA table_info(generation_task)").fetchall()]
+                cols_str = ", ".join(f'"{c}"' for c in cols)
+                
+                conn.executescript(f"""
+                    {sql_new};
+                    
+                    INSERT INTO generation_task_new ({cols_str})
+                    SELECT {cols_str} FROM generation_task;
+                    
+                    DROP TABLE generation_task;
+                    ALTER TABLE generation_task_new RENAME TO generation_task;
+                    CREATE INDEX IF NOT EXISTS idx_generation_task_project ON generation_task(project_id);
+                    CREATE INDEX IF NOT EXISTS idx_generation_task_user ON generation_task(user_id);
+                """)
+                logger.info("generation_task migration complete.")
+        except Exception as e:
+            logger.warning("generation_task cancelling status migration failed: %s", e, exc_info=True)
+
         # ── 引导与执行版本化数据库迁移 ──
         try:
             bootstrap_schema_version(conn)

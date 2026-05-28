@@ -75,7 +75,7 @@ def _persist_task_to_db(state: TaskState) -> None:
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     state.task_id,
-                    state.user_id,
+                    state.user_id if state.user_id else None,
                     state.project_id,
                     state.kind,
                     state.status,
@@ -103,7 +103,7 @@ def load_tasks_from_db() -> None:
 
         with get_db() as conn:
             rows = conn.execute(
-                "SELECT * FROM generation_task WHERE status IN ('running','pending')"
+                "SELECT * FROM generation_task WHERE status IN ('running','pending','cancelling')"
             ).fetchall()
         for row in rows:
             r = dict(row)
@@ -122,6 +122,8 @@ def load_tasks_from_db() -> None:
                 current_step=r.get("current_step") or "",
                 step_data=r.get("step_data") or "",
                 created_at=created,
+                updated_at=time.time(),
+                finished_at=time.time(),
                 metadata={
                     "output_file_id": r.get("output_file_id"),
                     "error_code": r.get("error_code"),
@@ -130,6 +132,7 @@ def load_tasks_from_db() -> None:
                 },
             )
             _TASKS[state.task_id] = state
+            _persist_task_to_db(state)
     except Exception:
         logger.warning("Failed to load tasks from DB on startup", exc_info=True)
 
@@ -214,12 +217,85 @@ def register_task(
 def get_task(task_id: str) -> Optional[TaskState]:
     with _LOCK:
         _cleanup_finished_tasks_locked()
-        return _TASKS.get(task_id)
+        state = _TASKS.get(task_id)
+        if state:
+            return state
+
+        # Try loading from the database
+        try:
+            from backend.app.database import get_db
+            with get_db() as conn:
+                row = conn.execute("SELECT * FROM generation_task WHERE id = ?", (task_id,)).fetchone()
+            if row:
+                r = dict(row)
+                created = time.mktime(
+                    time.strptime(r["created_at"], "%Y-%m-%dT%H:%M:%S.%f")
+                ) if "." in r["created_at"] else time.mktime(
+                    time.strptime(r["created_at"], "%Y-%m-%dT%H:%M:%S")
+                ) if "T" in r["created_at"] else time.time()
+                
+                finished = None
+                if r.get("finished_at"):
+                    finished = time.mktime(
+                        time.strptime(r["finished_at"], "%Y-%m-%dT%H:%M:%S.%f")
+                    ) if "." in r["finished_at"] else time.mktime(
+                        time.strptime(r["finished_at"], "%Y-%m-%dT%H:%M:%S")
+                    ) if "T" in r["finished_at"] else time.time()
+                
+                updated = time.time()
+                if r.get("updated_at"):
+                    updated = time.mktime(
+                        time.strptime(r["updated_at"], "%Y-%m-%dT%H:%M:%S.%f")
+                    ) if "." in r["updated_at"] else time.mktime(
+                        time.strptime(r["updated_at"], "%Y-%m-%dT%H:%M:%S")
+                    ) if "T" in r["updated_at"] else time.time()
+
+                state = TaskState(
+                    task_id=r["id"],
+                    user_id=r.get("user_id") or "",
+                    project_id=r["project_id"],
+                    kind=r["type"],
+                    status=r["status"],
+                    message=r.get("error_message") or "",
+                    cancel_requested=(r["status"] in ("cancelling", "cancelled")),
+                    current_step=r.get("current_step") or "",
+                    step_data=r.get("step_data") or "",
+                    created_at=created,
+                    updated_at=updated,
+                    finished_at=finished,
+                    metadata={
+                        "output_file_id": r.get("output_file_id"),
+                        "error_code": r.get("error_code"),
+                        "error_category": r.get("error_category"),
+                        "input_snapshot": r.get("input_snapshot", ""),
+                    },
+                )
+                _TASKS[task_id] = state
+                return state
+        except Exception:
+            logger.warning("Failed to load task %s from DB", task_id, exc_info=True)
+        return None
 
 
 def get_active_task(project_id: str, kind: str | None = None) -> Optional[TaskState]:
     with _LOCK:
         _cleanup_finished_tasks_locked()
+        
+        # Check database for active tasks first and load them into memory
+        try:
+            from backend.app.database import get_db
+            with get_db() as conn:
+                sql = "SELECT id FROM generation_task WHERE project_id = ? AND status IN ('running', 'pending', 'cancelling')"
+                params = [project_id]
+                if kind:
+                    sql += " AND type = ?"
+                    params.append(kind)
+                rows = conn.execute(sql, params).fetchall()
+            for row in rows:
+                get_task(row["id"])  # loads into memory if not present
+        except Exception:
+            logger.warning("Failed to query active tasks from DB for project %s", project_id, exc_info=True)
+
         _force_finish_stuck_cancelling_locked(project_id)
         for state in _TASKS.values():
             if state.project_id != project_id:
@@ -267,7 +343,7 @@ def unbind_cancel_token(task_id: str) -> None:
 
 def request_cancel(task_id: str) -> Optional[TaskState]:
     with _LOCK:
-        state = _TASKS.get(task_id)
+        state = get_task(task_id)
         if not state:
             return None
         if state.status in TERMINAL_STATUSES:
@@ -292,7 +368,31 @@ def request_cancel(task_id: str) -> Optional[TaskState]:
 def is_cancel_requested(task_id: str) -> bool:
     with _LOCK:
         state = _TASKS.get(task_id)
-        return bool(state and state.cancel_requested)
+        if state and state.cancel_requested:
+            return True
+
+        # Check database to support multi-process/distributed cancellation
+        try:
+            from backend.app.database import get_db
+            with get_db() as conn:
+                row = conn.execute("SELECT status FROM generation_task WHERE id = ?", (task_id,)).fetchone()
+            if row and row["status"] in ("cancelling", "cancelled"):
+                if state:
+                    state.cancel_requested = True
+                    if state.status != "cancelled":
+                        state.status = "cancelling"
+                # Trigger local HTTP transport cancellation if a token exists in this process
+                token = _CANCEL_TOKENS.get(task_id)
+                if token is not None:
+                    try:
+                        token.cancel()
+                    except Exception:
+                        pass
+                return True
+        except Exception:
+            pass
+
+        return False
 
 
 def raise_if_cancelled(task_id: Optional[str]) -> None:

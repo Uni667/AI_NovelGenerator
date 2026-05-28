@@ -262,11 +262,11 @@ export function useGenerationState(projectId: string) {
     }
   }
 
-  // Automatically clear task ID when done event arrives
+  // Automatically clear task ID when done/cancelled/error event arrives
   useEffect(() => {
     if (events.length > 0) {
       const lastEvent = events[events.length - 1]
-      if (lastEvent.type === "done") {
+      if (lastEvent.type === "done" || lastEvent.type === "cancelled" || lastEvent.type === "error") {
         const timer = setTimeout(() => {
           setGenerationTaskId(null)
           setSseAction(null)

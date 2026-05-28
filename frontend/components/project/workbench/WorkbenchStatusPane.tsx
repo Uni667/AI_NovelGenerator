@@ -47,6 +47,7 @@ export function WorkbenchStatusPane() {
   const isWordCountDeviating = currentWordCount > 0 && wordCountDeviation > 0.2
   const deviationPercent = wordCountDeviation * 100
   const wordCountDiff = currentWordCount - targetWordCount
+  const wordCountPercent = targetWordCount > 0 ? (currentWordCount / targetWordCount) * 100 : 0
 
   const totalWords = chapters?.reduce((acc: number, cur: Chapter) => acc + (cur.word_count || 0), 0) || 0
 
@@ -234,7 +235,7 @@ export function WorkbenchStatusPane() {
             <AccordionItem value="wordcount">
               <AccordionTrigger className="py-1.5 text-xs font-semibold">字数节奏</AccordionTrigger>
               <AccordionContent className="text-xs">
-                <div className="space-y-1.5 pt-1">
+                <div className="space-y-2 pt-1">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">本章：</span>
                     <span className="font-semibold">{currentWordCount} 字</span>
@@ -243,6 +244,26 @@ export function WorkbenchStatusPane() {
                     <span className="text-muted-foreground">目标：</span>
                     <span className="font-semibold">{targetWordCount} 字</span>
                   </div>
+
+                  {targetWordCount > 0 && (
+                    <div className="space-y-1 py-1">
+                      <div className="flex justify-between text-[10px] text-muted-foreground">
+                        <span>字数进度</span>
+                        <span className="font-mono">{Math.round(wordCountPercent)}%</span>
+                      </div>
+                      <Progress 
+                        value={Math.min(wordCountPercent, 100)} 
+                        className={`w-full h-1.5 ${
+                          wordCountPercent < 80
+                            ? "[&_[data-slot=progress-indicator]]:bg-amber-500"
+                            : wordCountPercent > 110
+                            ? "[&_[data-slot=progress-indicator]]:bg-rose-500"
+                            : "[&_[data-slot=progress-indicator]]:bg-emerald-500"
+                        }`}
+                      />
+                    </div>
+                  )}
+
                   {isWordCountDeviating && (
                     <div className="flex items-start gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2 text-[10px] mt-1">
                       <Info className="h-3 w-3 shrink-0 text-amber-400 mt-0.5" />
