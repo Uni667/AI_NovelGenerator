@@ -66,8 +66,11 @@ def analyze_chapter_quality(ctx, chapter_text: str, task_id: str | None = None) 
             raise_if_cancelled(task_id)
         return False
 
-    # 提取精简的语义段落，控制 Token 开销并避免单词斩断
-    sliced_text = get_semantic_segments(chapter_text)
+    # 优先传全文进行逻辑审查，只有超长时才做切片防爆，确保不会遗漏中间细节中的情节/数值/倒计时逻辑硬伤
+    if len(chapter_text) <= 6000:
+        sliced_text = chapter_text
+    else:
+        sliced_text = get_semantic_segments(chapter_text)
 
     prompt = prompt_definitions.get_prompt_template(
         ctx.project_id, 'chapter_comprehensive_quality_check_prompt'

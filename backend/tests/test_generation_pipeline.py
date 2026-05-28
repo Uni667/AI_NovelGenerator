@@ -133,8 +133,25 @@ def test_sliding_context_generation(mock_llm_adapter, mock_generation_context, t
         summary_content = f.read()
     assert "This is a single chapter summary" in summary_content
     
-    # 提示词中应当有第 1 章的剧情摘要和第 2 章的前文结尾承接
     assert "第 1 章剧情摘要" in prompt
     assert "This is a single chapter summary" in prompt
     assert "这是第二章的全文正文内容。主角离开新手村，踏上征途。" in prompt
+
+
+def test_quality_checker_no_slice_for_reasonable_length(mock_llm_adapter, mock_generation_context):
+    from novel_generator.chapter_pipeline.quality_checker import analyze_chapter_quality
+    import unittest.mock as mock
+    
+    mock_llm_adapter.invoke = mock.MagicMock(return_value='{"opening":{"score":9,"issues":[],"suggestion":""}}')
+    
+    text_under_limit = "测试内容\n" * 100
+    with mock.patch("novel_generator.chapter_pipeline.quality_checker.get_semantic_segments") as mock_slice:
+        analyze_chapter_quality(mock_generation_context, text_under_limit)
+        mock_slice.assert_not_called()
+        
+    text_over_limit = "测试超长内容，做切片质检测试测试超长内容，做切片质检测试\n" * 250
+    with mock.patch("novel_generator.chapter_pipeline.quality_checker.get_semantic_segments") as mock_slice:
+        mock_slice.return_value = "sliced text"
+        analyze_chapter_quality(mock_generation_context, text_over_limit)
+        mock_slice.assert_called_once()
 

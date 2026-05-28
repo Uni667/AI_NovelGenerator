@@ -9,7 +9,7 @@ from backend.app.dependencies import get_generation_context
 from novel_generator.context import GenerationContext
 from novel_generator.chapter_pipeline.revision import stream_interactive_rewrite
 
-router = APIRouter(prefix="/projects/{project_id}/interactive", tags=["Interactive Editing"])
+router = APIRouter(prefix="/api/v1/projects/{project_id}/interactive", tags=["Interactive Editing"])
 
 class InteractiveRewriteRequest(BaseModel):
     context_before: str
