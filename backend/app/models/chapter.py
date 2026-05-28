@@ -34,6 +34,7 @@ class ChapterUpdate(BaseModel):
     foreshadowing: Optional[str] = None
     plot_twist_level: Optional[str] = None
     chapter_summary: Optional[str] = None
+    status: Optional[str] = None
 
 
 

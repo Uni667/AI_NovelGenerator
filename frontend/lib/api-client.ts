@@ -146,9 +146,15 @@ export const api = {
   chapters: {
     list: (projectId: string) => request<Chapter[]>(`/api/v1/projects/${projectId}/chapters`),
     get: (projectId: string, num: number) => request<{ chapter_number: number, content: string, meta: Chapter }>(`/api/v1/projects/${projectId}/chapters/${num}`),
-    update: (projectId: string, num: number, data: Partial<Chapter & {content: string}>) => request<{ meta: Chapter }>(`/api/v1/projects/${projectId}/chapters/${num}`, { method: "PUT", body: JSON.stringify(data) }),
+    update: (projectId: string, num: number, data: Partial<Chapter & {content: string; status?: string}>) => request<{ meta: Chapter }>(`/api/v1/projects/${projectId}/chapters/${num}`, { method: "PUT", body: JSON.stringify(data) }),
     copy: (projectId: string, num: number) => request<{ message: string; meta: Chapter }>(`/api/v1/projects/${projectId}/chapters/${num}/copy`, { method: "POST" }),
     delete: (projectId: string, num: number) => request<{ message: string; chapter_number: number }>(`/api/v1/projects/${projectId}/chapters/${num}`, { method: "DELETE" }),
+    syncSubsequent: (projectId: string, num: number) => request<{ message: string; chapters: Chapter[] }>(`/api/v1/projects/${projectId}/chapters/${num}/sync-subsequent`, { method: "POST" }),
+    askAi: (projectId: string, num: number, question: string, selectedText?: string) => 
+      new EventSource(sseUrl(`/api/v1/projects/${projectId}/chapters/${num}/ask-ai`, undefined, {
+        question,
+        ...(selectedText ? { selected_text: selectedText } : {})
+      })),
     upload: (projectId: string, files: File[]) => {
       const formData = new FormData()
       files.forEach((f) => formData.append("files", f))

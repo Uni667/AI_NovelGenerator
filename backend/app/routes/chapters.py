@@ -1,9 +1,11 @@
 import re
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, Depends
 from backend.app.services import project_service, chapter_service
 from backend.app.auth import get_current_user
 from backend.app.models.chapter import ChapterUpdate
+from backend.app.dependencies import get_generation_context
+from novel_generator.context import GenerationContext
 
 router = APIRouter(tags=["章节管理"])
 
@@ -45,10 +47,22 @@ def update_chapter(project_id: str, chapter_number: int, data: ChapterUpdate, re
         chapter_service.update_chapter_meta(project_id, chapter_number, data)
         meta_updated = True
         
+    status_updated = False
+    if data.status is not None:
+        import datetime
+        from backend.app.database import get_db
+        now = datetime.datetime.now().isoformat()
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE chapter SET status=?, updated_at=? WHERE project_id=? AND chapter_number=?",
+                (data.status, now, project_id, chapter_number)
+            )
+        status_updated = True
+        
     result = None
     if data.content is not None:
-        result = chapter_service.update_chapter_content(project_id, chapter_number, project["filepath"], data.content)
-    elif meta_updated:
+        result = chapter_service.update_chapter_content(project_id, chapter_number, project["filepath"], data.content, status=data.status)
+    elif meta_updated or status_updated:
         result = chapter_service.get_chapter(project_id, chapter_number)
         
     if result:
@@ -142,3 +156,83 @@ def delete_chapter(project_id: str, chapter_number: int, request: Request):
     if not success:
         raise HTTPException(status_code=404, detail="章节不存在")
     return {"message": f"第{chapter_number}章已删除", "chapter_number": chapter_number}
+
+
+@router.post("/api/v1/projects/{project_id}/chapters/{chapter_number}/sync-subsequent")
+def sync_subsequent_chapters_route(
+    project_id: str,
+    chapter_number: int,
+    request: Request,
+):
+    project, user_id = _check_project(project_id, request)
+    try:
+        updated_chapters = chapter_service.sync_subsequent_chapters(project_id, chapter_number, user_id)
+        return {
+            "message": "同步成功",
+            "chapters": updated_chapters
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/v1/projects/{project_id}/chapters/{chapter_number}/ask-ai")
+async def ask_ai_route(
+    project_id: str,
+    chapter_number: int,
+    question: str,
+    request: Request,
+    selected_text: str | None = None,
+    ctx: GenerationContext = Depends(get_generation_context)
+):
+    import asyncio
+    import json
+    from sse_starlette.sse import EventSourceResponse
+    from novel_generator.chapter_pipeline.revision import stream_chapter_ask_ai
+    
+    project, _user_id = _check_project(project_id, request)
+    pconfig = project_service.get_project_config(project_id) or {}
+    chapter_meta = chapter_service.get_chapter(project_id, chapter_number) or {}
+    chapter_content = chapter_service.get_chapter_content(project_id, chapter_number, project["filepath"])
+    
+    queue = asyncio.Queue()
+    
+    class RouteSSEEmitter:
+        def __init__(self, q: asyncio.Queue):
+            self.q = q
+        def emit(self, event_type: str, data: dict):
+            self.q.put_nowait({"event": event_type, "data": data})
+            
+    emitter = RouteSSEEmitter(queue)
+    
+    async def _run_ask():
+        try:
+            await asyncio.to_thread(
+                stream_chapter_ask_ai,
+                ctx,
+                chapter_number,
+                chapter_meta,
+                chapter_content,
+                question,
+                selected_text,
+                emitter,
+                project_config=pconfig
+            )
+            emitter.emit("done", {"step": "ask_ai"})
+        except Exception as e:
+            emitter.emit("error", {"step": "ask_ai", "message": str(e)})
+        finally:
+            queue.put_nowait(None)
+            
+    asyncio.create_task(_run_ask())
+    
+    async def event_generator():
+        while True:
+            msg = await queue.get()
+            if msg is None:
+                break
+            yield {
+                "event": msg["event"],
+                "data": json.dumps(msg["data"], ensure_ascii=False)
+            }
+            
+    return EventSourceResponse(event_generator())

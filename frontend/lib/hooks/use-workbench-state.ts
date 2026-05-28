@@ -10,6 +10,7 @@ export function useWorkbenchState(projectId: string) {
   const [chapterEditorContent, setChapterEditorContent] = useState("")
   const [chapterEditorLoading, setChapterEditorLoading] = useState(false)
   const [chapterEditorSaving, setChapterEditorSaving] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
   const [activeChapterMeta, setActiveChapterMeta] = useState<Chapter | null>(null)
 
   const loadWorkbenchChapter = useCallback(async (num: number) => {
@@ -27,10 +28,10 @@ export function useWorkbenchState(projectId: string) {
     }
   }, [projectId])
 
-  const saveWorkbenchChapter = useCallback(async (): Promise<Chapter | null> => {
+  const saveWorkbenchChapter = useCallback(async (status?: Chapter["status"]): Promise<Chapter | null> => {
     setChapterEditorSaving(true)
     try {
-      const res = await api.chapters.update(projectId, selectedChapterNumber, { content: chapterEditorContent })
+      const res = await api.chapters.update(projectId, selectedChapterNumber, { content: chapterEditorContent, status })
       const meta = res.meta || null
       if (meta) {
         setActiveChapterMeta(meta)
@@ -50,6 +51,7 @@ export function useWorkbenchState(projectId: string) {
     chapterEditorContent, setChapterEditorContent,
     chapterEditorLoading,
     chapterEditorSaving,
+    isSyncing, setIsSyncing,
     activeChapterMeta, setActiveChapterMeta,
     loadWorkbenchChapter,
     saveWorkbenchChapter

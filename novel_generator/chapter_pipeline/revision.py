@@ -173,3 +173,107 @@ def stream_interactive_rewrite(
         emitter.emit("progress", {"step": "interactive_rewrite", "status": "done", "message": "局部重写完成"})
         
     return revised.strip() or selected_text
+
+
+def stream_chapter_ask_ai(
+    ctx,
+    chapter_number: int,
+    chapter_meta: dict,
+    chapter_content: str,
+    question: str,
+    selected_text: str | None = None,
+    emitter=None,
+    task_id: str | None = None,
+    project_config: dict | None = None,
+) -> str:
+    """
+    流式解答用户关于本章节的询问分析
+    """
+    llm = create_specialized_chat_adapter(ctx, "quality_rewrite")
+
+    def _check_cancel():
+        if task_id:
+            raise_if_cancelled(task_id)
+        return False
+
+    platform_label = "自定义"
+    platform_rules = "无"
+    forbidden = "无"
+    style_requirement = "无"
+    genre = "无"
+    topic = "无"
+
+    if project_config:
+        platform = project_config.get("platform", "tomato")
+        platform_label, platform_rules = get_platform_chapter_guidance(platform)
+        forbidden = project_config.get("forbidden") or "无"
+        style_requirement = project_config.get("style_requirement") or "无"
+        genre = project_config.get("genre") or "无"
+        topic = project_config.get("topic") or "无"
+
+    chapter_role = chapter_meta.get("chapter_role") or "无"
+    chapter_purpose = chapter_meta.get("chapter_purpose") or "无"
+    suspense_level = chapter_meta.get("suspense_level") or "无"
+    foreshadowing = chapter_meta.get("foreshadowing") or "无"
+    plot_twist_level = chapter_meta.get("plot_twist_level") or "无"
+    chapter_summary = chapter_meta.get("chapter_summary") or "无"
+
+    selected_text_section = ""
+    if selected_text and selected_text.strip():
+        selected_text_section = f"【作者划线选中的正文段落】\n\"\"\"\n{selected_text.strip()}\n\"\"\"\n"
+
+    prompt = f"""你是一名顶尖的网络小说总编辑和写作指导教练。作者正在创作当前章节，并就本章的写作逻辑、情节设计或特定文本段落向你发起咨询。
+
+【项目背景与配置】
+- 题材：{genre}
+- 主题/金手指：{topic}
+- 文风要求：{style_requirement}
+- 避雷限制：{forbidden}
+- 平台偏好：{platform_label}
+
+【当前章节大纲设计】
+- 章节号：第{chapter_number}章
+- 章节定位：{chapter_role}
+- 核心作用：{chapter_purpose}
+- 悬念密度：{suspense_level}
+- 伏笔操作：{foreshadowing}
+- 认知颠覆：{plot_twist_level}
+- 本章简述：{chapter_summary}
+
+【本章正文内容】
+{chapter_content}
+
+{selected_text_section}
+
+【作者提问】
+{question}
+
+请根据项目背景、大纲设计、上下文逻辑以及读者的期待，为作者提供深刻、专业且有建设性的解答。
+1. 直接回答作者的问题（例如：为什么要这么写，合理吗？）。
+2. 分析当前写法的优缺点（从节奏、代入感、悬念、人物塑造等角度）。
+3. 如果不够合理或有提升空间，提供具体的修改建议或剧情微调方向。
+回答要专业、言之有物，避免空洞和套话。
+
+请直接给出解答，不需要前导问候语或解释。
+"""
+
+    if emitter and hasattr(emitter, "emit"):
+        emitter.emit("progress", {"step": "ask_ai", "status": "running", "message": "AI 正在分析本章写作合理性..."})
+
+    def _on_chunk(text: str):
+        if emitter and hasattr(emitter, "emit"):
+            emitter.emit("partial", {"step": "ask_ai", "content": text})
+
+    result = invoke_with_cleaning(
+        llm,
+        prompt,
+        cancel_check=_check_cancel,
+        operation_name="询问AI写作合理性",
+        step="ask_ai",
+        stream_callback=_on_chunk,
+    )
+    
+    if emitter and hasattr(emitter, "emit"):
+        emitter.emit("progress", {"step": "ask_ai", "status": "done", "message": "分析完成"})
+        
+    return result

@@ -66,6 +66,7 @@ def invoke_with_cleaning(
     cancel_token=None,
     operation_name: str = "LLM 调用",
     step: str | None = None,
+    stream_callback=None,
 ) -> str:
     """Invoke an LLM and normalize the returned text."""
     if cancel_token is None and hasattr(llm_adapter, "_cancel_token"):
@@ -77,7 +78,27 @@ def invoke_with_cleaning(
     for attempt in range(1, max_retries + 1):
         try:
             _raise_if_cancelled(cancel_check, cancel_token)
-            result = llm_adapter.invoke(prompt)
+            
+            # Check if streaming is requested and supported by underlying client
+            if stream_callback and hasattr(llm_adapter, "_client") and hasattr(llm_adapter._client, "stream"):
+                full_text = ""
+                for chunk in llm_adapter._client.stream(prompt):
+                    _raise_if_cancelled(cancel_check, cancel_token)
+                    chunk_text = ""
+                    if hasattr(chunk, "content"):
+                        chunk_text = chunk.content
+                    elif isinstance(chunk, str):
+                        chunk_text = chunk
+                    elif isinstance(chunk, dict):
+                        chunk_text = chunk.get("content", "")
+                        
+                    if chunk_text:
+                        full_text += chunk_text
+                        stream_callback(chunk_text)
+                result = full_text
+            else:
+                result = llm_adapter.invoke(prompt)
+
             error_info = coerce_error_info(getattr(llm_adapter, "last_error_info", None))
 
             _raise_if_cancelled(cancel_check, cancel_token)
