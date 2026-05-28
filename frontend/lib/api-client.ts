@@ -268,6 +268,10 @@ export const api = {
     reimport: (projectId: string, fileId: number) => request<KnowledgeFile>(`/api/v1/projects/${projectId}/knowledge/files/${fileId}/reimport`, { method: "POST" }),
     clearVector: (projectId: string) => request<void>(`/api/v1/projects/${projectId}/knowledge/clear-vector`, { method: "DELETE" }),
     getGraph: (projectId: string) => request<{ nodes: any[]; links: any[] }>(`/api/v1/projects/${projectId}/graph`),
+    addNode: (projectId: string, node: { id: string; group: string }) => request<void>(`/api/v1/projects/${projectId}/graph/node`, { method: "POST", body: JSON.stringify(node) }),
+    deleteNode: (projectId: string, nodeId: string) => request<void>(`/api/v1/projects/${projectId}/graph/node/${encodeURIComponent(nodeId)}`, { method: "DELETE" }),
+    addRelation: (projectId: string, relation: { source: string; target: string; label: string; source_type?: string; target_type?: string }) => request<void>(`/api/v1/projects/${projectId}/graph/relation`, { method: "POST", body: JSON.stringify(relation) }),
+    deleteRelation: (projectId: string, source: string, target: string) => request<void>(`/api/v1/projects/${projectId}/graph/relation?source=${encodeURIComponent(source)}&target=${encodeURIComponent(target)}`, { method: "DELETE" }),
   },
   generate: {
     architecture: (projectId: string, taskId?: string) => new EventSource(sseUrl(`/api/v1/projects/${projectId}/generate/architecture`, taskId)),

@@ -110,3 +110,30 @@ class KnowledgeGraphManager:
             links.append({"source": u, "target": v, "label": data.get("relation", "")})
             
         return {"nodes": nodes, "links": links}
+
+    def add_node(self, node_id: str, node_type: str = "unknown"):
+        """添加或更新一个节点"""
+        self.graph.add_node(node_id, type=node_type)
+        self._save()
+
+    def remove_node(self, node_id: str):
+        """删除一个节点及其所有的边"""
+        if self.graph.has_node(node_id):
+            self.graph.remove_node(node_id)
+            self._save()
+
+    def add_relation(self, source: str, target: str, relation: str, source_type: str = "unknown", target_type: str = "unknown"):
+        """添加或更新两个节点之间的关系"""
+        if not self.graph.has_node(source):
+            self.graph.add_node(source, type=source_type)
+        if not self.graph.has_node(target):
+            self.graph.add_node(target, type=target_type)
+        self.graph.add_edge(source, target, relation=relation)
+        self._save()
+
+    def remove_relation(self, source: str, target: str):
+        """删除两个节点之间的关系"""
+        if self.graph.has_edge(source, target):
+            self.graph.remove_edge(source, target)
+            self._save()
+

@@ -234,9 +234,57 @@ def clear_vector_db(project_id: str, request: Request):
 
     return {"message": "向量库已清空"}
 
+from pydantic import BaseModel
+
+class GraphNodeCreate(BaseModel):
+    id: str
+    group: str = "unknown"
+
+class GraphRelationCreate(BaseModel):
+    source: str
+    target: str
+    label: str
+    source_type: str = "unknown"
+    target_type: str = "unknown"
+
 @router.get("/api/v1/projects/{project_id}/graph")
 def get_knowledge_graph(project_id: str, request: Request):
     project, user_id = _check_project(project_id, request)
     graph_manager = KnowledgeGraphManager(project["filepath"])
     return graph_manager.get_frontend_data()
+
+@router.post("/api/v1/projects/{project_id}/graph/node")
+def add_graph_node(project_id: str, node: GraphNodeCreate, request: Request):
+    project, user_id = _check_project(project_id, request)
+    graph_manager = KnowledgeGraphManager(project["filepath"])
+    graph_manager.add_node(node.id, node.group)
+    return {"status": "ok"}
+
+@router.delete("/api/v1/projects/{project_id}/graph/node/{node_id}")
+def delete_graph_node(project_id: str, node_id: str, request: Request):
+    project, user_id = _check_project(project_id, request)
+    graph_manager = KnowledgeGraphManager(project["filepath"])
+    graph_manager.remove_node(node_id)
+    return {"status": "ok"}
+
+@router.post("/api/v1/projects/{project_id}/graph/relation")
+def add_graph_relation(project_id: str, relation: GraphRelationCreate, request: Request):
+    project, user_id = _check_project(project_id, request)
+    graph_manager = KnowledgeGraphManager(project["filepath"])
+    graph_manager.add_relation(
+        relation.source,
+        relation.target,
+        relation.label,
+        relation.source_type,
+        relation.target_type
+    )
+    return {"status": "ok"}
+
+@router.delete("/api/v1/projects/{project_id}/graph/relation")
+def delete_graph_relation(project_id: str, source: str, target: str, request: Request):
+    project, user_id = _check_project(project_id, request)
+    graph_manager = KnowledgeGraphManager(project["filepath"])
+    graph_manager.remove_relation(source, target)
+    return {"status": "ok"}
+
 
