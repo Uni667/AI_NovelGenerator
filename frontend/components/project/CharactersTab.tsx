@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
-import { Users, UserPlus, Upload, Sparkles, Trash2, PlusCircle, GitBranch, Swords, Clock, Loader2 } from "lucide-react"
+import { Users, UserPlus, Upload, Sparkles, Trash2, PlusCircle, GitBranch, Swords, Clock, Loader2, RefreshCw } from "lucide-react"
 import { api } from "@/lib/api-client"
 import RelationshipManager from "@/components/character/RelationshipManager"
 import ConflictManager from "@/components/character/ConflictManager"
@@ -57,6 +57,7 @@ export function CharactersTab({ id }: CharactersTabProps) {
   const [characterSuggestions, setCharacterSuggestions] = useState<any[]>([])
   const [characterLoading, setCharacterLoading] = useState("")
   const [planOutline, setPlanOutline] = useState("")
+  const [syncing, setSyncing] = useState(false)
 
   const [characterImportPreviewOpen, setCharacterImportPreviewOpen] = useState(false)
   const [characterImportCandidates, setCharacterImportCandidates] = useState<any[]>([])
@@ -261,6 +262,20 @@ export function CharactersTab({ id }: CharactersTabProps) {
     }
   }
 
+  const handleSyncFromFile = async () => {
+    setSyncing(true)
+    try {
+      const refreshed = await api.characters.refreshFromFile(id)
+      setCharacters(refreshed)
+      toast.success("已成功从本地状态文件同步人物")
+      await initData()
+    } catch (error: any) {
+      toast.error(error?.message || "同步人物失败")
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   const openEditDialog = (char: any) => {
     setEditChar(char)
     setCharName(char.name)
@@ -324,6 +339,20 @@ export function CharactersTab({ id }: CharactersTabProps) {
                   <Upload className="h-4 w-4 mr-2 text-indigo-400" />
                 )}
                 预览导入
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncFromFile}
+                disabled={syncing}
+                className="hover:bg-accent/40 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 border-emerald-500/30 transition-transform duration-200 hover:scale-105"
+              >
+                {syncing ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2 text-emerald-400" />
+                )}
+                一键同步
               </Button>
               <Button
                 variant="outline"

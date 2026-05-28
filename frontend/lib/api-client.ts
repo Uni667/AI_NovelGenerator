@@ -294,6 +294,7 @@ export const api = {
     importFromState: (projectId: string, data?: { selected_candidate_ids: string[] }) => request<CharacterProfile[]>(`/api/v1/projects/${projectId}/characters/import-from-state`, { method: "POST", body: JSON.stringify(data || {}) }),
     suggest: (projectId: string) => request<{ characters: CharacterProfile[] }>(`/api/v1/projects/${projectId}/characters/suggest`, { method: "POST" }),
     plan: (projectId: string) => request<{ characters: CharacterProfile[]; outline?: string }>(`/api/v1/projects/${projectId}/characters/plan`, { method: "POST" }),
+    refreshFromFile: (projectId: string) => request<CharacterProfile[]>(`/api/v1/projects/${projectId}/characters/refresh-from-file`, { method: "POST" }),
     dashboard: (projectId: string) => request<CharacterDashboard>(`/api/v1/projects/${projectId}/characters/dashboard`),
   },
   characterRelationships: {
