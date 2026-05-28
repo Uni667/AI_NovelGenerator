@@ -88,10 +88,15 @@ function formatErrorDetail(detail: unknown, status?: number): { message: string;
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const method = options?.method || "GET"
-  const res = await fetch(`${BASE_URL}${url}`, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
-  })
+  let res: Response
+  try {
+    res = await fetch(`${BASE_URL}${url}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
+    })
+  } catch (error: any) {
+    throw new ApiError("无法连接到后端服务，请检查网络或确认后端服务已启动。", "NETWORK_ERROR", undefined, 0)
+  }
   if (!res.ok) {
     let message = res.statusText
     let code: string | undefined
