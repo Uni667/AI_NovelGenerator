@@ -62,7 +62,11 @@ def get_project(project_id: str, user_id: str) -> dict | None:
     """获取项目，必须提供 user_id 以验证所有权。"""
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM project WHERE id = ? AND user_id = ?", (project_id, user_id)
+            """SELECT p.*, c.genre, c.platform, c.category, c.topic
+               FROM project p
+               LEFT JOIN project_config c ON p.id = c.project_id
+               WHERE p.id = ? AND p.user_id = ?""",
+            (project_id, user_id)
         ).fetchone()
         if not row:
             return None
@@ -79,7 +83,14 @@ def get_project(project_id: str, user_id: str) -> dict | None:
 
 def list_projects(user_id: str) -> list[dict]:
     with get_db() as conn:
-        rows = conn.execute("SELECT * FROM project WHERE user_id = ? ORDER BY updated_at DESC", (user_id,)).fetchall()
+        rows = conn.execute(
+            """SELECT p.*, c.genre, c.platform, c.category, c.topic
+               FROM project p
+               LEFT JOIN project_config c ON p.id = c.project_id
+               WHERE p.user_id = ?
+               ORDER BY p.updated_at DESC""",
+            (user_id,)
+        ).fetchall()
         return [dict(r) for r in rows]
 
 

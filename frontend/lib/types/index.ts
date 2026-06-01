@@ -6,6 +6,10 @@ export interface Project {
   status: 'draft' | 'generating' | 'ready' | 'archived'
   created_at: string
   updated_at: string
+  genre?: string
+  platform?: string
+  category?: string
+  topic?: string
 }
 
 export interface ProjectConfig {
@@ -476,18 +480,22 @@ export interface PlatformHookResult {
   hook_strength?: string;
   hook_description?: string;
   rewritten_opening?: string;
+  has_real_content?: boolean;
 }
 
 export interface PlatformTitlesResult {
   titles: string[];
+  has_real_content?: boolean;
 }
 
 export interface PlatformBlurbResult {
   blurbs: string[];
+  has_real_content?: boolean;
 }
 
 export interface PlatformTagsResult {
   tags: any;
+  has_real_content?: boolean;
 }
 
 export interface PlatformDiagnosisResult {
@@ -631,4 +639,83 @@ export interface ProjectAnalytics {
   by_provider: ProviderAnalytics[]
   errors: ErrorAnalytics[]
   daily_trend: DailyTrendAnalytics[]
+}
+
+export type VisualizerRelationshipKind = '伙伴' | '敌对' | '暧昧' | '师徒' | '亲人' | '合作' | '未知';
+
+export interface VisualizerRelationship {
+  sourceCharacterId: string;
+  targetCharacterId: string;
+  relationType: VisualizerRelationshipKind;
+  description: string;
+}
+
+export interface VisualizerChapterAppearance {
+  chapterId: string;
+  appearanceType: string;
+  summary?: string;
+}
+
+export interface VisualizerCharacter {
+  id: string;
+  projectId: string;
+  name: string;
+  aliases: string[];
+  roleType: '主角' | '女主' | '配角' | '反派' | 'NPC' | '未知';
+  gender?: string;
+  age?: string;
+  faction?: string;
+  identity?: string;
+  personalityTags: string[];
+  appearance: string;
+  abilities: string[];
+  currentStatus: string;
+  firstChapterId?: string;
+  lastChapterId?: string;
+  relatedChapterIds: string[];
+  relationships: VisualizerRelationship[];
+  appearances?: VisualizerChapterAppearance[];
+  avatarUrl?: string;
+  avatarPrompt?: string;
+  chibiAvatarUrl?: string;
+  imageStatus: 'none' | 'prompt_ready' | 'generating' | 'generated' | 'failed';
+  manual?: boolean;
+  dbCharacterId?: number;
+  isUnconfirmed?: boolean;
+  pendingMergeWithId?: string;
+}
+
+export interface VisualizerScene {
+  id: string;
+  projectId: string;
+  name: string;
+  type: string;
+  description: string;
+  atmosphere: string;
+  relatedChapterIds: string[];
+  characterIds: string[];
+  imageUrl?: string;
+  imagePrompt?: string;
+}
+
+export interface VisualizerEvent {
+  id: string;
+  projectId: string;
+  chapterId: string;
+  title: string;
+  summary: string;
+  sceneId?: string;
+  characterIds: string[];
+  mood: string;
+  consequences: string;
+  storyboardPrompt?: string;
+  imageUrl?: string;
+}
+
+export interface VisualizerData {
+  schemaVersion: number;
+  characters: VisualizerCharacter[];
+  scenes: VisualizerScene[];
+  events: VisualizerEvent[];
+  imageGenerationEnabled?: boolean;
 }

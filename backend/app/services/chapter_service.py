@@ -348,6 +348,12 @@ def serialize_chapter_blueprint(chapters: list[dict]) -> str:
 
 
 def sync_subsequent_chapters(project_id: str, chapter_number: int, user_id: str) -> list[dict]:
+    """
+    Deprecated/high-risk:
+    This method rewrites the full Novel_directory.txt using LLM output.
+    It should not be triggered automatically.
+    Future implementation should use outline_state.json and JSON Patch to update only unlocked future chapters.
+    """
     import os
     import datetime
     from backend.app.database import get_db

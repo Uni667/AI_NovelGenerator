@@ -21,16 +21,19 @@ import { KnowledgeTab } from "@/components/project/KnowledgeTab"
 import { CharactersTab } from "@/components/project/CharactersTab"
 import { ReaderTab } from "@/components/project/ReaderTab"
 import { PlatformToolsTab } from "@/components/project/PlatformToolsTab"
+import { StateTab } from "@/components/project/StateTab"
 import { SettingsTab } from "@/components/project/SettingsTab"
 import { MaterialPipelineTab } from "@/components/project/MaterialPipelineTab"
 import { PromptsTab } from "@/components/project/PromptsTab"
 import { AnalyticsTab } from "@/components/project/AnalyticsTab"
 import { PlotArcsTab } from "@/components/project/PlotArcsTab"
 import { GraphTab } from "@/components/project/GraphTab"
+import { VisualizerTab } from "@/components/project/VisualizerTab"
 
 function ProjectDashboardContent() {
   const { project, config, activeTab, setActiveTab } = useProjectContext()
   const [showMoreTabs, setShowMoreTabs] = useState(false)
+  const router = useRouter()
 
   const moreTabs = [
     { value: "characters", label: "人物规划" },
@@ -57,7 +60,11 @@ function ProjectDashboardContent() {
         </Badge>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0 gap-6">
+      <Tabs 
+        value={activeTab} 
+        onValueChange={setActiveTab} 
+        className="flex-1 flex flex-col min-h-0 gap-6"
+      >
         <TabsList className="flex flex-nowrap overflow-x-auto max-w-full md:flex-wrap p-1 gap-1 bg-muted/60 backdrop-blur-md rounded-xl w-full shrink-0 scrollbar-none">
           <TabsTrigger value="overview" className="rounded-lg px-4 py-2 text-sm shrink-0">概览</TabsTrigger>
           <TabsTrigger value="workbench" className="rounded-lg px-4 py-2 text-sm shrink-0">章节工作台</TabsTrigger>
@@ -65,6 +72,7 @@ function ProjectDashboardContent() {
           <TabsTrigger value="files" className="rounded-lg px-4 py-2 text-sm shrink-0">文件输出</TabsTrigger>
           <TabsTrigger value="knowledge" className="rounded-lg px-4 py-2 text-sm shrink-0">知识库</TabsTrigger>
           <TabsTrigger value="graph" className="rounded-lg px-4 py-2 text-sm shrink-0">知识图谱</TabsTrigger>
+          <TabsTrigger value="visualizer" className="rounded-lg px-4 py-2 text-sm shrink-0">小说可视化</TabsTrigger>
           {/* 更多按钮 — 展开低频 tab */}
           <button
             type="button"
@@ -89,6 +97,10 @@ function ProjectDashboardContent() {
           <OverviewTab />
         </TabsContent>
 
+        <TabsContent value="state" className="mt-0 outline-none min-h-0 flex-1">
+          <StateTab />
+        </TabsContent>
+
         <TabsContent value="workbench" className="mt-0 outline-none flex-1 min-h-0 flex flex-col">
           <WorkbenchTab />
         </TabsContent>
@@ -107,6 +119,10 @@ function ProjectDashboardContent() {
         
         <TabsContent value="graph" className="mt-0 outline-none">
           <GraphTab />
+        </TabsContent>
+
+        <TabsContent value="visualizer" className="mt-0 outline-none">
+          <VisualizerTab />
         </TabsContent>
 
         <TabsContent value="characters" className="mt-0 outline-none">

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2, Save, BookOpen } from "lucide-react"
 import { toast } from "sonner"
-import { getToken } from "@/lib/auth"
+import { api } from "@/lib/api-client"
 
 export function PlotArcsTab() {
   const { projectId } = useProjectContext()
@@ -19,13 +19,7 @@ export function PlotArcsTab() {
     const fetchPlotArcs = async () => {
       setLoading(true)
       try {
-        const response = await fetch(`/api/v1/projects/${projectId}/plot_arcs`, {
-          headers: {
-            "Authorization": `Bearer ${getToken()}`
-          }
-        })
-        if (!response.ok) throw new Error("Failed to load plot arcs")
-        const data = await response.json()
+        const data = await api.plotArcs.get(projectId)
         setContent(data.content)
       } catch (error: any) {
         toast.error(error.message || "加载伏笔暗线台账失败")
@@ -42,15 +36,7 @@ export function PlotArcsTab() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const response = await fetch(`/api/v1/projects/${projectId}/plot_arcs`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${getToken()}`
-        },
-        body: JSON.stringify({ content })
-      })
-      if (!response.ok) throw new Error("Failed to save plot arcs")
+      await api.plotArcs.update(projectId, content)
       toast.success("伏笔暗线台账已更新")
     } catch (error: any) {
       toast.error(error.message || "保存失败")

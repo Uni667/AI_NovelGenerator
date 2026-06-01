@@ -19,6 +19,8 @@ from .chapter import (
     summarize_recent_chapters_prompt,
     first_chapter_draft_prompt,
     next_chapter_draft_prompt,
+    first_chapter_draft_prompt_memory_aware,
+    next_chapter_draft_prompt_memory_aware,
     platform_chapter_guidance_prompt,
 )
 
@@ -74,6 +76,8 @@ prompt_registry = {
     "summarize_recent_chapters_prompt": summarize_recent_chapters_prompt,
     "first_chapter_draft_prompt": first_chapter_draft_prompt,
     "next_chapter_draft_prompt": next_chapter_draft_prompt,
+    "first_chapter_draft_prompt_memory_aware": first_chapter_draft_prompt_memory_aware,
+    "next_chapter_draft_prompt_memory_aware": next_chapter_draft_prompt_memory_aware,
     "platform_chapter_guidance_prompt": platform_chapter_guidance_prompt,
 
     "knowledge_search_prompt": knowledge_search_prompt,

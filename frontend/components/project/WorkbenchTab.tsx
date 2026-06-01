@@ -1,88 +1,164 @@
 "use client"
  
-import React, { useState } from "react"
+import React from "react"
 import { WorkbenchSidebar } from "./workbench/WorkbenchSidebar"
 import { WorkbenchEditor } from "./workbench/WorkbenchEditor"
 import { WorkbenchStatusPane } from "./workbench/WorkbenchStatusPane"
-import { Button } from "@/components/ui/button"
-import { PanelRightClose, PanelRightOpen, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from "lucide-react"
+import { useProjectContext } from "./ProjectContext"
+import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { Sparkles, AlertCircle, CheckCircle2 } from "lucide-react"
+import { api } from "@/lib/api-client"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
  
 export function WorkbenchTab() {
-  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
-  const [rightPanelOpen, setRightPanelOpen] = useState(true)
-  const [focusMode, setFocusMode] = useState(false)
- 
-  const sidebarWidth = leftSidebarOpen && !focusMode ? "260px" : "0px"
-  const statusWidth = rightPanelOpen && !focusMode ? "300px" : "0px"
+  const {
+    layoutMode, setLayoutMode,
+    leftPanelCollapsed, setLeftPanelCollapsed,
+    rightPanelCollapsed, setRightPanelCollapsed,
+    leftDrawerOpen, setLeftDrawerOpen,
+    assistantDrawerOpen, setAssistantDrawerOpen
+  } = useProjectContext().workbench
+  const { projectId } = useProjectContext()
+
+  const [healthData, setHealthData] = React.useState<any>(null)
+
+  React.useEffect(() => {
+    if (!projectId) return
+    api.client.get(`/api/v1/projects/${projectId}/health`)
+      .then(res => setHealthData(res.data))
+      .catch(console.error)
+  }, [projectId])
+
+  // Handle responsive screens automatically
+  React.useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth
+      const savedUserSelect = localStorage.getItem("ai-novel-workbench-layout-mode-user-select")
+      
+      if (width < 900) {
+        setLayoutMode("focus")
+      } else if (width < 1200) {
+        if (!savedUserSelect || savedUserSelect === "standard") {
+          setLayoutMode("wide")
+        } else {
+          setLayoutMode(savedUserSelect as 'standard' | 'wide' | 'focus')
+        }
+      } else if (width < 1440) {
+        if (!savedUserSelect || savedUserSelect === "standard") {
+          setLayoutMode("wide")
+        } else {
+          setLayoutMode(savedUserSelect as 'standard' | 'wide' | 'focus')
+        }
+      } else {
+        if (savedUserSelect) {
+          setLayoutMode(savedUserSelect as 'standard' | 'wide' | 'focus')
+        } else {
+          setLayoutMode("standard")
+        }
+      }
+    }
+
+    window.addEventListener("resize", handleResize)
+    handleResize() // Run on mount
+    return () => window.removeEventListener("resize", handleResize)
+  }, [setLayoutMode])
+
+  // Determine grid template columns
+  let gridColumns = "300px minmax(560px, 1fr) 340px"
+  if (layoutMode === "focus") {
+    gridColumns = "minmax(0, 1fr)"
+  } else if (layoutMode === "wide") {
+    gridColumns = "48px minmax(720px, 1fr) 56px"
+  } else {
+    // Standard layout: respects manual panel collapse toggling
+    const leftW = leftPanelCollapsed ? "48px" : "300px"
+    const rightW = rightPanelCollapsed ? "56px" : "340px"
+    gridColumns = `${leftW} minmax(560px, 1fr) ${rightW}`
+  }
  
   return (
     <div
-      className="flex-1 min-h-0 flex flex-col gap-4 xl:grid xl:gap-4 xl:transition-all xl:duration-300"
+      className="flex-1 min-h-0 flex flex-col gap-4 xl:grid xl:gap-4 xl:transition-all xl:duration-300 relative"
       style={{
-        gridTemplateColumns: focusMode
-          ? "0px minmax(0,1fr) 0px"
-          : `${sidebarWidth} minmax(0,1fr) ${statusWidth}`,
+        gridTemplateColumns: gridColumns,
       }}
     >
-      {/* 侧边栏章节列表 */}
-      <div
-        className={`xl:min-h-0 shrink-0 max-h-[35vh] xl:max-h-full overflow-hidden transition-all duration-300 ${
-          !leftSidebarOpen || focusMode 
-            ? "xl:opacity-0 xl:pointer-events-none xl:w-0 xl:overflow-hidden" 
-            : "xl:w-[260px]"
-        }`}
-      >
-        <WorkbenchSidebar />
-      </div>
- 
-      {/* 编辑器 —— 主工作区（含浮动控制按钮） */}
-      <div className="xl:min-h-0 flex-1 min-h-[35vh] xl:min-h-0 min-w-0 flex flex-col">
-        {/* 浮动控制条 */}
-        <div className="hidden xl:flex items-center justify-end gap-1 mb-2 shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
-            className="h-7 px-2 text-muted-foreground hover:text-foreground"
-            title={leftSidebarOpen ? "折叠左侧目录" : "展开左侧目录"}
-          >
-            {leftSidebarOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
-            <span className="ml-1 text-[11px]">{leftSidebarOpen ? "折叠目录" : "展开目录"}</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setFocusMode(!focusMode)}
-            className="h-7 px-2 text-muted-foreground hover:text-foreground"
-            title={focusMode ? "退出专注模式" : "专注写作模式"}
-          >
-            {focusMode ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-            <span className="ml-1 text-[11px]">{focusMode ? "退出专注" : "专注模式"}</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setRightPanelOpen(!rightPanelOpen)}
-            className="h-7 px-2 text-muted-foreground hover:text-foreground"
-            title={rightPanelOpen ? "折叠右侧面板" : "展开右侧面板"}
-          >
-            {rightPanelOpen ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
-            <span className="ml-1 text-[11px]">{rightPanelOpen ? "折叠属性" : "展开属性"}</span>
-          </Button>
+      {/* Top Banner for Memory Context & Patches */}
+      {healthData && (
+        <div className="col-span-full">
+          {(healthData.status === 'danger' || healthData.status === 'broken') ? (
+            <Alert variant="destructive" className="bg-destructive/10 border-destructive text-destructive-foreground">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>高风险状态</AlertTitle>
+              <AlertDescription className="flex items-center justify-between">
+                <span>{healthData.summary} (请进入状态页审查补丁或冲突)</span>
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Alert className="bg-muted border-border">
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <AlertTitle className="text-foreground">记忆上下文已接入</AlertTitle>
+              <AlertDescription className="text-muted-foreground flex items-center justify-between">
+                <span>生成引擎正在读取最新的全局摘要与人物设定。</span>
+                {healthData.checks.find((c: any) => c.key === 'pending_patches' || c.key === 'high_risk_patches') && (
+                  <span className="text-amber-500">提示: 存在未处理的 State Patch，请及时合并。</span>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
-        <WorkbenchEditor />
+      )}
+
+      {/* Left Sidebar Chapter List / Collapsed Rail */}
+      {layoutMode !== "focus" && (
+        <div className="xl:min-h-0 shrink-0 overflow-hidden transition-all duration-300">
+          <WorkbenchSidebar />
+        </div>
+      )}
+ 
+      {/* Editor Center Area */}
+      <div className="xl:min-h-0 flex-1 min-w-0 flex flex-col items-center">
+        <div className="w-full h-full flex flex-col" style={{ maxWidth: layoutMode === "focus" ? "1280px" : "100%" }}>
+          <WorkbenchEditor />
+        </div>
       </div>
  
-      {/* 状态与质检面板 */}
-      <div
-        className={`xl:min-h-0 shrink-0 max-h-[30vh] xl:max-h-full overflow-hidden transition-all duration-300 ${
-          !rightPanelOpen || focusMode 
-            ? "xl:opacity-0 xl:pointer-events-none xl:w-0 xl:overflow-hidden" 
-            : "xl:w-[300px]"
-        }`}
-      >
-        <WorkbenchStatusPane />
-      </div>
+      {/* Right Assistant Panel / Collapsed Tool Rail */}
+      {layoutMode !== "focus" && (
+        <div className="xl:min-h-0 shrink-0 overflow-hidden transition-all duration-300">
+          <WorkbenchStatusPane />
+        </div>
+      )}
+
+      {/* Drawer for Left Directory Overlay in Wide/Focus mode */}
+      <Sheet open={leftDrawerOpen} onOpenChange={setLeftDrawerOpen}>
+        <SheetContent side="left" className="w-[320px] p-0 border-r border-border bg-[#05070d] flex flex-col">
+          <div className="flex-1 min-h-0 p-4">
+            <WorkbenchSidebar isDrawer />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Drawer for Right Assistant Overlay in Wide/Focus mode */}
+      <Sheet open={assistantDrawerOpen} onOpenChange={setAssistantDrawerOpen}>
+        <SheetContent side="right" className="w-[360px] p-0 border-l border-border bg-[#05070d] flex flex-col">
+          <div className="flex-1 min-h-0 p-4">
+            <WorkbenchStatusPane isDrawer />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Focus mode right floating AI assistant button */}
+      {layoutMode === "focus" && (
+        <button
+          type="button"
+          onClick={() => setAssistantDrawerOpen(true)}
+          className="fixed right-6 bottom-20 z-40 h-10 w-10 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 hover:scale-105 transition-all duration-300 border border-white/10"
+          title="打开 AI 助手"
+        >
+          <Sparkles className="h-5 w-5" />
+        </button>
+      )}
     </div>
   )
 }

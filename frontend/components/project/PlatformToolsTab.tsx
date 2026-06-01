@@ -32,6 +32,17 @@ export function PlatformToolsTab() {
               </CardTitle>
               <CardDescription>
                 针对 {platformMeta?.label || "平台"} 算法对齐特征，一键生成爆款标题、简介、标签及钩子检测
+                {platform.hasRealContent !== null && (
+                  <span className={`block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded border w-fit ${
+                    platform.hasRealContent 
+                      ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" 
+                      : "text-amber-500 bg-amber-500/10 border-amber-500/20"
+                  }`}>
+                    {platform.hasRealContent 
+                      ? "已根据当前已定稿正文、小说架构与章节目录辅助生成。" 
+                      : "当前暂无已定稿正文，结果主要基于项目设定与大纲生成。"}
+                  </span>
+                )}
               </CardDescription>
             </div>
             <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-xs px-3 py-1 font-semibold uppercase tracking-wider">

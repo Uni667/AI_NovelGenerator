@@ -109,17 +109,26 @@ export function GenerationTab() {
                     <Input
                       type="number"
                       min={1}
-                      value={quickChapterNum}
-                      onChange={(e) => setQuickChapterNum(Math.max(1, Number(e.target.value) || 1))}
+                      value={quickChapterNum ?? ""}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        if (val === "") {
+                          setQuickChapterNum("" as any)
+                        } else {
+                          const parsed = parseInt(val, 10)
+                          setQuickChapterNum(isNaN(parsed) ? "" as any : parsed)
+                        }
+                      }}
                       className="h-7 text-xs w-20 bg-background/60 border-border/60 rounded-lg"
                     />
                     <Button
                       size="sm"
                       onClick={() => {
+                        const targetChapter = Number(quickChapterNum) || 1
                         const taskId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)
-                        const url = `/api/v1/projects/${projectId}/generate/chapter/${quickChapterNum}${enableBrainstorming ? "?enable_brainstorming=true" : ""}`
+                        const url = `/api/v1/projects/${projectId}/generate/chapter/${targetChapter}${enableBrainstorming ? "?enable_brainstorming=true" : ""}`
                         startTask("chapter", url, taskId)
-                        toast.success(`已开始生成第 ${quickChapterNum} 章`)
+                        toast.success(`已开始生成第 ${targetChapter} 章`)
                       }}
                       disabled={isConnected || Boolean(generationTaskId) || generationStopping}
                       className="h-7 text-xs bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-lg"

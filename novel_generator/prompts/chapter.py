@@ -256,3 +256,101 @@ platform_chapter_guidance_prompt = """\
 5. 如果平台强调爽点/情绪冲击，就优先保证读者能在3秒内感知核心刺激点。
 """
 
+
+
+first_chapter_draft_prompt_memory_aware = """\
+你是网文平台主编 + 商业化编辑 + 连载节奏医生。现在开始创作第 {novel_number} 章《{chapter_title}》。
+
+【当前章节任务】
+本章定位：{chapter_role}
+核心作用：{chapter_purpose}
+悬念密度：{suspense_level}
+伏笔操作：{foreshadowing}
+认知颠覆：{plot_twist_level}
+本章简述：{chapter_summary}
+
+【本章禁止事项】
+{forbidden_violations}
+- 不得修改用户已明确的世界观、人物关系、主线立意和感情走向
+- 不得写出未揭露的真实姓名或过早揭露来历
+- 不确定处只给备选方案，不替作者做最终决定
+
+【不可违背事实】
+以下内容来自项目初期设定，必须遵守，不能否定或重写：
+{locked_previous_facts}
+
+【人物状态】
+以下人物状态来自已合并核心设定：
+{character_state_brief}
+
+【称呼规则】
+以下称呼规则必须严格遵守：
+{name_usage_rules_brief}
+
+【伏笔与秘密状态】
+{plot_threads_brief}
+
+参考文档：
+- 全局摘要：
+{global_summary}
+
+- 额外指导：
+{user_guidance}
+
+完成第 {novel_number} 章的正文，字数要求{word_number}字。
+格式要求：
+- 仅返回章节正文文本；
+- 不使用分章节小标题；
+- 不要使用markdown格式。
+"""
+
+next_chapter_draft_prompt_memory_aware = """\
+你是网文平台主编 + 商业化编辑 + 连载节奏医生。现在开始创作第 {novel_number} 章《{chapter_title}》。
+
+【当前章节任务】
+本章定位：{chapter_role}
+核心作用：{chapter_purpose}
+悬念密度：{suspense_level}
+伏笔操作：{foreshadowing}
+认知颠覆：{plot_twist_level}
+本章简述：{chapter_summary}
+字数要求：{word_number}字
+
+【本章禁止事项】
+{forbidden_violations}
+- 不得修改用户已明确的世界观、人物关系、主线立意和感情走向
+- 不得写出未揭露的真实姓名或过早揭露来历
+- 不得推翻已定稿章节发生过的事件
+
+【不可违背事实】
+以下内容来自已定稿章节，必须遵守，不能否定或遗忘：
+{locked_previous_facts}
+
+【人物状态】
+以下人物状态来自已合并 character_state.json：
+{character_state_brief}
+
+【称呼规则】
+以下称呼规则必须严格遵守：
+{name_usage_rules_brief}
+
+【伏笔与秘密状态】
+{plot_threads_brief}
+
+前文参考：
+- 全局剧情摘要：
+{global_summary}
+
+- 前章结尾段：
+{previous_chapter_excerpt}
+
+- 额外指导：
+{user_guidance}
+
+开始完成第 {novel_number} 章的正文，字数要求{word_number}字。
+格式要求：
+- 仅返回章节正文文本；
+- 不使用分章节小标题；
+- 不要使用markdown格式。
+- 禁止出现提纲腔、总结腔、解释腔。
+"""

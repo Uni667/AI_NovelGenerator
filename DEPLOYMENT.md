@@ -171,3 +171,46 @@ Railway 健康检查路径是 `/api/v1/health`（在 `railway.toml` 中配置）
 ## 部署顺序
 
 **先部署后端，再部署前端。** 前端构建时需要知道后端地址，且上线后用户访问前端时后端必须已就绪。
+
+---
+
+## 后端部署 (Render) — 替代 Railway
+
+由于 Railway 试用期过期，后端已迁移至 Render。
+
+### 方式一：Blueprint 自动部署（推荐）
+
+1. 在 [Render Dashboard](https://dashboard.render.com) 点击 **New → Blueprint**
+2. 连接 GitHub 仓库 `Uni667/AI_NovelGenerator`
+3. Render 会自动读取 `render.yaml` 创建服务
+
+### 方式二：手动创建 Web Service
+
+1. 在 [Render Dashboard](https://dashboard.render.com) 点击 **New → Web Service**
+2. 连接 GitHub 仓库 `Uni667/AI_NovelGenerator`
+3. 配置：
+   - **Runtime**: Docker
+   - **Health Check Path**: `/api/v1/health`
+
+### 环境变量（手动创建时需设置）
+
+| 变量 | 值 |
+|------|-----|
+| `NEXTAUTH_SECRET` | 随机生成 (64字符hex) |
+| `API_SECRET_ENCRYPTION_KEY` | 随机生成 (64字符hex) |
+| `ALLOWED_ORIGINS` | `https://frontend-chi-one-84.vercel.app,http://localhost:3000` |
+| `PYTHONUTF8` | `1` |
+
+### 持久存储
+
+- **免费层**: 无持久存储（每次部署会丢失 SQLite 数据）
+- **付费层**: 在 `render.yaml` 中取消注释 `disk` 配置块（$0.25/GB/月）
+
+### 部署完成后
+
+获取 Render 分配的后端地址（如 `https://ai-novel-backend.onrender.com`），更新前端：
+
+```bash
+cd frontend
+vercel --prod --env NEXT_PUBLIC_API_URL="<Render后端地址>"
+```

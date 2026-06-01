@@ -239,13 +239,26 @@ def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, c
             params.user_guidance = original_guidance + director_guidance
 
         emitter.emit("progress", {"step": "build_prompt", "status": "running", "message": f"正在构建第 {chapter_number} 章提示词..."})
-        prompt_text = build_chapter_prompt(ctx, params, task_id=task_id)
-        emitter.emit("progress", {"step": "build_prompt", "status": "done", "message": "提示词构建完成"})
+        
+        # Load Generation Context
+        gen_ctx_data = build_generation_context_for_chapter(project["id"], chapter_number)
+        used_memory = gen_ctx_data.get("has_memory_state", False)
+        
+        prompt_text = build_chapter_prompt(ctx, params, task_id=task_id, gen_ctx_data=gen_ctx_data)
+        
+        msg = f"提示词构建完成（使用 Memory 状态: {'是' if used_memory else '否'}）"
+        emitter.emit("progress", {"step": "build_prompt", "status": "done", "message": msg, "used_memory_context": used_memory})
 
         emitter.emit("progress", {"step": "draft", "status": "running", "message": f"正在生成第 {chapter_number} 章草稿..."})
         draft_text = generate_chapter_draft(ctx, params, custom_prompt_text=prompt_text, emitter=emitter, task_id=task_id, start_step=start_step, enable_brainstorming=enable_brainstorming)
 
         if draft_text:
+            # 轻量校验
+            val_res = validate_draft_against_generation_context(draft_text, gen_ctx_data)
+            warnings = val_res.get("warnings", [])
+            if warnings:
+                emitter.emit("progress", {"step": "validation", "status": "warning", "message": "发现潜在的一致性冲突", "continuity_warnings": warnings})
+
             if task_id:
                 raise_if_cancelled(task_id)
             wc = get_word_count(draft_text)
@@ -274,6 +287,8 @@ async def finalize_chapter_route(project_id: str, chapter_number: int, request: 
 
 def _run_finalize(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_number: int, user_id: str, task_id: str | None = None):
     from novel_generator.finalization import finalize_chapter
+    from backend.app.services.generation_context_service import build_generation_context_for_chapter, validate_draft_against_generation_context
+    from backend.app.services.state_patch_service import generate_state_patch_for_finalized_chapter
     cancel_token = CancelToken()
     if task_id:
         bind_cancel_token(task_id, cancel_token)
@@ -295,7 +310,22 @@ def _run_finalize(emitter: SSEEmitter, project: dict, pconfig: dict, chapter_num
         wc = get_word_count(chapter_text)
         chapter_service.mark_chapter_final(project["id"], chapter_number, wc)
         mark_used(user_id, rt.api_credential_id, rt.model_profile_id)
-        emitter.emit("progress", {"step": "finalize", "status": "done", "message": f"第 {chapter_number} 章定稿完成"})
+        
+        # Phase 4: State Patch Generation
+        emitter.emit("progress", {"step": "finalize_patch", "status": "running", "message": f"第 {chapter_number} 章正文已保存，正在生成状态补丁..."})
+        try:
+            patch_result = generate_state_patch_for_finalized_chapter(project["id"], chapter_number)
+            if patch_result.get("success"):
+                if patch_result.get("state_patch_generated"):
+                    msg = f"定稿完成，状态补丁 [{patch_result.get('patch_risk_level')}] 已生成，等待审查。"
+                else:
+                    msg = f"定稿完成，但补丁生成失败：{patch_result.get('patch_error')}。"
+            else:
+                msg = f"定稿完成，补丁生成异常：{patch_result.get('error_msg')}。"
+            emitter.emit("progress", {"step": "finalize", "status": "done", "message": msg, "patch_result": patch_result})
+        except Exception as e:
+            logger.exception("Failed to generate state patch after finalizing chapter")
+            emitter.emit("progress", {"step": "finalize", "status": "done", "message": f"定稿完成，但状态提取异常: {str(e)}", "patch_result": {"success": False, "state_patch_generated": False}})
     finally:
         if task_id:
             unbind_cancel_token(task_id)
@@ -426,3 +456,12 @@ def infer_project_config(payload: InferConfigRequest, request: Request):
     except Exception as exc:
         logger.exception("AI config inference failed")
         raise HTTPException(status_code=500, detail=f"智能推断失败: {exc}")
+
+@router.get("/api/v1/projects/{project_id}/chapters/{chapter_id}/generation-context")
+def get_generation_context(project_id: str, chapter_id: int, request: Request):
+    """
+    预览生成草稿时的上下文状态 (只读接口)
+    """
+    user_id = get_current_user(request)
+    context_data = build_generation_context_for_chapter(project_id, chapter_id)
+    return context_data

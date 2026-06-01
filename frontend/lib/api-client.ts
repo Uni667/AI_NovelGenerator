@@ -5,7 +5,8 @@ import type {
   CharacterDashboard, TimelineEntry,
   ApiCredential, ModelProfile, ModelAssignment, KnowledgeFile,
   PlatformHookResult, PlatformTitlesResult, PlatformBlurbResult, PlatformTagsResult, PlatformDiagnosisResult,
-  MaterialEntity, DiagnosisReport, PromptMeta, PromptEntry, ProjectAnalytics
+  MaterialEntity, DiagnosisReport, PromptMeta, PromptEntry, ProjectAnalytics,
+  VisualizerCharacter, VisualizerScene, VisualizerEvent, VisualizerData, VisualizerRelationship
 } from "./types"
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
@@ -25,6 +26,17 @@ const KNOWN_ERROR_MESSAGES: Record<string, string> = {
   MODEL_PROFILE_NOT_FOUND: "你还没有配置文本生成模型，请先完成模型设置。",
   MODEL_TYPE_MISMATCH: "当前阶段选择的模型类型不匹配。",
   SERVER_INTERFACE_NOT_FOUND: "服务器接口未找到，请重新部署后再试。",
+  reason_required: "请填写修改原因，方便后续从审计日志中追踪。",
+  high_risk_required: "该操作会影响人物真实姓名、身份、称呼规则或主线事实，需要勾选高风险确认后才能保存。",
+  JSONDecodeError: "解析 JSON 数据失败，请检查输入格式是否正确。",
+  ConfigError: "系统配置错误，请检查项目设置或模型配置。",
+  validation_failed: "输入数据未通过验证，请检查内容是否符合要求。",
+  patch_failed: "补丁处理失败，请稍后再试或废弃此补丁。",
+  outline_diff_failed: "大纲演化差异应用失败，请手动修正大纲冲突。",
+  memory_file_missing: "关键状态文件丢失，系统将使用默认空状态或自动恢复。",
+  memory_file_corrupted: "状态文件格式损坏，系统已停止写入以保护项目。请前往备份页恢复最近一次可用备份。",
+  backup_restore_failed: "备份恢复失败，请检查备份文件是否完整。",
+  generation_context_failed: "本章状态上下文构建失败，系统已回退到基础生成逻辑。",
 }
 
 class ApiError extends Error {
@@ -62,6 +74,11 @@ function sanitizeMessage(message: string, status?: number): string {
   if (text.includes("被") && text.includes("模型配置") && text.includes("引用")) {
     return "这个模型服务账号正在被模型配置使用。你可以选择同时删除关联模型配置。"
   }
+  if (text.includes("high_risk_required")) return "该操作会影响核心设定，需要勾选高风险确认后才能保存。"
+  if (text.includes("reason_required")) return "请填写修改原因，方便后续从审计日志中追踪。"
+  if (text.includes("JSONDecodeError")) return "解析 JSON 数据失败，请检查输入格式是否正确。"
+  if (text.includes("memory_file_corrupted")) return "状态文件格式损坏，系统已停止写入以保护项目。请前往备份页恢复最近一次可用备份。"
+  if (text.includes("generation_context_failed")) return "本章状态上下文构建失败，系统已回退到基础生成逻辑。"
   return text
 }
 
@@ -138,15 +155,41 @@ function sseUrl(path: string, taskId?: string, extraParams?: Record<string, stri
 }
 
 export const api = {
+  client: {
+    get: (url: string) => request<any>(url).then(data => ({ data })),
+    post: (url: string, body?: any) => request<any>(url, { method: "POST", body: JSON.stringify(body) }).then(data => ({ data })),
+    put: (url: string, body?: any) => request<any>(url, { method: "PUT", body: JSON.stringify(body) }).then(data => ({ data })),
+    patch: (url: string, body?: any) => request<any>(url, { method: "PATCH", body: JSON.stringify(body) }).then(data => ({ data })),
+    delete: (url: string) => request<any>(url, { method: "DELETE" }).then(data => ({ data })),
+  },
+  health: {
+    check: () => request<{ status: string; service: string }>("/api/v1/health"),
+  },
   projects: {
     list: () => request<Project[]>("/api/v1/projects"),
     get: (id: string) => request<Project>(`/api/v1/projects/${id}`),
-    create: (data: Partial<Project>) => request<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(data) }),
+    create: (data: Partial<Project> & Record<string, any>) => request<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Project>) => request<Project>(`/api/v1/projects/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id: string) => request<void>(`/api/v1/projects/${id}`, { method: "DELETE" }),
     config: (id: string) => request<ProjectConfig>(`/api/v1/projects/${id}/config`),
     updateConfig: (id: string, data: Partial<ProjectConfig>) => request<ProjectConfig>(`/api/v1/projects/${id}/config`, { method: "PUT", body: JSON.stringify(data) }),
     inferConfig: (data: { user_guidance: string; platform: string }) => request<{ success: boolean; data: any }>("/api/v1/projects/infer-config", { method: "POST", body: JSON.stringify(data) }),
+    backupUrl: (id: string) => `${BASE_URL}/api/v1/projects/${id}/backup`,
+    importBackup: (file: File) => {
+      const formData = new FormData()
+      formData.append("file", file)
+      return fetch(`${BASE_URL}/api/v1/projects/import-backup`, {
+        method: "POST",
+        body: formData,
+        headers: authHeaders(),
+      }).then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          throw new Error(body.detail || "导入备份失败")
+        }
+        return res.json()
+      })
+    },
   },
   chapters: {
     list: (projectId: string) => request<Chapter[]>(`/api/v1/projects/${projectId}/chapters`),
@@ -400,7 +443,7 @@ export const api = {
     tags: (projectId: string) => request<PlatformTagsResult>(`/api/v1/projects/${projectId}/tools/tags`, { method: "POST" }),
     chapterTitle: (projectId: string, chapterNumber: number) => request<PlatformTitlesResult>(`/api/v1/projects/${projectId}/tools/chapter-title?chapter_number=${chapterNumber}`, { method: "POST" }),
     diagnose: (projectId: string, chapterNumber: number) => request<PlatformDiagnosisResult>(`/api/v1/projects/${projectId}/tools/diagnose?chapter_number=${chapterNumber}`, { method: "POST" }),
-    diagnoseAndFix: (projectId: string, data: { chapter_number: number; chapter_content: string; diagnosis: string; selected_issues: string[] }) => { const url = `/api/v1/projects/${projectId}/tools/diagnose-and-fix`; return fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(data) }).then(r => r.json()); },
+    diagnoseAndFix: (projectId: string, data: { chapter_number: number; chapter_content: string; diagnosis: string; selected_issues: string[] }) => { const url = `${BASE_URL}/api/v1/projects/${projectId}/tools/diagnose-and-fix`; return fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(data) }); },
     commercialGenerate: (projectId: string, params: Record<string, any>) => request<{ mode: string; result: string; platform: string }>(`/api/v1/projects/${projectId}/tools/commercial-generate?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])).toString()}`, { method: "POST" }),
     profiles: () => request<{ platforms: Record<string, any>; trends: Record<string, any> }>(`/api/v1/platform/profiles`),
   },
@@ -458,12 +501,47 @@ export const api = {
   },
 
   interactive: {
-    getRewriteUrl: (projectId: string) => `/api/v1/projects/${projectId}/interactive/rewrite`,
+    getRewriteUrl: (projectId: string) => `${BASE_URL}/api/v1/projects/${projectId}/interactive/rewrite`,
+  },
+
+  plotArcs: {
+    get: (projectId: string) => request<{ content: string }>(`/api/v1/projects/${projectId}/plot_arcs`),
+    update: (projectId: string, content: string) => request<{ message: string }>(`/api/v1/projects/${projectId}/plot_arcs`, { method: "PUT", body: JSON.stringify({ content }) }),
   },
 
   analytics: {
     get: (projectId: string) =>
       request<ProjectAnalytics>(`/api/v1/projects/${projectId}/analytics`),
+  },
+  visualizer: {
+    getData: (projectId: string) =>
+      request<VisualizerData>(
+        `/api/v1/projects/${projectId}/visualizer/data`
+      ),
+    analyzeChapters: (projectId: string, chapterNumber?: number) => 
+      request<{ parsed_chapters: number[]; new_characters_count: number; new_scenes_count: number; new_events_count: number }>(
+        `/api/v1/projects/${projectId}/visualizer/analyze-chapters${chapterNumber !== undefined ? `?chapter_number=${chapterNumber}` : ""}`,
+        { method: "POST", body: JSON.stringify({}) }
+      ),
+    generatePrompt: (projectId: string, type: 'character' | 'scene' | 'event', id: string) =>
+      request<{ prompt: string }>(
+        `/api/v1/projects/${projectId}/visualizer/generate-prompt`,
+        { method: "POST", body: JSON.stringify({ type, id }) }
+      ),
+    updateCharacter: (projectId: string, charId: string, payload: Partial<VisualizerCharacter>) =>
+      request<VisualizerCharacter>(
+        `/api/v1/projects/${projectId}/visualizer/characters/${charId}`,
+        { method: "PUT", body: JSON.stringify(payload) }
+      ),
+    getCharacterDetails: (projectId: string, charId: string) =>
+      request<VisualizerCharacter>(
+        `/api/v1/projects/${projectId}/visualizer/characters/${charId}`
+      ),
+    generateAvatar: (projectId: string, charId: string) =>
+      request<{ avatarUrl: string }>(
+        `/api/v1/projects/${projectId}/visualizer/characters/${charId}/generate-avatar`,
+        { method: "POST" }
+      ),
   },
   auth: {
     streamToken: () => request<{ stream_token: string }>("/api/v1/auth/stream-token", { method: "POST" }),

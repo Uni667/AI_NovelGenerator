@@ -19,7 +19,7 @@ COPY novel_generator/ novel_generator/
 # Ensure data directory
 RUN mkdir -p /app/data
 
-# Railway provides PORT env var
+# Platform (Railway / Render) provides PORT env var
 EXPOSE 8001
 
 # Startup: start uvicorn directly (no config_manager dependency)

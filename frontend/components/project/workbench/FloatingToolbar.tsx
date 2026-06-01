@@ -13,6 +13,7 @@ interface FloatingToolbarProps {
   onClose: () => void
   onSubmit: (instruction: string) => void
   isSubmitting?: boolean
+  onOpenAssistant?: () => void
 }
 
 const QUICK_ACTIONS = [
@@ -28,7 +29,8 @@ export function FloatingToolbar({
   visible,
   onClose,
   onSubmit,
-  isSubmitting = false
+  isSubmitting = false,
+  onOpenAssistant
 }: FloatingToolbarProps) {
   const [instruction, setInstruction] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
@@ -127,7 +129,19 @@ export function FloatingToolbar({
       </div>
 
       {/* 快捷操作 */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {onOpenAssistant && (
+          <button
+            type="button"
+            onClick={onOpenAssistant}
+            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-bold shrink-0
+              bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30
+              transition-colors"
+          >
+            <Sparkles className="h-3.5 w-3.5 animate-pulse text-indigo-400" />
+            AI 写作助手 (侧栏)
+          </button>
+        )}
         {QUICK_ACTIONS.map(action => {
           const Icon = action.icon
           return (

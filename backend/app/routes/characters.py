@@ -174,7 +174,31 @@ def _upsert_character_from_candidate(
 
 @router.get("/api/v1/projects/{project_id}/characters")
 def list_characters(project_id: str, request: Request):
-    _check_project(project_id, request)
+    project = _check_project(project_id, request)
+    filepath = project.get("filepath", "")
+    
+    # Try to load visualizer data
+    v_data = {"characters": []}
+    if filepath:
+        v_path = os.path.join(filepath, "visualizer_data.json")
+        if os.path.exists(v_path):
+            try:
+                import json
+                with open(v_path, "r", encoding="utf-8") as f:
+                    v_data = json.load(f)
+            except Exception:
+                pass
+                
+    v_chars_by_db_id = {}
+    v_chars_by_name = {}
+    for vc in v_data.get("characters", []):
+        db_id = vc.get("dbCharacterId")
+        if db_id:
+            v_chars_by_db_id[db_id] = vc
+        name_lower = vc.get("name", "").strip().lower()
+        if name_lower:
+            v_chars_by_name[name_lower] = vc
+
     with get_db() as conn:
         rows = conn.execute(
             """SELECT * FROM character_profile
@@ -185,7 +209,41 @@ def list_characters(project_id: str, request: Request):
                  updated_at DESC""",
             (project_id,)
         ).fetchall()
-        return [dict(r) for r in rows]
+        
+        res_list = []
+        for r in rows:
+            r_dict = dict(r)
+            match_vc = v_chars_by_db_id.get(r_dict["id"])
+            if not match_vc:
+                match_vc = v_chars_by_name.get(r_dict["name"].strip().lower())
+                
+            if match_vc:
+                r_dict["avatarUrl"] = match_vc.get("avatarUrl", "")
+                r_dict["avatarPrompt"] = match_vc.get("avatarPrompt", "")
+                r_dict["imageStatus"] = match_vc.get("imageStatus", "none")
+                r_dict["roleType"] = match_vc.get("roleType", "未知")
+                r_dict["gender"] = match_vc.get("gender", "不明")
+                r_dict["age"] = match_vc.get("age", "不明")
+                r_dict["faction"] = match_vc.get("faction", "未知")
+                r_dict["identity"] = match_vc.get("identity", "")
+                r_dict["personalityTags"] = match_vc.get("personalityTags", [])
+                r_dict["abilities"] = match_vc.get("abilities", [])
+                r_dict["currentStatus"] = match_vc.get("currentStatus", "")
+            else:
+                r_dict["avatarUrl"] = ""
+                r_dict["avatarPrompt"] = ""
+                r_dict["imageStatus"] = "none"
+                r_dict["roleType"] = "未知"
+                r_dict["gender"] = "不明"
+                r_dict["age"] = "不明"
+                r_dict["faction"] = "未知"
+                r_dict["identity"] = ""
+                r_dict["personalityTags"] = []
+                r_dict["abilities"] = []
+                r_dict["currentStatus"] = ""
+            res_list.append(r_dict)
+            
+        return res_list
 
 
 @router.post("/api/v1/projects/{project_id}/characters")

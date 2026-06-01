@@ -1,24 +1,113 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { Suspense, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useProjects, useDeleteProject } from "@/lib/hooks/use-projects"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Plus, Trash2, BookOpen, Clock, CheckCircle } from "lucide-react"
+import { Plus, Trash2, BookOpen, RefreshCw, AlertTriangle } from "lucide-react"
+import { toast } from "sonner"
 
-export default function HomePage() {
+import { ProjectCard } from "@/components/home/ProjectCard"
+import { ProjectStats } from "@/components/home/ProjectStats"
+import { CreateProjectDialog } from "@/components/home/CreateProjectDialog"
+import { ModelConfigDialog } from "@/components/home/ModelConfigDialog"
+import { projectService } from "@/lib/services/projectService"
+
+function HomeContent() {
   const router = useRouter()
-  const { data: projects, isLoading } = useProjects()
+  const searchParams = useSearchParams()
+  const searchQuery = searchParams?.get("search") || ""
+
+  const { data: projects, isLoading, isError, error, refetch } = useProjects()
   const deleteProject = useDeleteProject()
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  
+  const [createOpen, setCreateOpen] = useState(false)
+  const [configOpen, setConfigOpen] = useState(false)
 
-  const totalProjects = projects?.length || 0
-  const readyProjects = projects?.filter((p: any) => p.status === "ready").length || 0
-  const draftProjects = projects?.filter((p: any) => p.status === "draft").length || 0
+  const stats = projectService.calculateStats(projects || [])
+
+  const filteredProjects = projects?.filter((p: any) => {
+    const q = searchQuery.toLowerCase().trim()
+    if (!q) return true
+    return (
+      p.name.toLowerCase().includes(q) ||
+      (p.genre && p.genre.toLowerCase().includes(q)) ||
+      (p.description && p.description.toLowerCase().includes(q)) ||
+      (p.platform && p.platform.toLowerCase().includes(q))
+    )
+  })
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return
+    try {
+      await deleteProject.mutateAsync(deleteTarget)
+      toast.success("项目已成功从底座中移除！")
+    } catch (err: any) {
+      toast.error(err?.message || "删除项目失败，请重试")
+    } finally {
+      setDeleteTarget(null)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="max-w-6xl mx-auto space-y-8 pb-10">
+        <Skeleton className="h-[210px] w-full rounded-3xl bg-card/40 border border-border/40" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Skeleton className="h-24 rounded-2xl bg-card/40" />
+          <Skeleton className="h-24 rounded-2xl bg-card/40" />
+          <Skeleton className="h-24 rounded-2xl bg-card/40" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="glass-card border border-border/40 p-5 rounded-2xl h-[210px] space-y-4 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <Skeleton className="h-5 w-2/3 rounded-lg" />
+                  <Skeleton className="h-5 w-12 rounded-full" />
+                </div>
+                <Skeleton className="h-4 w-full rounded-md" />
+                <Skeleton className="h-4 w-5/6 rounded-md" />
+              </div>
+              <div className="flex justify-between items-center">
+                <Skeleton className="h-4 w-24 rounded-md" />
+                <Skeleton className="h-7 w-7 rounded-md" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="max-w-md mx-auto py-16 text-center">
+        <Card className="glass-panel border-rose-500/20 bg-rose-500/5 p-6 rounded-3xl">
+          <CardContent className="space-y-4 pt-6">
+            <div className="h-16 w-16 mx-auto rounded-full bg-rose-500/10 flex items-center justify-center text-rose-400 border border-rose-500/20">
+              <AlertTriangle className="h-8 w-8" />
+            </div>
+            <h2 className="text-xl font-bold text-foreground">算力节点连接失败</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {error instanceof Error ? error.message : "无法连接到大模型生成引擎后端服务，请检查服务状态。"}
+            </p>
+            <Button
+              onClick={() => refetch()}
+              className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold shadow-md active:scale-95 transition-all"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              重试握手连接
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-10">
@@ -38,11 +127,18 @@ export default function HomePage() {
             基于先进大语言模型的智能写作助手。在此管理您的所有创作项目，开启小说的大纲设计、正文草稿生成、多角色脑暴及平台化质检。
           </p>
           <div className="pt-2 flex flex-wrap gap-3">
-            <Button onClick={() => router.push("/projects/new")} className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-none shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/20 active:scale-95 transition-all rounded-xl font-semibold">
+            <Button
+              onClick={() => setCreateOpen(true)}
+              className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-none shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/20 active:scale-95 transition-all rounded-xl font-semibold h-10 px-5"
+            >
               <Plus className="h-4.5 w-4.5 mr-2" />
               新建创作项目
             </Button>
-            <Button variant="outline" onClick={() => router.push("/settings")} className="rounded-xl border-border/60 hover:bg-accent/40 font-medium">
+            <Button
+              variant="outline"
+              onClick={() => setConfigOpen(true)}
+              className="rounded-xl border-border/60 hover:bg-accent/40 font-medium h-10 px-5"
+            >
               配置全局模型节点
             </Button>
           </div>
@@ -50,67 +146,12 @@ export default function HomePage() {
       </div>
 
       {/* 📊 Sleek Metrics Summary Cards */}
-      {totalProjects > 0 && !isLoading && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Card className="glass-card border-border/40 hover:shadow-[0_0_20px_oklch(0.68_0.19_285/0.04)] transition-all duration-300">
-            <CardContent className="p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-semibold">项目总数</p>
-                <h3 className="text-2xl font-bold mt-1 text-foreground">{totalProjects}</h3>
-              </div>
-              <div className="h-10 w-10 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-400 border border-violet-500/20">
-                <BookOpen className="h-5 w-5" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="glass-card border-border/40 hover:shadow-[0_0_20px_oklch(0.68_0.19_285/0.04)] transition-all duration-300">
-            <CardContent className="p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-semibold">已就绪空间</p>
-                <h3 className="text-2xl font-bold mt-1 text-emerald-400">{readyProjects}</h3>
-              </div>
-              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 border border-emerald-500/20">
-                <CheckCircle className="h-5 w-5" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="glass-card border-border/40 hover:shadow-[0_0_20px_oklch(0.68_0.19_285/0.04)] transition-all duration-300">
-            <CardContent className="p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-semibold">草稿项目</p>
-                <h3 className="text-2xl font-bold mt-1 text-amber-400">{draftProjects}</h3>
-              </div>
-              <div className="h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400 border border-amber-500/20">
-                <Clock className="h-5 w-5" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      {projects && projects.length > 0 && (
+        <ProjectStats stats={stats} />
       )}
 
-      {/* 📚 Projects List Section */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="glass-card border border-border/40 p-5 rounded-2xl h-[210px] space-y-4 flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <Skeleton className="h-5 w-2/3 rounded-lg" />
-                  <Skeleton className="h-5 w-12 rounded-full" />
-                </div>
-                <Skeleton className="h-4 w-full rounded-md" />
-                <Skeleton className="h-4 w-5/6 rounded-md" />
-              </div>
-              <div className="flex justify-between items-center">
-                <Skeleton className="h-4 w-24 rounded-md" />
-                <Skeleton className="h-7 w-7 rounded-md" />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : !projects?.length ? (
+      {/* 📚 Projects Grid */}
+      {!projects?.length ? (
         <Card className="text-center py-16 glass-panel border-border/40 hover:shadow-[0_0_30px_oklch(0.68_0.19_285/0.05)] transition-all max-w-lg mx-auto rounded-3xl">
           <CardContent className="space-y-4 pt-6">
             <div className="h-16 w-16 mx-auto rounded-full bg-violet-500/10 flex items-center justify-center text-violet-400 border border-violet-500/20 mb-2">
@@ -120,61 +161,37 @@ export default function HomePage() {
             <p className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
               您的创作灵感从这里出发。创建一个小说创作项目，开启您的 AI 辅助写作之旅。
             </p>
-            <Button onClick={() => router.push("/projects/new")} size="lg" className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-none shadow-md shadow-indigo-600/10 rounded-xl font-semibold px-6 py-2.5 mt-2 active:scale-95 transition-all">
+            <Button
+              onClick={() => setCreateOpen(true)}
+              size="lg"
+              className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-none shadow-md shadow-indigo-600/10 rounded-xl font-semibold px-6 py-2.5 mt-2 active:scale-95 transition-all"
+            >
               <Plus className="h-5 w-5 mr-2" />
               开始创作
             </Button>
           </CardContent>
         </Card>
+      ) : filteredProjects?.length === 0 ? (
+        <div className="text-center py-12 space-y-3">
+          <p className="text-sm text-muted-foreground">没有找到匹配 &quot;{searchQuery}&quot; 的小说项目</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.replace("/")}
+            className="text-muted-foreground border-border/50 hover:text-foreground text-xs rounded-lg"
+          >
+            清除搜索条件
+          </Button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {projects.map((p: any) => {
-            const statusMap: Record<string, { label: string; style: string }> = {
-              draft: { label: "草稿", style: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
-              generating: { label: "生成中", style: "bg-primary/20 text-primary border-primary/30 animate-pulse" },
-              ready: { label: "就绪", style: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-              archived: { label: "归档", style: "bg-secondary text-muted-foreground border-border" },
-            }
-            const statusKey = (p.status || "draft") as string
-            const badgeConfig = statusMap[statusKey] || { label: statusKey, style: "bg-secondary text-muted-foreground" }
-
-            return (
-              <Card
-                key={p.id}
-                className="glass-card border-border/30 hover:scale-[1.01] hover:border-primary/40 hover:shadow-[0_0_25px_oklch(0.68_0.19_285/0.1)] transition-all duration-300 cursor-pointer flex flex-col justify-between h-[210px] p-5 relative group overflow-hidden"
-                onClick={() => router.push(`/projects/${p.id}`)}
-              >
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <h3 className="text-lg font-bold text-foreground group-hover:text-primary transition-colors truncate flex-1">
-                      {p.name}
-                    </h3>
-                    <Badge className={`text-[10px] shrink-0 font-semibold px-2 py-0 border ${badgeConfig.style}`}>
-                      {badgeConfig.label}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed mt-1.5 h-[54px]">
-                    {p.description || "暂无项目详情描述。点击进入详情，配置AI生成引擎。"}
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-border/20 pt-3">
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="h-3.5 w-3.5" />
-                    {new Date(p.updated_at).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(p.id) }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </Card>
-            )
-          })}
+          {filteredProjects?.map((p: any) => (
+            <ProjectCard
+              key={p.id}
+              project={p}
+              onDelete={(id) => setDeleteTarget(id)}
+            />
+          ))}
         </div>
       )}
 
@@ -191,26 +208,51 @@ export default function HomePage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-4 flex gap-2 justify-end">
-            <Button variant="outline" size="sm" className="h-8 text-xs rounded-lg" onClick={() => setDeleteTarget(null)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs rounded-lg"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleteProject.isPending}
+            >
               取消
             </Button>
             <Button
               variant="destructive"
               size="sm"
               className="h-8 text-xs rounded-lg font-semibold"
-              onClick={() => {
-                if (deleteTarget) {
-                  deleteProject.mutate(deleteTarget)
-                  setDeleteTarget(null)
-                }
-              }}
+              onClick={handleDeleteConfirm}
+              disabled={deleteProject.isPending}
             >
-              确认永久删除
+              {deleteProject.isPending ? "删除中..." : "确认永久删除"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Create Project Modal */}
+      <CreateProjectDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+      />
+
+      {/* Model Setup Modal */}
+      <ModelConfigDialog
+        open={configOpen}
+        onOpenChange={setConfigOpen}
+      />
     </div>
   )
 }
 
+export default function HomePage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-6xl mx-auto space-y-8 pb-10">
+        <Skeleton className="h-[210px] w-full rounded-3xl bg-card/40 border border-border/40" />
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
+  )
+}

@@ -86,6 +86,7 @@ def build_chapter_prompt(
     ctx,      # GenerationContext
     params,   # ChapterParams
     task_id: str | None = None,
+    gen_ctx_data: dict = None,
 ) -> str:
     """
     构造当前章节的请求提示词。
@@ -154,26 +155,47 @@ def build_chapter_prompt(
     # 第一章特殊处理
     if novel_number == 1:
         _check_cancel()
-        return prompt_definitions.get_prompt_template(ctx.project_id, 'first_chapter_draft_prompt').format(
-            novel_number=novel_number,
-            word_number=params.word_number,
-            chapter_title=chapter_info["chapter_title"],
-            chapter_role=chapter_info["chapter_role"],
-            chapter_purpose=chapter_info["chapter_purpose"],
-            suspense_level=chapter_info["suspense_level"],
-            foreshadowing=chapter_info["foreshadowing"],
-            plot_twist_level=chapter_info["plot_twist_level"],
-            chapter_summary=chapter_info["chapter_summary"],
-            characters_involved=params.characters_involved,
-            key_items=params.key_items,
-            scene_location=params.scene_location,
-            time_constraint=params.time_constraint,
-            user_guidance=params.user_guidance,
-            novel_setting=arch_text,
-            plot_arcs=plot_arcs_text or "（尚未生成伏笔暗线台账，请优先遵守章节目录中的伏笔操作）",
-            graph_context=graph_context,
-            platform_guidance=platform_guidance,
-        )
+        if gen_ctx_data and gen_ctx_data.get("has_memory_state"):
+            gctx = gen_ctx_data.get("context", {})
+            return prompt_definitions.get_prompt_template(ctx.project_id, 'first_chapter_draft_prompt_memory_aware').format(
+                novel_number=novel_number,
+                word_number=params.word_number,
+                chapter_title=chapter_info["chapter_title"],
+                chapter_role=chapter_info["chapter_role"],
+                chapter_purpose=chapter_info["chapter_purpose"],
+                suspense_level=chapter_info["suspense_level"],
+                foreshadowing=chapter_info["foreshadowing"],
+                plot_twist_level=chapter_info["plot_twist_level"],
+                chapter_summary=chapter_info["chapter_summary"],
+                user_guidance=params.user_guidance,
+                forbidden_violations="\n".join(gctx.get("forbidden_violations", [])),
+                locked_previous_facts="\n".join(gctx.get("locked_previous_facts", [])),
+                character_state_brief=gctx.get("character_state_brief", ""),
+                name_usage_rules_brief=gctx.get("name_usage_rules_brief", ""),
+                plot_threads_brief=gctx.get("plot_threads_brief", ""),
+                global_summary=gctx.get("global_summary", "")
+            )
+        else:
+            return prompt_definitions.get_prompt_template(ctx.project_id, 'first_chapter_draft_prompt').format(
+                novel_number=novel_number,
+                word_number=params.word_number,
+                chapter_title=chapter_info["chapter_title"],
+                chapter_role=chapter_info["chapter_role"],
+                chapter_purpose=chapter_info["chapter_purpose"],
+                suspense_level=chapter_info["suspense_level"],
+                foreshadowing=chapter_info["foreshadowing"],
+                plot_twist_level=chapter_info["plot_twist_level"],
+                chapter_summary=chapter_info["chapter_summary"],
+                characters_involved=params.characters_involved,
+                key_items=params.key_items,
+                scene_location=params.scene_location,
+                time_constraint=params.time_constraint,
+                user_guidance=params.user_guidance,
+                novel_setting=arch_text,
+                plot_arcs=plot_arcs_text or "（尚未生成伏笔暗线台账，请优先遵守章节目录中的伏笔操作）",
+                graph_context=graph_context,
+                platform_guidance=platform_guidance,
+            )
 
     # ── 组装滑动前文摘要 ──
     # 获取前文微摘要列表：第 N-3, N-2, N-1 章的摘要
@@ -274,37 +296,59 @@ def build_chapter_prompt(
         filtered_context = "（知识库处理失败）"
 
     _check_cancel()
-    return prompt_definitions.get_prompt_template(ctx.project_id, 'next_chapter_draft_prompt').format(
-        user_guidance=params.user_guidance or "无特殊指导",
-        global_summary=global_summary_text,
-        previous_chapter_excerpt=previous_excerpt,
-        character_state=character_state_text,
-        plot_arcs=plot_arcs_text or "（尚未生成伏笔暗线台账，请优先遵守章节目录中的伏笔操作）",
-        graph_context=graph_context,
-        short_summary=short_summary,
-        platform_guidance=platform_guidance,
-        novel_number=novel_number,
-        chapter_title=chapter_info["chapter_title"],
-        chapter_role=chapter_info["chapter_role"],
-        chapter_purpose=chapter_info["chapter_purpose"],
-        suspense_level=chapter_info["suspense_level"],
-        foreshadowing=chapter_info["foreshadowing"],
-        plot_twist_level=chapter_info["plot_twist_level"],
-        chapter_summary=chapter_info["chapter_summary"],
-        word_number=params.word_number,
-        characters_involved=params.characters_involved,
-        key_items=params.key_items,
-        scene_location=params.scene_location,
-        time_constraint=params.time_constraint,
-        next_chapter_number=novel_number + 1,
-        next_chapter_title=next_chapter_info.get("chapter_title", "（未命名）"),
-        next_chapter_role=next_chapter_info.get("chapter_role", "过渡章节"),
-        next_chapter_purpose=next_chapter_info.get("chapter_purpose", "承上启下"),
-        next_chapter_suspense_level=next_chapter_info.get("suspense_level", "中等"),
-        next_chapter_foreshadowing=next_chapter_info.get("foreshadowing", "无特殊伏笔"),
-        next_chapter_plot_twist_level=next_chapter_info.get("plot_twist_level", "★☆☆☆☆"),
-        next_chapter_summary=next_chapter_info.get("chapter_summary", "衔接过渡内容"),
-        filtered_context=filtered_context,
-    )
+    if gen_ctx_data and gen_ctx_data.get("has_memory_state"):
+        gctx = gen_ctx_data.get("context", {})
+        return prompt_definitions.get_prompt_template(ctx.project_id, 'next_chapter_draft_prompt_memory_aware').format(
+            novel_number=novel_number,
+            word_number=params.word_number,
+            chapter_title=chapter_info["chapter_title"],
+            chapter_role=chapter_info["chapter_role"],
+            chapter_purpose=chapter_info["chapter_purpose"],
+            suspense_level=chapter_info["suspense_level"],
+            foreshadowing=chapter_info["foreshadowing"],
+            plot_twist_level=chapter_info["plot_twist_level"],
+            chapter_summary=chapter_info["chapter_summary"],
+            user_guidance=params.user_guidance or "无特殊指导",
+            forbidden_violations="\n".join(gctx.get("forbidden_violations", [])),
+            locked_previous_facts="\n".join(gctx.get("locked_previous_facts", [])),
+            character_state_brief=gctx.get("character_state_brief", ""),
+            name_usage_rules_brief=gctx.get("name_usage_rules_brief", ""),
+            plot_threads_brief=gctx.get("plot_threads_brief", ""),
+            global_summary=gctx.get("global_summary", ""),
+            previous_chapter_excerpt=previous_excerpt,
+        )
+    else:
+        return prompt_definitions.get_prompt_template(ctx.project_id, 'next_chapter_draft_prompt').format(
+            user_guidance=params.user_guidance or "无特殊指导",
+            global_summary=global_summary_text,
+            previous_chapter_excerpt=previous_excerpt,
+            character_state=character_state_text,
+            plot_arcs=plot_arcs_text or "（尚未生成伏笔暗线台账，请优先遵守章节目录中的伏笔操作）",
+            graph_context=graph_context,
+            short_summary=short_summary,
+            platform_guidance=platform_guidance,
+            novel_number=novel_number,
+            chapter_title=chapter_info["chapter_title"],
+            chapter_role=chapter_info["chapter_role"],
+            chapter_purpose=chapter_info["chapter_purpose"],
+            suspense_level=chapter_info["suspense_level"],
+            foreshadowing=chapter_info["foreshadowing"],
+            plot_twist_level=chapter_info["plot_twist_level"],
+            chapter_summary=chapter_info["chapter_summary"],
+            word_number=params.word_number,
+            characters_involved=params.characters_involved,
+            key_items=params.key_items,
+            scene_location=params.scene_location,
+            time_constraint=params.time_constraint,
+            next_chapter_number=novel_number + 1,
+            next_chapter_title=next_chapter_info.get("chapter_title", "（未命名）"),
+            next_chapter_role=next_chapter_info.get("chapter_role", "过渡章节"),
+            next_chapter_purpose=next_chapter_info.get("chapter_purpose", "承上启下"),
+            next_chapter_suspense_level=next_chapter_info.get("suspense_level", "中等"),
+            next_chapter_foreshadowing=next_chapter_info.get("foreshadowing", "无特殊伏笔"),
+            next_chapter_plot_twist_level=next_chapter_info.get("plot_twist_level", "★☆☆☆☆"),
+            next_chapter_summary=next_chapter_info.get("chapter_summary", "衔接过渡内容"),
+            filtered_context=filtered_context,
+        )
 
 

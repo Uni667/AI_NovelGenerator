@@ -126,8 +126,9 @@ export function useSSE() {
             sseUrl += sseUrl.includes("?") ? "&" : "?"
             sseUrl += `token=${encodeURIComponent(res.stream_token)}`
           }
-        } catch {
-          setError("获取连接凭证失败，请重试。")
+        } catch (err: any) {
+          console.error("获取连接凭证失败:", err)
+          setError(`获取连接凭证失败：${err?.message || err || "请重试。"}`)
           return
         }
       }
@@ -159,12 +160,13 @@ export function useSSE() {
         addEvent({ type: "partial", data: parseEventData(e.data) })
       })
 
-      es.addEventListener("generation_error", (e) => {
+      const handleSseError = (e: Event) => {
         if (!isActiveConnection()) return
-        const parsed =
-          "data" in e && typeof e.data === "string"
-            ? parseEventData(e.data)
-            : { message: "生成失败，但后端没有返回具体错误。" }
+        // We only process custom server-sent error events here; standard connection errors are handled by es.onerror
+        if (!("data" in e) || typeof (e as any).data !== "string") {
+          return
+        }
+        const parsed = parseEventData((e as any).data)
         const message = formatTerminalError(parsed)
         setError(message)
         errorRef.current = message
@@ -185,7 +187,10 @@ export function useSSE() {
           es.close()
           if (sourceRef.current === es) sourceRef.current = null
         }
-      })
+      }
+
+      es.addEventListener("generation_error", handleSseError)
+      es.addEventListener("error", handleSseError)
 
       es.addEventListener("done", (e) => {
         if (!isActiveConnection()) return

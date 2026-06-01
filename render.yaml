@@ -1,0 +1,25 @@
+# Render Blueprint — Infrastructure as Code
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: ai-novel-backend
+    runtime: docker
+    repo: https://github.com/Uni667/AI_NovelGenerator
+    plan: free
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: API_SECRET_ENCRYPTION_KEY
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        value: https://frontend-chi-one-84.vercel.app,http://localhost:3000,http://127.0.0.1:3000
+      - key: PYTHONUTF8
+        value: "1"
+    # Persistent disk for SQLite data — requires Render paid plan ($0.25/GB/mo)
+    # Remove this block if staying on free tier (data will be lost on each deploy)
+    # disk:
+    #   name: ai-novel-data
+    #   mountPath: /app/data
+    #   sizeGB: 1

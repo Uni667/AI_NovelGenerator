@@ -12,6 +12,7 @@ export function usePlatformTools(projectId: string) {
   const [titles, setTitles] = useState<string[]>([])
   const [blurbs, setBlurbs] = useState<string[]>([])
   const [chapterTitles, setChapterTitles] = useState<string[]>([])
+  const [hasRealContent, setHasRealContent] = useState<boolean | null>(null)
   
   const [hookResult, setHookResult] = useState<PlatformHookResult | null>(null)
   const [chapterHookResult, setChapterHookResult] = useState<PlatformHookResult | null>(null)
@@ -33,12 +34,14 @@ export function usePlatformTools(projectId: string) {
   const handleGenTitles = () => wrapLoading("titles", async () => {
     const res = await api.platform.titles(projectId)
     setTitles(res.titles || [])
+    if (res.has_real_content !== undefined) setHasRealContent(res.has_real_content)
     toast.success("标题生成完成")
   })
 
   const handleGenBlurb = () => wrapLoading("blurb", async () => {
     const res = await api.platform.blurb(projectId)
     setBlurbs(res.blurbs || [])
+    if (res.has_real_content !== undefined) setHasRealContent(res.has_real_content)
     toast.success("文案生成完成")
   })
 
@@ -79,6 +82,7 @@ export function usePlatformTools(projectId: string) {
     titles, setTitles,
     blurbs, setBlurbs,
     chapterTitles, setChapterTitles,
+    hasRealContent, setHasRealContent,
     hookResult, setHookResult,
     chapterHookResult, setChapterHookResult,
     batchHookResult, setBatchHookResult,

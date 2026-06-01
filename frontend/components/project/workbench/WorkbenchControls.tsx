@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Save, Loader2, Wand2, ListChecks, Play, RefreshCw, Ban, Gauge } from "lucide-react"
 import { useProjectContext } from "../ProjectContext"
 import { toast } from "sonner"
+import { GenerationContextViewer } from "./GenerationContextViewer"
 
 
 export function WorkbenchControls() {
@@ -179,6 +180,7 @@ export function WorkbenchControls() {
                 中断生成
               </Button>
             )}
+            <GenerationContextViewer />
           </div>
         </div>
       </CardContent>

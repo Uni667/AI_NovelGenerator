@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Upload, Sparkles, MoreVertical, Trash2, Copy, Edit3 } from "lucide-react"
+import { Loader2, Upload, Sparkles, MoreVertical, Trash2, Copy, Edit3, Search, ChevronsRight, BookOpen } from "lucide-react"
 import { useProjectContext } from "../ProjectContext"
 import { toast } from "sonner"
 import { api } from "@/lib/api-client"
@@ -25,7 +25,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { DeleteChapterDialog } from "./DeleteChapterDialog"
 
-export function WorkbenchSidebar() {
+export function WorkbenchSidebar({ isDrawer = false }: { isDrawer?: boolean }) {
   const {
     projectId,
     chapters,
@@ -36,6 +36,9 @@ export function WorkbenchSidebar() {
     generation,
     workbench: {
       selectedChapterNumber, setSelectedChapterNumber,
+      layoutMode, setLayoutMode,
+      leftPanelCollapsed, setLeftPanelCollapsed,
+      leftDrawerOpen, setLeftDrawerOpen
     },
     platform: {
       setHookChapterNum
@@ -217,8 +220,96 @@ export function WorkbenchSidebar() {
     setMenuOpenChapter(menuOpenChapter === chapterNum ? null : chapterNum)
   }
 
+  // Collapsed 48px rail view for wide/collapsed mode
+  if (!isDrawer && (layoutMode === "wide" || leftPanelCollapsed)) {
+    return (
+      <div className="w-12 bg-[#0b0f1a]/80 border border-white/5 rounded-2xl h-full flex flex-col items-center py-4 gap-6 hover:shadow-[0_0_30px_rgba(139,92,246,0.05)] transition-all duration-500">
+        {/* Toggle drawer */}
+        <button
+          type="button"
+          onClick={() => setLeftDrawerOpen(true)}
+          className="p-2 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all cursor-pointer"
+          title="展开章节目录 (抽屉)"
+        >
+          <BookOpen className="h-5 w-5" />
+        </button>
+
+        {/* Search trigger */}
+        <button
+          type="button"
+          onClick={() => setLeftDrawerOpen(true)}
+          className="p-2 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all cursor-pointer"
+          title="搜索章节"
+        >
+          <Search className="h-5 w-5" />
+        </button>
+
+        {/* Batch generate trigger */}
+        <button
+          type="button"
+          onClick={() => setLeftDrawerOpen(true)}
+          className="p-2 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all cursor-pointer"
+          title="批量生成章节"
+        >
+          <Sparkles className="h-5 w-5 text-violet-400" />
+        </button>
+
+        {/* Divider */}
+        <div className="w-6 h-[1px] bg-white/5 my-1" />
+
+        {/* Chapter mini selection dots */}
+        <div className="flex-1 flex flex-col items-center gap-2 overflow-y-auto w-full px-1 scrollbar-none">
+          {chapters?.map((ch: Chapter) => {
+            const isActive = selectedChapterNumber === ch.chapter_number
+            return (
+              <button
+                key={ch.chapter_number}
+                type="button"
+                onClick={() => {
+                  setSelectedChapterNumber(ch.chapter_number)
+                  setHookChapterNum(ch.chapter_number)
+                }}
+                className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-mono shrink-0 transition-all cursor-pointer relative ${
+                  isActive
+                    ? "bg-primary text-primary-foreground font-bold scale-110 shadow-md shadow-primary/20"
+                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                }`}
+                title={`第 ${ch.chapter_number} 章: ${ch.chapter_title || "未命名"}`}
+              >
+                {ch.chapter_number}
+                {/* Small dot for final chapter status */}
+                {ch.status === "final" && (
+                  <span className="absolute bottom-0 right-0 h-1.5 w-1.5 rounded-full bg-emerald-500 border border-[#0b0f1a]" />
+                )}
+                {ch.status === "draft" && (
+                  <span className="absolute bottom-0 right-0 h-1.5 w-1.5 rounded-full bg-amber-500 border border-[#0b0f1a]" />
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Expand button */}
+        <button
+          type="button"
+          onClick={() => {
+            setLeftPanelCollapsed(false)
+            if (layoutMode === "wide") {
+              setLayoutMode("standard")
+              localStorage.setItem("ai-novel-workbench-layout-mode-user-select", "standard")
+            }
+          }}
+          className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all mt-auto cursor-pointer"
+          title="展开左侧面板"
+        >
+          <ChevronsRight className="h-5 w-5" />
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <Card className="glass-panel border-border/40 h-full flex flex-col hover:shadow-[0_0_30px_oklch(0.68_0.19_285/0.1)] transition-all duration-500">
+    <Card className={`${isDrawer ? 'bg-transparent border-0 shadow-none' : 'glass-panel border-border/40'} h-full flex flex-col hover:shadow-[0_0_30px_oklch(0.68_0.19_285/0.1)] transition-all duration-500`}>
       <CardHeader className="pb-4 shrink-0">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base font-bold text-gradient-primary w-fit">章节目录</CardTitle>

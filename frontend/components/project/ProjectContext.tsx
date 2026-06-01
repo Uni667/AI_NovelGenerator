@@ -1,10 +1,11 @@
 "use client"
 
-import React, { createContext, useContext, ReactNode, useState, useRef } from "react"
+import React, { createContext, useContext, ReactNode, useState, useRef, useEffect } from "react"
 import { useGenerationState } from "@/lib/hooks/use-generation-state"
 import { useWorkbenchState } from "@/lib/hooks/use-workbench-state"
 import { usePlatformTools } from "@/lib/hooks/use-platform-tools"
 import { useProject, useProjectConfig, useChapters, useUpdateProjectConfig } from "@/lib/hooks/use-projects"
+import { useSearchParams, useRouter } from "next/navigation"
 
 export type ProjectContextType = {
   projectId: string;
@@ -41,7 +42,12 @@ export function ProjectProvider({ projectId, children }: { projectId: string; ch
 
   const [batchUploading, setBatchUploading] = useState(false)
   const batchFileRef = useRef<HTMLInputElement | null>(null)
-  const [activeTab, setActiveTab] = useState(() => {
+  
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const tabParam = searchParams?.get('tab')
+  
+  const [activeTab, setActiveTabState] = useState(() => {
     // 支持从 URL 参数读取初始 tab（例如侧栏点击 API 使用情况）
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
@@ -50,6 +56,18 @@ export function ProjectProvider({ projectId, children }: { projectId: string; ch
     }
     return "overview"
   })
+
+  const setActiveTab = React.useCallback((val: string) => {
+    setActiveTabState(val)
+    router.push(`/projects/${projectId}?tab=${val}`)
+  }, [projectId, router])
+
+  useEffect(() => {
+    if (tabParam && tabParam !== activeTab) {
+      setActiveTabState(tabParam)
+    }
+  }, [tabParam, activeTab])
+
   const [selectedOutputFile, setSelectedOutputFile] = useState("Novel_architecture.txt")
 
   const value: ProjectContextType = {

@@ -16,6 +16,7 @@ import { toast } from "sonner"
 import { Users, UserPlus, Upload, Sparkles, Trash2, PlusCircle, GitBranch, Swords, Clock, Loader2, RefreshCw } from "lucide-react"
 import { api } from "@/lib/api-client"
 import RelationshipManager from "@/components/character/RelationshipManager"
+import { CharacterAvatar } from "./CharacterAvatar"
 import ConflictManager from "@/components/character/ConflictManager"
 import AppearanceTimeline from "@/components/character/AppearanceTimeline"
 
@@ -65,6 +66,7 @@ export function CharactersTab({ id }: CharactersTabProps) {
   const [characterImportSelectedIds, setCharacterImportSelectedIds] = useState<string[]>([])
   const [characterImportLoading, setCharacterImportLoading] = useState(false)
   const [characterImportConfirming, setCharacterImportConfirming] = useState(false)
+  const [syncConfirmOpen, setSyncConfirmOpen] = useState(false)
 
   const loadCharacters = useCallback(async () => {
     try {
@@ -343,7 +345,7 @@ export function CharactersTab({ id }: CharactersTabProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleSyncFromFile}
+                onClick={() => setSyncConfirmOpen(true)}
                 disabled={syncing}
                 className="hover:bg-accent/40 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 border-emerald-500/30 transition-transform duration-200 hover:scale-105"
               >
@@ -352,7 +354,7 @@ export function CharactersTab({ id }: CharactersTabProps) {
                 ) : (
                   <RefreshCw className="h-4 w-4 mr-2 text-emerald-400" />
                 )}
-                一键同步
+                预览人物同步
               </Button>
               <Button
                 variant="outline"
@@ -551,7 +553,8 @@ export function CharactersTab({ id }: CharactersTabProps) {
                           key={char.id}
                           className="rounded-xl border border-border/60 bg-card/10 p-3.5 hover:bg-accent/25 hover:border-primary/20 transition-all duration-200"
                         >
-                          <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            <CharacterAvatar character={char} size="sm" className="mt-0.5 shrink-0" />
                             <div className="min-w-0 flex-1 cursor-pointer" onClick={() => openEditDialog(char)}>
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <p className="font-semibold text-sm hover:underline">{char.name}</p>
@@ -675,6 +678,25 @@ export function CharactersTab({ id }: CharactersTabProps) {
           <DialogFooter className="mt-4 flex gap-2 justify-center sm:justify-center">
             <Button variant="outline" size="sm" onClick={() => setDeleteCharTarget(null)}>取消</Button>
             <Button variant="destructive" size="sm" onClick={handleDeleteCharacter}>确认删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 同步确认 */}
+      <Dialog open={syncConfirmOpen} onOpenChange={setSyncConfirmOpen}>
+        <DialogContent className="glass-panel border-border/40 max-w-sm text-center">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold">确认同步人物数据？</DialogTitle>
+            <DialogDescription className="text-xs mt-1 text-amber-500">
+              此操作将从大纲或正文中粗放提取角色，可能会覆盖当前数据库中已细化的人物数据。建议优先使用“预览导入”功能。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 flex gap-2 justify-center sm:justify-center">
+            <Button variant="outline" size="sm" onClick={() => setSyncConfirmOpen(false)}>取消</Button>
+            <Button variant="destructive" size="sm" onClick={() => {
+              setSyncConfirmOpen(false)
+              handleSyncFromFile()
+            }}>确认强行同步</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

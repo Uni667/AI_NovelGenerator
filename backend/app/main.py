@@ -1,11 +1,12 @@
 import os
+import os
 import logging
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import init_db
-from backend.app.routes import auth, chapters, character_appearances, character_conflicts, character_relationships, characters, files, generation, knowledge, platform_tools, projects, prompts, user_api_config, material_processor, interactive, analytics, plot_arcs
+from backend.app.routes import project_state, auth, chapters, character_appearances, character_conflicts, character_relationships, characters, files, generation, knowledge, platform_tools, projects, prompts, user_api_config, material_processor, interactive, analytics, plot_arcs, visualizer, outline_evolution, state_editing
 from backend.app.rate_limiter import limiter, rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -38,7 +39,7 @@ logging.basicConfig(
 
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000,https://frontend-chi-one-84.vercel.app"
+    "http://localhost:3000,http://127.0.0.1:3000,https://frontend-chi-one-84.vercel.app,https://ai-novel-generator-topaz.vercel.app"
 ).split(",")
 
 @asynccontextmanager
@@ -67,6 +68,7 @@ app.add_middleware(
 # 应用速率限制中间件
 app.state.limiter = limiter
 
+app.include_router(project_state.router)
 app.include_router(projects.router)
 app.include_router(chapters.router)
 app.include_router(files.router)
@@ -84,6 +86,9 @@ app.include_router(prompts.router)
 app.include_router(interactive.router)
 app.include_router(analytics.router)
 app.include_router(plot_arcs.router)
+app.include_router(visualizer.router)
+app.include_router(outline_evolution.router)
+app.include_router(state_editing.router)
 
 
 @app.get("/api/v1/health")

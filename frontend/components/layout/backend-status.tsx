@@ -1,54 +1,42 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Wifi, WifiOff } from "lucide-react"
+import { healthService } from "@/lib/services/healthService"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
-const CHECK_INTERVAL = 30000
+const CHECK_INTERVAL = 15000
 
 export function BackendStatus() {
-  const [online, setOnline] = useState(true) // 默认乐观：在线
-  const failCount = useRef(0)
+  const [online, setOnline] = useState(true)
+  const [checkedAt, setCheckedAt] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
 
-    const doFetch = async (): Promise<boolean> => {
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/health`, { signal: AbortSignal.timeout(10000) })
-        return res.ok
-      } catch {
-        return false
-      }
-    }
-
     const check = async () => {
-      let ok = await doFetch()
-      if (!ok && !cancelled) {
-        await new Promise(r => setTimeout(r, 3000))
-        if (!cancelled) ok = await doFetch()
-      }
+      const status = await healthService.checkBackendHealth()
       if (cancelled) return
-      if (ok) {
-        failCount.current = 0
-        if (!cancelled) setOnline(true)
-      } else {
-        failCount.current++
-        if (failCount.current >= 5 && !cancelled) setOnline(false)
-      }
+      setOnline(status.online)
+      setCheckedAt(status.checkedAt)
     }
 
-    // 首次延迟 5 秒再检查，避免页面加载时触发 Railway 冷启动
-    const initialTimer = setTimeout(check, 5000)
+    const initialTimer = setTimeout(check, 2000)
     const interval = setInterval(check, CHECK_INTERVAL)
     return () => { cancelled = true; clearTimeout(initialTimer); clearInterval(interval) }
   }, [])
 
   return (
-    <Badge variant={online ? "default" : "secondary"} className="gap-1 text-xs cursor-default">
-      {online ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-      <span className="hidden sm:inline">{online ? "后端在线" : "后端离线"}</span>
+    <Badge 
+      variant="outline" 
+      className={`gap-1.5 text-[10px] font-mono px-2 py-0.5 border cursor-default transition-colors duration-500 ${
+        online 
+          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+          : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+      }`}
+    >
+      {online ? <Wifi className="h-3 w-3 animate-pulse" /> : <WifiOff className="h-3 w-3 text-rose-400" />}
+      <span>{online ? "后端在线" : `后端离线${checkedAt ? ` (最后检测: ${checkedAt})` : ""}`}</span>
     </Badge>
   )
 }

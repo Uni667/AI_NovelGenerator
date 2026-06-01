@@ -74,7 +74,7 @@ export function OutlineStatusCard({
             <Button size="sm" onClick={onRegenerate}>
               <RefreshCw className="h-4 w-4 mr-1" /> AI 生成
             </Button>
-            <Button variant="outline" size="sm" onClick={onImport}>
+            <Button variant="outline" size="sm" disabled title="导入功能涉及架构、大纲和章节状态合并，需等待状态系统接入后启用。">
               <FileUp className="h-4 w-4 mr-1" /> 导入文件
             </Button>
           </div>
@@ -111,7 +111,7 @@ export function OutlineStatusCard({
           <Button variant="outline" size="sm" onClick={onRegenerate}>
             <RefreshCw className="h-4 w-4 mr-1" /> 重新生成
           </Button>
-          <Button variant="outline" size="sm" onClick={onImport}>
+          <Button variant="outline" size="sm" disabled title="导入功能涉及架构、大纲和章节状态合并，需等待状态系统接入后启用。">
             <FileUp className="h-4 w-4 mr-1" /> 导入新目录
           </Button>
           <Button variant="ghost" size="sm" onClick={onPreview}>
