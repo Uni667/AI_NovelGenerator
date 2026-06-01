@@ -14,6 +14,7 @@ import { ProjectCard } from "@/components/home/ProjectCard"
 import { ProjectStats } from "@/components/home/ProjectStats"
 import { CreateProjectDialog } from "@/components/home/CreateProjectDialog"
 import { ModelConfigDialog } from "@/components/home/ModelConfigDialog"
+import { DataMigrationDialog } from "@/components/home/DataMigrationDialog"
 import { projectService } from "@/lib/services/projectService"
 
 function HomeContent() {
@@ -27,6 +28,7 @@ function HomeContent() {
   
   const [createOpen, setCreateOpen] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
+  const [migrationOpen, setMigrationOpen] = useState(false)
 
   const stats = projectService.calculateStats(projects || [])
 
@@ -135,12 +137,19 @@ function HomeContent() {
               新建创作项目
             </Button>
             <Button
-              variant="outline"
-              onClick={() => setConfigOpen(true)}
-              className="rounded-xl border-border/60 hover:bg-accent/40 font-medium h-10 px-5"
-            >
-              配置全局模型节点
-            </Button>
+            variant="outline"
+            onClick={() => setConfigOpen(true)}
+            className="rounded-xl border-border/60 hover:bg-accent/40 font-medium h-10 px-5"
+          >
+            配置全局模型节点
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setMigrationOpen(true)}
+            className="rounded-xl border-border/60 hover:bg-accent/40 font-medium h-10 px-5 text-muted-foreground hover:text-foreground"
+          >
+            旧数据迁移
+          </Button>
           </div>
         </div>
       </div>
@@ -240,6 +249,12 @@ function HomeContent() {
       <ModelConfigDialog
         open={configOpen}
         onOpenChange={setConfigOpen}
+      />
+
+      {/* Data Migration Modal */}
+      <DataMigrationDialog
+        open={migrationOpen}
+        onOpenChange={setMigrationOpen}
       />
     </div>
   )

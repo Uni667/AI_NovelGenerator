@@ -1,0 +1,123 @@
+{
+  "scan_timestamp": "2026-06-01 20:06:20",
+  "integrity": {
+    "source_db_path": "data\\projects.db",
+    "source_db_sha256": "5273b5d2a6b6209d4227cd8bcfffadeeb1118991caa23ed7b343979abc0e0077"
+  },
+  "statistics": {
+    "projects_found": 1,
+    "chapters_found": 1,
+    "characters_found": 0,
+    "worldview_files_found": 4,
+    "custom_prompts_found": 0,
+    "history_records_found": 0
+  },
+  "sqlite_tables_summary": {
+    "user": 3,
+    "user_llm_config": 1,
+    "sqlite_sequence": 3,
+    "user_embedding_config": 0,
+    "project": 1,
+    "project_config": 1,
+    "chapter": 1,
+    "knowledge_file": 0,
+    "character_profile": 0,
+    "character_relationship": 0,
+    "character_conflict": 0,
+    "character_conflict_participant": 0,
+    "character_appearance": 0,
+    "project_file": 0,
+    "model_profile": 0,
+    "project_model_assignment": 0,
+    "model_invocation_log": 0,
+    "api_credential": 0,
+    "generation_task": 0,
+    "schema_version": 1
+  },
+  "discovered_files": [
+    "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\chapters\\chapter_999.txt",
+    "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\character_state.json",
+    "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\global_summary.md",
+    "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\name_usage_rules.json",
+    "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\outline_state.json",
+    "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\plot_threads.json",
+    "data\\projects.db"
+  ],
+  "migrated_files": [
+    {
+      "src": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\chapters\\chapter_999.txt",
+      "dest": "projects/测试项目 - 星辰之旅-36a36bed/chapters/999.md"
+    },
+    {
+      "src": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\outline_state.json",
+      "dest": "projects/测试项目 - 星辰之旅-36a36bed/world/outline_state.json"
+    },
+    {
+      "src": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\outline_state.json",
+      "dest": "projects/测试项目 - 星辰之旅-36a36bed/outline.md"
+    },
+    {
+      "src": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\plot_threads.json",
+      "dest": "projects/测试项目 - 星辰之旅-36a36bed/world/plot_threads.json"
+    },
+    {
+      "src": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\name_usage_rules.json",
+      "dest": "projects/测试项目 - 星辰之旅-36a36bed/world/name_usage_rules.json"
+    },
+    {
+      "src": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\global_summary.md",
+      "dest": "projects/测试项目 - 星辰之旅-36a36bed/synopsis.md"
+    }
+  ],
+  "copied_legacy_files": [
+    {
+      "src": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\character_state.json",
+      "dest": "projects/测试项目 - 星辰之旅-36a36bed/legacy/memory/character_state.json"
+    },
+    {
+      "src": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\global_summary.md",
+      "dest": "projects/测试项目 - 星辰之旅-36a36bed/legacy/memory/global_summary.md"
+    },
+    {
+      "src": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\name_usage_rules.json",
+      "dest": "projects/测试项目 - 星辰之旅-36a36bed/legacy/memory/name_usage_rules.json"
+    },
+    {
+      "src": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\outline_state.json",
+      "dest": "projects/测试项目 - 星辰之旅-36a36bed/legacy/memory/outline_state.json"
+    },
+    {
+      "src": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\memory\\plot_threads.json",
+      "dest": "projects/测试项目 - 星辰之旅-36a36bed/legacy/memory/plot_threads.json"
+    }
+  ],
+  "skipped_files_with_reason": [],
+  "unmapped_files": [],
+  "chapter_source_detail": [
+    {
+      "project_slug": "测试项目 - 星辰之旅-36a36bed",
+      "chapter_number": 999,
+      "source_type": "file",
+      "source_path": "backend\\projects\\36a36bed-6e2a-4b6a-b541-a3bcd38e84e7\\chapters\\chapter_999.txt",
+      "is_valid": true
+    }
+  ],
+  "projects_detail": [
+    {
+      "old_id": "36a36bed-6e2a-4b6a-b541-a3bcd38e84e7",
+      "name": "测试项目 - 星辰之旅",
+      "slug": "测试项目 - 星辰之旅-36a36bed",
+      "chapters_count": 1,
+      "characters_count": 0
+    }
+  ],
+  "failed_parsed_fields": [],
+  "manual_check_items": [
+    {
+      "type": "chapter_999_sandbox_warning",
+      "project_id": "36a36bed-6e2a-4b6a-b541-a3bcd38e84e7",
+      "project_name": "测试项目 - 星辰之旅",
+      "message": "项目 [测试项目 - 星辰之旅] 仅包含第 999 章草稿。此章节可能是开发测试时使用的沙盒或草稿占位符，未检测到真实的章节顺序配置。"
+    }
+  ]
+}

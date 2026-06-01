@@ -17,9 +17,9 @@ services:
         value: https://frontend-chi-one-84.vercel.app,http://localhost:3000,http://127.0.0.1:3000
       - key: PYTHONUTF8
         value: "1"
-    # Persistent disk for SQLite data — requires Render paid plan ($0.25/GB/mo)
-    # Remove this block if staying on free tier (data will be lost on each deploy)
-    # disk:
-    #   name: ai-novel-data
-    #   mountPath: /app/data
-    #   sizeGB: 1
+    # Persistent disk — $0.25/GB/month (≈$3/year)
+    # Required: must be on a paid Render plan (Starter $7/mo or Individual $0/mo)
+    disk:
+      name: ai-novel-data
+      mountPath: /app/data
+      sizeGB: 1

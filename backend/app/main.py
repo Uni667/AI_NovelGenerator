@@ -90,6 +90,10 @@ app.include_router(visualizer.router)
 app.include_router(outline_evolution.router)
 app.include_router(state_editing.router)
 
+# ── 迁移临时接口 (MIGRATION ROUTER - 迁移完成后可直接删除) ──
+# from backend.app.routes import migration
+# app.include_router(migration.router)
+
 
 @app.get("/api/v1/health")
 def health():

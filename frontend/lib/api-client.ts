@@ -546,4 +546,13 @@ export const api = {
   auth: {
     streamToken: () => request<{ stream_token: string }>("/api/v1/auth/stream-token", { method: "POST" }),
   },
+  migration: {
+    exportAll: (token?: string) => {
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["X-Migration-Token"] = token;
+      }
+      return request<any>("/api/v1/migration/export-all", { headers });
+    },
+  },
 }
