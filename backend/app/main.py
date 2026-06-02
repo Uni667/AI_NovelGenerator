@@ -6,7 +6,7 @@ from logging.handlers import RotatingFileHandler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import init_db
-from backend.app.routes import project_state, auth, chapters, character_appearances, character_conflicts, character_relationships, characters, files, generation, knowledge, platform_tools, projects, prompts, user_api_config, material_processor, interactive, analytics, plot_arcs, visualizer, outline_evolution, state_editing
+from backend.app.routes import project_state, auth, chapters, character_appearances, character_conflicts, character_relationships, characters, files, generation, knowledge, platform_tools, projects, prompts, user_api_config, material_processor, interactive, analytics, plot_arcs, visualizer, outline_evolution, state_editing, folder_migration
 from backend.app.rate_limiter import limiter, rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -89,6 +89,7 @@ app.include_router(plot_arcs.router)
 app.include_router(visualizer.router)
 app.include_router(outline_evolution.router)
 app.include_router(state_editing.router)
+app.include_router(folder_migration.router)
 
 # ── 迁移临时接口 (MIGRATION ROUTER - 迁移完成后可直接删除) ──
 # from backend.app.routes import migration

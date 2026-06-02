@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { Loader2, Save, Wand2, Settings2, Cpu, BrainCircuit, ShieldAlert } from "lucide-react"
+import { Loader2, Save, Wand2, Settings2, Cpu, BrainCircuit, ShieldAlert, FolderDown } from "lucide-react"
 import { PLATFORM_CONFIG, PLATFORMS, READER_DIRECTIONS, TREND_KEYS } from "@/lib/types"
 import { useProjectContext } from "./ProjectContext"
 import { useState, useEffect, useRef } from "react"
@@ -23,6 +23,26 @@ export function SettingsTab() {
   const [modelAssignment, setModelAssignment] = useState<Record<string, string | null>>({})
   const [modelAssignmentSaving, setModelAssignmentSaving] = useState(false)
   const [platformPresetApplying, setPlatformPresetApplying] = useState(false)
+
+  // Local Folder Export States & Handler
+  const [exportPath, setExportPath] = useState("")
+  const [isExporting, setIsExporting] = useState(false)
+
+  const handleExportToFolder = async () => {
+    if (!exportPath.trim()) {
+      toast.error("导出路径不能为空")
+      return
+    }
+    setIsExporting(true)
+    try {
+      const res = await api.projects.exportLocalFolder(projectId, exportPath.trim())
+      toast.success(res.message || "项目成功导出到本地文件夹！")
+    } catch (e: any) {
+      toast.error(e?.message || "导出到本地文件夹失败，请检查路径是否正确且有写入权限")
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   const debouncedUpdate = useRef(
     debounce((data: Record<string, any>) => {
@@ -454,6 +474,49 @@ export function SettingsTab() {
           </Card>
         </AccordionItem>
       </Accordion>
+
+      {/* 本地备份同步导出 Card */}
+      <Card className="glass-panel border-border/40 hover:shadow-[0_0_30px_oklch(0.68_0.19_285/0.05)] transition-all duration-500">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-xl font-bold tracking-tight text-gradient-primary flex items-center gap-2">
+            <FolderDown className="w-5 h-5 text-indigo-400" /> 本地文件夹导出备份
+          </CardTitle>
+          <CardDescription>将当前项目的数据和文件备份并同步保存到你的电脑本地文件夹中</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold text-muted-foreground">本地目标文件夹路径</Label>
+            <div className="flex gap-3">
+              <Input
+                placeholder="例如 D:\NovelProjects\ExportedBook"
+                value={exportPath}
+                onChange={(e) => setExportPath(e.target.value)}
+                className="shadow-sm transition-all focus:ring-indigo-500/50 bg-background/30 rounded-xl border-border/60 text-xs h-9 flex-1"
+              />
+              <Button
+                onClick={handleExportToFolder}
+                disabled={isExporting}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg active:scale-95 transition-all text-xs px-5 h-9 font-semibold shrink-0"
+              >
+                {isExporting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    正在导出...
+                  </>
+                ) : (
+                  <>
+                    <FolderDown className="h-4 w-4 mr-2" />
+                    立即同步导出
+                  </>
+                )}
+              </Button>
+            </div>
+            <p className="text-[10px] text-muted-foreground leading-normal mt-1">
+              * 导出后，该目录下将生成 <code>metadata.json</code>（数据库结构信息）以及包含最新章节内容的物理文件目录。
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

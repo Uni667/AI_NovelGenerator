@@ -190,6 +190,16 @@ export const api = {
         return res.json()
       })
     },
+    importLocalFolder: (folderPath: string, projectName?: string, platform?: string, genre?: string) =>
+      request<{ message: string; projectId: string; name: string }>("/api/v1/projects/import-local-folder", {
+        method: "POST",
+        body: JSON.stringify({ folder_path: folderPath, project_name: projectName, platform, genre }),
+      }),
+    exportLocalFolder: (projectId: string, folderPath: string) =>
+      request<{ success: boolean; message: string; path: string }>(`/api/v1/projects/${projectId}/export-local-folder`, {
+        method: "POST",
+        body: JSON.stringify({ folder_path: folderPath }),
+      }),
   },
   chapters: {
     list: (projectId: string) => request<Chapter[]>(`/api/v1/projects/${projectId}/chapters`),
