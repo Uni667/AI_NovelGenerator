@@ -238,8 +238,10 @@ def _run_chapter_generation(emitter: SSEEmitter, project: dict, pconfig: dict, c
             original_guidance = getattr(params, "user_guidance", "") or ""
             params.user_guidance = original_guidance + director_guidance
 
+        from backend.app.services.generation_context_service import build_generation_context_for_chapter, validate_draft_against_generation_context
+
         emitter.emit("progress", {"step": "build_prompt", "status": "running", "message": f"正在构建第 {chapter_number} 章提示词..."})
-        
+
         # Load Generation Context
         gen_ctx_data = build_generation_context_for_chapter(project["id"], chapter_number)
         used_memory = gen_ctx_data.get("has_memory_state", False)
