@@ -263,3 +263,42 @@ async def import_backup(request: Request, file: UploadFile = File(...)):
     except Exception as e:
         logger.exception("Failed to import backup ZIP")
         raise HTTPException(status_code=500, detail=f"恢复备份失败: {str(e)}")
+
+
+@router.get("/api/v1/admin/data-backup")
+def backup_all_data(request: Request):
+    """
+    全量数据备份 — 打包 /app/data 目录（含 SQLite 数据库 + 所有项目文件）。
+    仅限已登录的管理员用户。
+    """
+    import io
+    import zipfile
+    from datetime import datetime
+    from fastapi.responses import StreamingResponse
+    
+    user_id = get_current_user(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="需要登录")
+    
+    data_root = "/app/data"
+    if not os.path.exists(data_root):
+        raise HTTPException(status_code=404, detail="数据目录不存在")
+    
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(data_root):
+            for file in files:
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, data_root)
+                try:
+                    zf.write(full_path, rel_path)
+                except Exception as e:
+                    logger.warning(f"备份跳过文件 {rel_path}: {e}")
+    
+    zip_buffer.seek(0)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="railway_data_backup_{timestamp}.zip"'}
+    )
