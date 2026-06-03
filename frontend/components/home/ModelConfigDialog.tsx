@@ -92,10 +92,10 @@ export function ModelConfigDialog({ open, onOpenChange, onSuccess }: ModelConfig
               <select
                 value={provider}
                 onChange={(e) => setProvider(e.target.value)}
-                className="w-full bg-[#0A0915] border border-border/60 rounded-lg px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 h-9"
+                className="w-full bg-background dark:bg-[#0A0915] border border-border/60 rounded-lg px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 h-9"
               >
                 {PROVIDERS.map((item) => (
-                  <option key={item.value} value={item.value}>
+                  <option key={item.value} value={item.value} className="bg-background dark:bg-[#0A0915]">
                     {item.label}
                   </option>
                 ))}
@@ -110,7 +110,7 @@ export function ModelConfigDialog({ open, onOpenChange, onSuccess }: ModelConfig
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="sk-..."
-                className="bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 font-mono rounded-lg"
+                className="bg-background/50 dark:bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 font-mono rounded-lg"
                 required
               />
             </div>

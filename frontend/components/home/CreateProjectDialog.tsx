@@ -153,7 +153,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                   placeholder="例如 D:\NovelProjects\MyEpicBook 或 C:\Novels\MyStory"
                   value={folderPath}
                   onChange={(e) => setFolderPath(e.target.value)}
-                  className="bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 rounded-lg"
+                  className="bg-background/50 dark:bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 rounded-lg"
                   required
                 />
                 <p className="text-[10px] text-muted-foreground/60 leading-normal">
@@ -172,7 +172,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                 placeholder="请输入小说名称，例如：仙逆苍穹"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 rounded-lg"
+                className="bg-background/50 dark:bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 rounded-lg"
                 required={activeTab === "new"}
               />
             </div>
@@ -185,7 +185,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                   placeholder="简要描述小说核心亮点、受众、主角设定或题材概要..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="bg-black/20 border-border/60 focus:border-primary/50 text-xs min-h-[60px] rounded-lg"
+                  className="bg-background/50 dark:bg-black/20 border-border/60 focus:border-primary/50 text-xs min-h-[60px] rounded-lg"
                 />
               </div>
             )}
@@ -197,10 +197,10 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                 <select
                   value={platform}
                   onChange={(e) => setPlatform(e.target.value)}
-                  className="w-full bg-[#0A0915] border border-border/60 rounded-lg px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 h-9"
+                  className="w-full bg-background dark:bg-[#0A0915] border border-border/60 rounded-lg px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 h-9"
                 >
                   {Object.entries(PLATFORM_CONFIG).map(([key, config]) => (
-                    <option key={key} value={key}>
+                    <option key={key} value={key} className="bg-background dark:bg-[#0A0915]">
                       {config.icon} {config.label}
                     </option>
                   ))}
@@ -213,7 +213,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                   placeholder="例如：都市、玄幻、古言"
                   value={genre}
                   onChange={(e) => setGenre(e.target.value)}
-                  className="bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 rounded-lg"
+                  className="bg-background/50 dark:bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 rounded-lg"
                 />
               </div>
             </div>
@@ -228,7 +228,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                     min={1}
                     value={numChapters}
                     onChange={(e) => setNumChapters(parseInt(e.target.value) || 1)}
-                    className="bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 rounded-lg"
+                    className="bg-background/50 dark:bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 rounded-lg"
                   />
                 </div>
 
@@ -241,7 +241,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                     step={100}
                     value={wordNumber}
                     onChange={(e) => setWordNumber(parseInt(e.target.value) || 3000)}
-                    className="bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 rounded-lg"
+                    className="bg-background/50 dark:bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9 rounded-lg"
                   />
                 </div>
               </div>

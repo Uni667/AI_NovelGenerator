@@ -13,12 +13,12 @@ interface ProjectCardProps {
 }
 
 const statusMap: Record<string, { label: string; style: string }> = {
-  draft: { label: "草稿", style: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
-  generating: { label: "生成中", style: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30 animate-pulse" },
-  ready: { label: "就绪", style: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-  completed: { label: "已完成", style: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  failed: { label: "异常", style: "bg-rose-500/10 text-rose-400 border-rose-500/20" },
-  error: { label: "异常", style: "bg-rose-500/10 text-rose-400 border-rose-500/20" },
+  draft: { label: "草稿", style: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20" },
+  generating: { label: "生成中", style: "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 animate-pulse" },
+  ready: { label: "就绪", style: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" },
+  completed: { label: "已完成", style: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20" },
+  failed: { label: "异常", style: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20" },
+  error: { label: "异常", style: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20" },
   archived: { label: "归档", style: "bg-secondary text-muted-foreground border-border" },
 }
 

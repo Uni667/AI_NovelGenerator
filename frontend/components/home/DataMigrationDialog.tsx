@@ -190,7 +190,7 @@ export function DataMigrationDialog({ open, onOpenChange }: DataMigrationDialogP
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   placeholder="请输入 MIGRATION_TOKEN（如未开启校验可为空）"
-                  className="bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9"
+                  className="bg-background/50 dark:bg-black/20 border-border/60 focus:border-primary/50 text-xs h-9"
                 />
               </div>
               

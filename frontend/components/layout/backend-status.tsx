@@ -31,11 +31,11 @@ export function BackendStatus() {
       variant="outline" 
       className={`gap-1.5 text-[10px] font-mono px-2 py-0.5 border cursor-default transition-colors duration-500 ${
         online 
-          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
-          : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" 
+          : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
       }`}
     >
-      {online ? <Wifi className="h-3 w-3 animate-pulse" /> : <WifiOff className="h-3 w-3 text-rose-400" />}
+      {online ? <Wifi className="h-3 w-3 animate-pulse" /> : <WifiOff className="h-3 w-3 text-rose-600 dark:text-rose-400" />}
       <span>{online ? "后端在线" : `后端离线${checkedAt ? ` (最后检测: ${checkedAt})` : ""}`}</span>
     </Badge>
   )

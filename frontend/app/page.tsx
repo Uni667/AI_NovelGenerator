@@ -114,7 +114,7 @@ function HomeContent() {
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-10">
       {/* 🚀 Hero Banner Section */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-950/40 via-purple-950/20 to-background border border-border/40 p-8 md:p-10 hover:shadow-[0_0_50px_oklch(0.68_0.19_285/0.08)] transition-all duration-500">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-500/10 via-purple-500/5 to-background dark:from-violet-950/30 dark:via-purple-950/10 border border-border/40 p-8 md:p-10 hover:shadow-[0_0_50px_oklch(0.68_0.19_285/0.08)] transition-all duration-500">
         <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
           <BookOpen className="w-48 h-48 text-primary" />
         </div>
@@ -122,7 +122,7 @@ function HomeContent() {
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20 animate-pulse">
             ✨ 智能小说写作工坊
           </div>
-          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-violet-400 via-indigo-400 to-cyan-400 bg-clip-text text-transparent">
+          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-600 dark:from-violet-400 dark:via-indigo-400 dark:to-cyan-400 bg-clip-text text-transparent">
             我的小说创作空间
           </h1>
           <p className="text-muted-foreground text-sm leading-relaxed max-w-xl">
