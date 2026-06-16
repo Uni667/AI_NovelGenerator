@@ -519,8 +519,20 @@ export function parseDiagnosisItems(diagnosisText: string): PlatformDiagnosisIte
   const lines = diagnosisText.split("\n");
   let currentType = "";
   let currentDesc = "";
+  
   for (const line of lines) {
-    const headerMatch = line.match(/^【(.+?)】/);
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    
+    // 匹配 【类别】 或 ### 类别 或 **类别**
+    let headerMatch = trimmed.match(/^【(.+?)】/);
+    if (!headerMatch) {
+      headerMatch = trimmed.match(/^###?\s*(.+)$/);
+    }
+    if (!headerMatch) {
+      headerMatch = trimmed.match(/^\*\*(.+?)\*\*/);
+    }
+    
     if (headerMatch) {
       if (currentType && currentDesc) {
         items.push({
@@ -529,15 +541,17 @@ export function parseDiagnosisItems(diagnosisText: string): PlatformDiagnosisIte
           description: currentDesc,
           suggestion: currentDesc,
           severity: currentType.includes("问题") || currentType.includes("压缩") ? "high" : currentType.includes("建议") || currentType.includes("强化") ? "medium" : "low",
-          autoFixable: !currentType.includes("总体评分") && !currentType.includes("平台适配"),
+          autoFixable: !currentType.includes("评分") && !currentType.includes("平台适配"),
         });
       }
-      currentType = headerMatch[1];
-      currentDesc = line.substring(headerMatch[0].length).trim();
-    } else if (line.trim() && currentType) {
-      currentDesc += (currentDesc ? " " : "") + line.trim();
+      // 清除序号前缀，例如 "1. 总体评分" -> "总体评分"
+      currentType = headerMatch[1].replace(/^\d+[\.\s、]+/, "").trim();
+      currentDesc = trimmed.substring(headerMatch[0].length).trim();
+    } else if (currentType) {
+      currentDesc += (currentDesc ? "\n" : "") + trimmed;
     }
   }
+  
   if (currentType && currentDesc) {
     items.push({
       id: `item-${items.length}`,
@@ -545,7 +559,7 @@ export function parseDiagnosisItems(diagnosisText: string): PlatformDiagnosisIte
       description: currentDesc,
       suggestion: currentDesc,
       severity: currentType.includes("问题") || currentType.includes("压缩") ? "high" : currentType.includes("建议") || currentType.includes("强化") ? "medium" : "low",
-      autoFixable: !currentType.includes("总体评分") && !currentType.includes("平台适配"),
+      autoFixable: !currentType.includes("评分") && !currentType.includes("平台适配"),
     });
   }
   return items;

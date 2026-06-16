@@ -153,7 +153,7 @@ CHAPTER_TITLE_PROMPT = """你是一位番茄免费小说平台的编辑。请根
 
 # ── Helper ──────────────────────────────────────────────────────────
 
-def _get_llm_and_config(user_id: str, project_id: str):
+def _get_llm_and_config(user_id: str, project_id: str, temperature: float | None = None):
     """Get LLM adapter and config through ModelRuntimeService."""
     from backend.app.services.model_runtime import _build_chat_adapter
     from backend.app.services.config_resolver import get_runtime_config, ConfigError
@@ -164,7 +164,7 @@ def _get_llm_and_config(user_id: str, project_id: str):
         logger.exception("Platform tool failed")
         raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
-    adapter = _build_chat_adapter(rt, None, None)
+    adapter = _build_chat_adapter(rt, temperature, None)
     return adapter, rt
 
 
@@ -449,7 +449,7 @@ DIAGNOSIS_SYSTEM_PROMPT = """你是一位网文平台主编 + 商业化编辑 + 
 def diagnose_chapter(project_id: str, chapter_number: int, request: Request):
     """诊断章节质量：从平台适配、爽点、钩子、节奏等多维度评分和建议。"""
     user_id = get_current_user(request)
-    llm, rt = _get_llm_and_config(user_id, project_id)
+    llm, rt = _get_llm_and_config(user_id, project_id, temperature=0.1)
     project = project_service.get_project(project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
@@ -694,3 +694,17 @@ async def diagnose_and_fix(project_id: str, body: DiagnoseFixRequest, request: R
             yield {"event": "error", "data": json.dumps({"message": str(e)})}
 
     return EventSourceResponse(event_generator())
+
+
+@router.get("/api/v1/debug-db-status")
+def debug_db_status():
+    from backend.app.database import get_db
+    with get_db() as conn:
+        assignments = [dict(r) for r in conn.execute("SELECT * FROM project_model_assignment").fetchall()]
+        profiles = [dict(r) for r in conn.execute("SELECT id, name, purpose, provider, model, temperature, max_tokens, health_status FROM model_profile").fetchall()]
+        credentials = [dict(r) for r in conn.execute("SELECT id, name, provider, base_url, status FROM api_credential").fetchall()]
+    return {
+        "assignments": assignments,
+        "profiles": profiles,
+        "credentials": credentials
+    }

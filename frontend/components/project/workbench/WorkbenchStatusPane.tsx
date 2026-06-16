@@ -70,6 +70,7 @@ export function WorkbenchStatusPane({ isDrawer = false }: { isDrawer?: boolean }
   const [diagnosisItems, setDiagnosisItems] = useState<PlatformDiagnosisItem[]>([])
   const [selectedFixIssues, setSelectedFixIssues] = useState<string[]>([])
   const [fixDialogOpen, setFixDialogOpen] = useState(false)
+  const [diagnosisViewMode, setDiagnosisViewMode] = useState<"structured" | "raw">("structured")
   const [subMode, setSubMode] = useState<"diagnose" | "rewrite" | "chat">("diagnose")
 
   const currentWordCount = chapterEditorContent?.length || activeChapterMeta?.word_count || 0
@@ -113,7 +114,7 @@ export function WorkbenchStatusPane({ isDrawer = false }: { isDrawer?: boolean }
     ]
 
     return (
-      <div className="w-14 bg-[#0b0f1a]/80 border border-white/5 rounded-2xl h-full flex flex-col items-center py-4 gap-6 hover:shadow-[0_0_30px_rgba(139,92,246,0.05)] transition-all duration-500">
+      <div className="w-14 bg-sidebar/80 border border-sidebar-border rounded-2xl h-full flex flex-col items-center py-4 gap-6 hover:shadow-[0_0_30px_rgba(139,92,246,0.05)] transition-all duration-500">
         {/* Toggle drawer button */}
         <button
           type="button"
@@ -125,7 +126,7 @@ export function WorkbenchStatusPane({ isDrawer = false }: { isDrawer?: boolean }
         </button>
 
         {/* Divider */}
-        <div className="w-8 h-[1px] bg-white/5 my-1" />
+        <div className="w-8 h-[1px] bg-sidebar-border my-1" />
 
         {/* Tool buttons list */}
         <div className="flex-1 flex flex-col items-center gap-3">
@@ -149,7 +150,7 @@ export function WorkbenchStatusPane({ isDrawer = false }: { isDrawer?: boolean }
                   }
                   setAssistantDrawerOpen(true)
                 }}
-                className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all cursor-pointer relative"
+                className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all cursor-pointer relative"
                 title={t.label}
               >
                 <Icon className="h-5 w-5" />
@@ -168,7 +169,7 @@ export function WorkbenchStatusPane({ isDrawer = false }: { isDrawer?: boolean }
               localStorage.setItem("ai-novel-workbench-layout-mode-user-select", "standard")
             }
           }}
-          className="p-2.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all mt-auto cursor-pointer"
+          className="p-2.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all mt-auto cursor-pointer"
           title="展开右侧面板"
         >
           <ChevronsLeft className="h-5 w-5" />
@@ -176,6 +177,12 @@ export function WorkbenchStatusPane({ isDrawer = false }: { isDrawer?: boolean }
       </div>
     )
   }
+
+  // Extract diagnosis sub-items for beautiful rendering
+  const scoreItem = diagnosisItems.find(i => i.type.includes("评分") || i.type.includes("分数"))
+  const platformItem = diagnosisItems.find(i => i.type.includes("平台") || i.type.includes("适配"))
+  const autoFixableIssues = diagnosisItems.filter(i => i.autoFixable)
+  const otherIssues = diagnosisItems.filter(i => !i.autoFixable && !i.type.includes("评分") && !i.type.includes("分数") && !i.type.includes("平台") && !i.type.includes("适配"))
 
   return (
     <div className={`space-y-4 h-full overflow-y-auto ${isDrawer ? 'px-2' : 'pr-1'} pb-4 flex flex-col min-w-0 workbench-scrollbar`}>
@@ -739,73 +746,151 @@ export function WorkbenchStatusPane({ isDrawer = false }: { isDrawer?: boolean }
       {/* 质检报告卡片 - 有诊断结果时显示 */}
       {diagnosisResult && (
         <Card className="glass-panel border-amber-500/20 bg-amber-500/5 hover:shadow-[0_0_20px_rgba(245,158,11,0.05)] transition-all duration-300 shrink-0">
-          <CardHeader className="pb-1.5 pt-3 px-4 flex flex-row items-center justify-between">
+          <CardHeader className="pb-2 pt-3 px-4 flex flex-row items-center justify-between border-b border-border/10">
             <CardTitle className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
               <Gauge className="h-3.5 w-3.5" />
               本章质检诊断报告
             </CardTitle>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedFixIssues(diagnosisItems.filter(i => i.autoFixable).map(i => i.type))
-                setFixDialogOpen(true)
-              }}
-              className="text-[10px] text-amber-500 hover:text-amber-400 font-medium transition-colors"
-            >
-              一键优化本章
-            </button>
-          </CardHeader>
-          <CardContent className="px-4 pb-3 pt-1 space-y-2.5">
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-              {diagnosisItems.filter(i => i.autoFixable).map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-start gap-1.5 rounded-lg border border-border/30 bg-card/10 p-2 text-[10px]"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedFixIssues.includes(item.type)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedFixIssues(prev => [...prev, item.type])
-                      } else {
-                        setSelectedFixIssues(prev => prev.filter(t => t !== item.type))
-                      }
-                    }}
-                    className="mt-0.5 h-3 w-3 shrink-0 accent-amber-500"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-foreground truncate">{item.type}</p>
-                    <p className="text-muted-foreground leading-tight mt-0.5 line-clamp-2">{item.description}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedFixIssues([item.type])
-                      setFixDialogOpen(true)
-                    }}
-                    className="shrink-0 px-2 py-0.5 rounded text-[9px] text-amber-400 hover:bg-amber-500/10 transition-colors"
-                  >
-                    优化
-                  </button>
-                </div>
-              ))}
+            
+            {/* 切换面板 */}
+            <div className="flex bg-muted/40 p-0.5 rounded-lg border border-border/10 shrink-0">
+              <button
+                type="button"
+                onClick={() => setDiagnosisViewMode("structured")}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-all cursor-pointer ${diagnosisViewMode === "structured" ? "bg-amber-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                报告解读
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiagnosisViewMode("raw")}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-all cursor-pointer ${diagnosisViewMode === "raw" ? "bg-amber-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                完整原文
+              </button>
             </div>
-
-            {diagnosisItems.filter(i => !i.autoFixable).length > 0 && (
-              <details className="text-[10px] text-muted-foreground bg-muted/10 border border-border/20 rounded-lg p-2">
-                <summary className="cursor-pointer hover:text-foreground font-medium select-none text-[10px]">
-                  查看其他不可自动优化信息 ({diagnosisItems.filter(i => !i.autoFixable).length} 项)
-                </summary>
-                <div className="mt-1.5 space-y-1 border-t border-border/10 pt-1.5">
-                  {diagnosisItems.filter(i => !i.autoFixable).map((item) => (
-                    <p key={item.id} className="leading-relaxed text-[9px]">
-                      <span className="font-semibold text-foreground">{item.type}：</span>
-                      {item.description}
-                    </p>
-                  ))}
+          </CardHeader>
+          <CardContent className="px-4 pb-3.5 pt-3 space-y-3">
+            {diagnosisViewMode === "raw" ? (
+              <div className="space-y-2">
+                <div className="rounded-xl border border-border/30 bg-card/25 p-3.5 max-h-72 overflow-y-auto pr-1 workbench-scrollbar">
+                  <pre className="text-xs font-sans leading-relaxed whitespace-pre-wrap text-muted-foreground break-all">{diagnosisResult}</pre>
                 </div>
-              </details>
+              </div>
+            ) : (
+              <div className="space-y-3.5">
+                {/* 评分与平台适配 (若解析到) */}
+                {(scoreItem || platformItem) && (
+                  <div className="flex items-center gap-3.5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 shrink-0">
+                    {/* 评分圆环/徽章 */}
+                    <div className="flex flex-col items-center justify-center h-12 w-12 rounded-full border-2 border-amber-500/30 bg-amber-500/10 text-amber-500 shrink-0 shadow-sm animate-glow-pulse">
+                      <span className="text-[8px] font-medium leading-none text-muted-foreground">评分</span>
+                      <span className="text-base font-bold leading-none mt-1">
+                        {scoreItem ? (scoreItem.description.match(/\d+/) ? scoreItem.description.match(/\d+/)?.[0] : "评") : "评"}
+                      </span>
+                    </div>
+                    {/* 平台适配说明 */}
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-xs font-bold text-foreground">
+                        {platformItem ? "平台适配评价" : "诊断评估结论"}
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed mt-0.5 line-clamp-2" title={platformItem?.description || scoreItem?.description}>
+                        {platformItem ? platformItem.description : scoreItem?.description}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 问题优化清单 */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs font-bold text-foreground">针对性优化项目 ({autoFixableIssues.length})</span>
+                    {autoFixableIssues.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedFixIssues(autoFixableIssues.map(i => i.type))
+                          setFixDialogOpen(true)
+                        }}
+                        className="text-[10px] text-amber-500 hover:text-amber-400 font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        一键优化已选
+                      </button>
+                    )}
+                  </div>
+
+                  {autoFixableIssues.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-5 px-3 text-center rounded-xl border border-dashed border-border/30 bg-muted/5">
+                      <span className="text-xs text-muted-foreground">未解析到可自动优化的单项报告</span>
+                      <button
+                        type="button"
+                        onClick={() => setDiagnosisViewMode("raw")}
+                        className="text-[10px] text-amber-500 hover:underline mt-1.5 font-medium cursor-pointer"
+                      >
+                        点击右上角“完整原文”查看详细诊断文本
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1 workbench-scrollbar">
+                      {autoFixableIssues.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-start gap-2.5 rounded-xl border border-border/20 bg-muted/10 hover:bg-muted/15 p-3 text-xs transition-all relative group"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedFixIssues.includes(item.type)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedFixIssues(prev => [...prev, item.type])
+                              } else {
+                                setSelectedFixIssues(prev => prev.filter(t => t !== item.type))
+                              }
+                            }}
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-border text-amber-500 focus:ring-amber-500 accent-amber-500 cursor-pointer"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-foreground">{item.type}</span>
+                              <Badge className={`text-[8px] px-1 py-0 border ${item.severity === "high" ? "bg-red-500/10 text-red-400 border-red-500/20" : item.severity === "medium" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>
+                                {item.severity === "high" ? "高优" : item.severity === "medium" ? "中优" : "建议"}
+                              </Badge>
+                            </div>
+                            <p className="text-muted-foreground leading-normal mt-1">{item.description}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedFixIssues([item.type])
+                              setFixDialogOpen(true)
+                            }}
+                            className="shrink-0 px-2 py-1 rounded-lg text-[10px] text-amber-400 bg-amber-500/5 hover:bg-amber-500/10 hover:text-amber-300 transition-colors font-medium cursor-pointer self-center"
+                          >
+                            优化
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 其它分析指标 */}
+                {otherIssues.length > 0 && (
+                  <details className="text-xs text-muted-foreground bg-muted/15 border border-border/20 rounded-xl p-3">
+                    <summary className="cursor-pointer hover:text-foreground font-semibold select-none text-xs flex items-center justify-between">
+                      <span>查看其他诊断指标 ({otherIssues.length} 项)</span>
+                    </summary>
+                    <div className="mt-2.5 space-y-2 border-t border-border/10 pt-2.5">
+                      {otherIssues.map((item) => (
+                        <p key={item.id} className="leading-relaxed text-[11px]">
+                          <span className="font-semibold text-foreground">{item.type}：</span>
+                          {item.description}
+                        </p>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>

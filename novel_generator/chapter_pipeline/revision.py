@@ -189,7 +189,7 @@ def stream_chapter_ask_ai(
     """
     流式解答用户关于本章节的询问分析
     """
-    llm = create_specialized_chat_adapter(ctx, "quality_rewrite")
+    llm = create_specialized_chat_adapter(ctx, "quality_rewrite", temperature=0.2)
 
     def _check_cancel():
         if task_id:

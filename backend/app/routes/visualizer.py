@@ -225,20 +225,32 @@ def analyze_chapters(project_id: str, request: Request, chapter_number: int | No
     project = _check_project(project_id, request)
     user_id = get_current_user(request)
     
+    from backend.app.services.chapter_service import get_chapter_content
+    
     # 1. Fetch chapters to parse
     with get_db() as conn:
         if chapter_number is not None:
             rows = conn.execute(
-                "SELECT chapter_number, chapter_title, content FROM chapter WHERE project_id = ? AND chapter_number = ?",
+                "SELECT chapter_number, chapter_title FROM chapter WHERE project_id = ? AND chapter_number = ?",
                 (project_id, chapter_number)
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT chapter_number, chapter_title, content FROM chapter WHERE project_id = ? AND content IS NOT NULL AND content != '' ORDER BY chapter_number",
+                "SELECT chapter_number, chapter_title FROM chapter WHERE project_id = ? ORDER BY chapter_number",
                 (project_id,)
             ).fetchall()
             
-    chapters_to_parse = [dict(r) for r in rows if r["content"] and r["content"].strip()]
+    chapters_to_parse = []
+    for r in rows:
+        ch_num = r["chapter_number"]
+        content = get_chapter_content(project_id, ch_num, project["filepath"])
+        if content and content.strip():
+            chapters_to_parse.append({
+                "chapter_number": ch_num,
+                "chapter_title": r["chapter_title"],
+                "content": content
+            })
+
     if not chapters_to_parse:
         _raise_structured_error("EMPTY_CHAPTER", "未找到有文字内容的章节，请先在章节工作台中编写或生成章节。", "validate", False)
         
