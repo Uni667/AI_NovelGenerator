@@ -18,3 +18,4 @@ argon2-cffi>=23.1.0
 slowapi>=0.1.9
 networkx>=3.0.0
 sse-starlette>=2.0.0
+snownlp>=0.12.3

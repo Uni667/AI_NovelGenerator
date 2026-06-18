@@ -14,6 +14,7 @@ COPY utils.py .
 COPY chapter_directory_parser.py .
 COPY consistency_checker.py .
 COPY llm_errors.py .
+COPY emotion_analyzer.py .
 COPY novel_generator/ novel_generator/
 
 # Copy seed data (local users, projects, chapters) — baked into the image
