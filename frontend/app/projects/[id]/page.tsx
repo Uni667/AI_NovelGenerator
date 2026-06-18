@@ -37,6 +37,7 @@ function ProjectDashboardContent() {
   const router = useRouter()
 
   const moreTabs = [
+    { value: "state", label: "项目状态" },
     { value: "characters", label: "人物规划" },
     { value: "plotarcs", label: "伏笔暗线" },
     { value: "pipeline", label: "素材加工站" },

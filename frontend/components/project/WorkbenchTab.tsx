@@ -18,7 +18,7 @@ export function WorkbenchTab() {
     leftDrawerOpen, setLeftDrawerOpen,
     assistantDrawerOpen, setAssistantDrawerOpen
   } = useProjectContext().workbench
-  const { projectId } = useProjectContext()
+  const { projectId, setActiveTab } = useProjectContext()
 
   const [healthData, setHealthData] = React.useState<any>(null)
 
@@ -91,7 +91,14 @@ export function WorkbenchTab() {
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>高风险状态</AlertTitle>
               <AlertDescription className="flex items-center justify-between">
-                <span>{healthData.summary} (请进入状态页审查补丁或冲突)</span>
+                <span>{healthData.summary}</span>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("state")}
+                  className="underline font-semibold hover:text-destructive-foreground/80 transition-colors ml-2"
+                >
+                  进入状态页审查补丁或冲突 &rarr;
+                </button>
               </AlertDescription>
             </Alert>
           ) : (
