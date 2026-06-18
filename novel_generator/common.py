@@ -79,10 +79,11 @@ def invoke_with_cleaning(
         try:
             _raise_if_cancelled(cancel_check, cancel_token)
             
-            # Check if streaming is requested and supported by underlying client
-            if stream_callback and hasattr(llm_adapter, "_client") and hasattr(llm_adapter._client, "stream"):
+            # Check if streaming is requested and supported
+            if stream_callback and (hasattr(llm_adapter, "stream") or (hasattr(llm_adapter, "_client") and hasattr(llm_adapter._client, "stream"))):
                 full_text = ""
-                for chunk in llm_adapter._client.stream(prompt):
+                stream_iter = llm_adapter.stream(prompt) if hasattr(llm_adapter, "stream") else llm_adapter._client.stream(prompt)
+                for chunk in stream_iter:
                     _raise_if_cancelled(cancel_check, cancel_token)
                     chunk_text = ""
                     if hasattr(chunk, "content"):

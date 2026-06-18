@@ -15,6 +15,7 @@ class ChapterResponse(BaseModel):
     chapter_summary: str
     word_count: int
     status: str
+    target_emotion: str = ""
     created_at: str
     updated_at: str
 
@@ -34,6 +35,7 @@ class ChapterUpdate(BaseModel):
     foreshadowing: Optional[str] = None
     plot_twist_level: Optional[str] = None
     chapter_summary: Optional[str] = None
+    target_emotion: Optional[str] = None
     status: Optional[str] = None
 
 

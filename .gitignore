@@ -46,6 +46,8 @@ Thumbs.db
 *.log
 # Data
 data/
+data_backup_*/
+data_backup_deploy_*/
 .jwt_secret
 
 # Claude Code

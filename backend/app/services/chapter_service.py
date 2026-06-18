@@ -266,7 +266,11 @@ def update_chapter_meta(project_id: str, chapter_number: int, data) -> dict | No
     fields = []
     params = []
     
-    meta_fields = ["chapter_title", "chapter_role", "chapter_purpose", "suspense_level", "foreshadowing", "plot_twist_level", "chapter_summary"]
+    meta_fields = [
+        "chapter_title", "chapter_role", "chapter_purpose", 
+        "suspense_level", "foreshadowing", "plot_twist_level", 
+        "chapter_summary", "target_emotion"
+    ]
     for field in meta_fields:
         val = getattr(data, field)
         if val is not None:

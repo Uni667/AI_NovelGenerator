@@ -26,10 +26,13 @@ RUN mkdir -p /app/data
 # Platform (Railway / Render) provides PORT env var
 EXPOSE 8001
 
-# Startup script: seed data on first deploy, then start uvicorn
+# Startup script: seed data → auto-backup → start uvicorn
 RUN echo '#!/bin/bash' > /app/start.sh && \
     echo 'set -e' >> /app/start.sh && \
-    echo '# On first deploy, seed the persistent disk with baked-in data' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# ============================================================' >> /app/start.sh && \
+    echo '# Phase 1: Seed data on first deploy' >> /app/start.sh && \
+    echo '# ============================================================' >> /app/start.sh && \
     echo 'if [ ! -f /app/data/projects.db ]; then' >> /app/start.sh && \
     echo '  echo "[entrypoint] First deploy detected — seeding initial data..."' >> /app/start.sh && \
     echo '  cp /app/docker_seed/projects.db /app/data/projects.db' >> /app/start.sh && \
@@ -40,6 +43,25 @@ RUN echo '#!/bin/bash' > /app/start.sh && \
     echo 'else' >> /app/start.sh && \
     echo '  echo "[entrypoint] Existing data found — using persistent disk."' >> /app/start.sh && \
     echo 'fi' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# ============================================================' >> /app/start.sh && \
+    echo '# Phase 2: Auto-backup existing data before deployment' >> /app/start.sh && \
+    echo '# ============================================================' >> /app/start.sh && \
+    echo 'if [ -f /app/data/projects.db ]; then' >> /app/start.sh && \
+    echo '  BACKUP_DIR="/app/data/backups"' >> /app/start.sh && \
+    echo '  TIMESTAMP=$(date +"%Y%m%d_%H%M%S")' >> /app/start.sh && \
+    echo '  mkdir -p "$BACKUP_DIR"' >> /app/start.sh && \
+    echo '  echo "[entrypoint] Creating pre-deploy backup..."' >> /app/start.sh && \
+    echo '  tar -czf "$BACKUP_DIR/deploy_${TIMESTAMP}.tar.gz" \' >> /app/start.sh && \
+    echo '    -C /app/data projects.db projects 2>/dev/null || true' >> /app/start.sh && \
+    echo '  # Keep only last 10 auto-backups, remove older ones' >> /app/start.sh && \
+    echo '  ls -t "$BACKUP_DIR"/deploy_*.tar.gz 2>/dev/null | tail -n +11 | xargs -r rm -f' >> /app/start.sh && \
+    echo '  echo "[entrypoint] Auto-backup saved: deploy_${TIMESTAMP}.tar.gz"' >> /app/start.sh && \
+    echo 'fi' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# ============================================================' >> /app/start.sh && \
+    echo '# Phase 3: Start the application' >> /app/start.sh && \
+    echo '# ============================================================' >> /app/start.sh && \
     echo 'exec uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8001} --timeout-keep-alive 300' >> /app/start.sh && \
     chmod +x /app/start.sh
 

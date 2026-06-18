@@ -42,7 +42,11 @@ def update_chapter(project_id: str, chapter_number: int, data: ChapterUpdate, re
     project, _user_id = _check_project(project_id, request)
     
     meta_updated = False
-    meta_fields = ["chapter_title", "chapter_role", "chapter_purpose", "suspense_level", "foreshadowing", "plot_twist_level", "chapter_summary"]
+    meta_fields = [
+        "chapter_title", "chapter_role", "chapter_purpose", 
+        "suspense_level", "foreshadowing", "plot_twist_level", 
+        "chapter_summary", "target_emotion"
+    ]
     if any(getattr(data, f) is not None for f in meta_fields):
         chapter_service.update_chapter_meta(project_id, chapter_number, data)
         meta_updated = True

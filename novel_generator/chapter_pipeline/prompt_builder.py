@@ -100,6 +100,29 @@ def build_chapter_prompt(
 
     filepath = ctx.filepath
     novel_number = params.chapter_number
+
+    # 从数据库获取用户设定的情感控制目标
+    target_emotion = ""
+    try:
+        from backend.app.database import get_db
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT target_emotion FROM chapter WHERE project_id=? AND chapter_number=?",
+                (ctx.project_id, novel_number)
+            ).fetchone()
+            if row and row["target_emotion"]:
+                target_emotion = row["target_emotion"]
+    except Exception as e:
+        logger.warning(f"获取章节情感控制目标失败: {e}")
+
+    # 融入情感控制目标到额外指导中
+    if target_emotion:
+        emotion_guide = f"【本章情感基调要求】：请将本章的情感走向与色调设定为“{target_emotion}”。请在场景描写、动作细节、对话语气及环境烘托中深度融入该种情绪氛围，避免产生与目标情感相冲突的偏离。"
+        if getattr(params, "user_guidance", ""):
+            params.user_guidance = params.user_guidance + "\n" + emotion_guide
+        else:
+            params.user_guidance = emotion_guide
+
     platform_label, platform_rules = get_platform_chapter_guidance(getattr(params, "platform", "tomato"))
     platform_guidance = prompt_definitions.get_prompt_template(ctx.project_id, 'platform_chapter_guidance_prompt').format(
         platform_label=platform_label,

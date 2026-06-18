@@ -29,6 +29,7 @@ import { AnalyticsTab } from "@/components/project/AnalyticsTab"
 import { PlotArcsTab } from "@/components/project/PlotArcsTab"
 import { GraphTab } from "@/components/project/GraphTab"
 import { VisualizerTab } from "@/components/project/VisualizerTab"
+import { EmotionTab } from "@/components/project/EmotionTab"
 
 function ProjectDashboardContent() {
   const { project, config, activeTab, setActiveTab } = useProjectContext()
@@ -41,6 +42,7 @@ function ProjectDashboardContent() {
     { value: "pipeline", label: "素材加工站" },
     { value: "reader", label: "读者反馈" },
     { value: "platform", label: (PLATFORM_CONFIG[config?.platform]?.icon || "📖") + " " + (PLATFORM_CONFIG[config?.platform]?.label || "平台") + "工具" },
+    { value: "emotion", label: "🎭 情感分析" },
     { value: "prompts", label: "提示词实验", className: "font-semibold text-purple-400" },
     { value: "analytics", label: "API 使用情况" },
     { value: "settings", label: "参数设置" },
@@ -155,6 +157,10 @@ function ProjectDashboardContent() {
 
         <TabsContent value="analytics" className="mt-0 outline-none">
           <AnalyticsTab />
+        </TabsContent>
+
+        <TabsContent value="emotion" className="mt-0 outline-none">
+          <EmotionTab />
         </TabsContent>
       </Tabs>
     </div>

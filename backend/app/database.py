@@ -137,6 +137,7 @@ def init_db():
                 word_count INTEGER DEFAULT 0,
                 status TEXT DEFAULT 'pending',
                 draft_file TEXT DEFAULT '',
+                target_emotion TEXT DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 UNIQUE(project_id, chapter_number)
@@ -595,6 +596,15 @@ def init_db():
                 logger.info("generation_task migration complete.")
         except Exception as e:
             logger.warning("generation_task cancelling status migration failed: %s", e, exc_info=True)
+
+        # ── 迁移：chapter 表新增 target_emotion 列 ──
+        try:
+            conn.execute("ALTER TABLE chapter ADD COLUMN target_emotion TEXT DEFAULT ''")
+            logger.info("Migrated chapter table to add 'target_emotion' column.")
+        except sqlite3.OperationalError:
+            pass
+        except Exception as e:
+            logger.warning("chapter target_emotion migration skipped: %s", e)
 
         # ── 引导与执行版本化数据库迁移 ──
         try:

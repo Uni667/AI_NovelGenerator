@@ -137,6 +137,7 @@ export interface Chapter {
   chapter_summary: string
   word_count: number
   status: 'pending' | 'draft' | 'final'
+  target_emotion?: string
   created_at: string
   updated_at: string
 }
@@ -732,4 +733,43 @@ export interface VisualizerData {
   scenes: VisualizerScene[];
   events: VisualizerEvent[];
   imageGenerationEnabled?: boolean;
+}
+
+// ── 情感分析类型 ──────────────────────────────────────────────
+
+export interface EmotionAnalysis {
+  score: number;           // 0~1, 0=极负面, 1=极正面
+  label: string;           // 积极/消极/中性/紧张/悲伤/喜悦/愤怒
+  method: string;          // snownlp | keyword | llm | all
+  tension?: number;        // 张力强度 0~1 (LLM方法)
+  reasoning?: string;      // LLM分析依据
+  key_emotions?: string[]; // 核心情绪词
+  pos_count?: number;      // keyword方法：正向词计数
+  neg_count?: number;      // keyword方法：负向词计数
+  matched_positive?: string[];
+  matched_negative?: string[];
+  sentence_count?: number;
+  sentence_scores?: number[];
+  error?: string;
+  // method=all 时包含各方法结果
+  snownlp?: EmotionAnalysis;
+  keyword?: EmotionAnalysis;
+  llm?: EmotionAnalysis;
+  combined_score?: number;
+  combined_label?: string;
+}
+
+export interface EmotionArcPoint {
+  chapter_number: number;
+  title: string;
+  score: number;
+  label: string;
+  detail?: EmotionAnalysis;
+}
+
+export interface EmotionArcSummary {
+  avg_score: number;
+  max_score_chapter: number;
+  min_score_chapter: number;
+  chapter_count: number;
 }

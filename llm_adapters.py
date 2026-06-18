@@ -302,6 +302,35 @@ class OpenAIDirectAdapter(BaseLLMAdapter):
                 self._log_failure(info, exc, "OpenAI-direct")
             return ""
 
+    def stream(self, prompt: str):
+        self._reset_error_state()
+        try:
+            messages = []
+            if self.system_prompt:
+                messages.append({"role": "system", "content": self.system_prompt})
+            messages.append({"role": "user", "content": prompt})
+            extra = {}
+            if "deepseek" in (self.model_name or "").lower():
+                extra["extra_body"] = {"thinking": {"type": "disabled"}}
+            response_stream = self._client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                timeout=self.timeout,
+                stream=True,
+                **extra,
+            )
+            for chunk in response_stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as exc:
+            info = self._record_exception(exc)
+            if self._cancel_token and self._cancel_token.is_set():
+                logger.info("LLM stream 调用因用户取消而中断")
+            else:
+                self._log_failure(info, exc, "OpenAI-direct-stream")
+
 
 class GeminiAdapter(BaseLLMAdapter):
     """Adapter for Google Gemini."""
@@ -355,6 +384,28 @@ class GeminiAdapter(BaseLLMAdapter):
             else:
                 self._log_failure(info, exc, "Gemini")
             return ""
+
+    def stream(self, prompt: str):
+        self._reset_error_state()
+        try:
+            config = _types.GenerateContentConfig(
+                max_output_tokens=self.max_tokens,
+                temperature=self.temperature,
+            )
+            response_stream = self._client.models.generate_content_stream(
+                model=self.model_name,
+                contents=prompt,
+                config=config,
+            )
+            for chunk in response_stream:
+                if chunk.text:
+                    yield chunk.text
+        except Exception as exc:
+            info = self._record_exception(exc)
+            if self._cancel_token and self._cancel_token.is_set():
+                logger.info("Gemini stream 调用因用户取消而中断")
+            else:
+                self._log_failure(info, exc, "Gemini-stream")
 
 
 class AzureOpenAIAdapter(BaseLLMAdapter):
@@ -473,6 +524,26 @@ class AzureAIAdapter(BaseLLMAdapter):
                 self._log_failure(info, exc, "Azure AI")
             return ""
 
+    def stream(self, prompt: str):
+        self._reset_error_state()
+        try:
+            response_stream = self._client.complete(
+                messages=[
+                    _SystemMessage("You are a helpful assistant."),
+                    _UserMessage(prompt),
+                ],
+                stream=True
+            )
+            for chunk in response_stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as exc:
+            info = self._record_exception(exc)
+            if self._cancel_token and self._cancel_token.is_set():
+                logger.info("Azure AI stream 调用因用户取消而中断")
+            else:
+                self._log_failure(info, exc, "Azure AI-stream")
+
 
 class AnthropicAdapter(BaseLLMAdapter):
     """Adapter for Anthropic Claude Messages API."""
@@ -531,6 +602,46 @@ class AnthropicAdapter(BaseLLMAdapter):
             info = self._record_exception(exc)
             self._log_failure(info, exc, "Anthropic")
             return ""
+
+    def stream(self, prompt: str):
+        self._reset_error_state()
+        try:
+            import requests
+            import json
+
+            response = requests.post(
+                f"{self.base_url}/messages",
+                headers={
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": self.model_name,
+                    "max_tokens": self.max_tokens,
+                    "temperature": self.temperature,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": True,
+                },
+                timeout=self.timeout,
+                stream=True,
+            )
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode("utf-8")
+                    if line_str.startswith("data:"):
+                        try:
+                            data = json.loads(line_str[5:])
+                            if data.get("type") == "content_block_delta":
+                                delta = data.get("delta") or {}
+                                if delta.get("type") == "text_delta" and delta.get("text"):
+                                    yield delta["text"]
+                        except Exception:
+                            pass
+        except Exception as exc:
+            info = self._record_exception(exc)
+            self._log_failure(info, exc, "Anthropic-stream")
 
 
 def create_llm_adapter(

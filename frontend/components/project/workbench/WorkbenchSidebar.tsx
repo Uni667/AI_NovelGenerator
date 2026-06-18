@@ -79,6 +79,7 @@ export function WorkbenchSidebar({ isDrawer = false }: { isDrawer?: boolean }) {
   const [editSuspense, setEditSuspense] = useState("")
   const [editForeshadowing, setEditForeshadowing] = useState("")
   const [editSummary, setEditSummary] = useState("")
+  const [editTargetEmotion, setEditTargetEmotion] = useState("")
   const [editSaving, setEditSaving] = useState(false)
 
   useEffect(() => {
@@ -90,6 +91,7 @@ export function WorkbenchSidebar({ isDrawer = false }: { isDrawer?: boolean }) {
       setEditSuspense(editChapter.suspense_level || "")
       setEditForeshadowing(editChapter.foreshadowing || "")
       setEditSummary(editChapter.chapter_summary || "")
+      setEditTargetEmotion(editChapter.target_emotion || "")
     } else {
       setEditTitle("")
       setEditRole("")
@@ -98,6 +100,7 @@ export function WorkbenchSidebar({ isDrawer = false }: { isDrawer?: boolean }) {
       setEditSuspense("")
       setEditForeshadowing("")
       setEditSummary("")
+      setEditTargetEmotion("")
     }
   }, [editChapter])
 
@@ -113,6 +116,7 @@ export function WorkbenchSidebar({ isDrawer = false }: { isDrawer?: boolean }) {
         suspense_level: editSuspense,
         foreshadowing: editForeshadowing,
         chapter_summary: editSummary,
+        target_emotion: editTargetEmotion,
       })
       toast.success("修改成功")
       setEditChapter(null)
@@ -223,7 +227,7 @@ export function WorkbenchSidebar({ isDrawer = false }: { isDrawer?: boolean }) {
   // Collapsed 48px rail view for wide/collapsed mode
   if (!isDrawer && (layoutMode === "wide" || leftPanelCollapsed)) {
     return (
-      <div className="w-12 bg-[#0b0f1a]/80 border border-white/5 rounded-2xl h-full flex flex-col items-center py-4 gap-6 hover:shadow-[0_0_30px_rgba(139,92,246,0.05)] transition-all duration-500">
+      <div className="w-12 bg-sidebar/80 border border-sidebar-border rounded-2xl h-full flex flex-col items-center py-4 gap-6 hover:shadow-[0_0_30px_rgba(139,92,246,0.05)] transition-all duration-500">
         {/* Toggle drawer */}
         <button
           type="button"
@@ -255,7 +259,7 @@ export function WorkbenchSidebar({ isDrawer = false }: { isDrawer?: boolean }) {
         </button>
 
         {/* Divider */}
-        <div className="w-6 h-[1px] bg-white/5 my-1" />
+        <div className="w-6 h-[1px] bg-sidebar-border my-1" />
 
         {/* Chapter mini selection dots */}
         <div className="flex-1 flex flex-col items-center gap-2 overflow-y-auto w-full px-1 scrollbar-none">
@@ -272,7 +276,7 @@ export function WorkbenchSidebar({ isDrawer = false }: { isDrawer?: boolean }) {
                 className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-mono shrink-0 transition-all cursor-pointer relative ${
                   isActive
                     ? "bg-primary text-primary-foreground font-bold scale-110 shadow-md shadow-primary/20"
-                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
                 title={`第 ${ch.chapter_number} 章: ${ch.chapter_title || "未命名"}`}
               >
@@ -299,7 +303,7 @@ export function WorkbenchSidebar({ isDrawer = false }: { isDrawer?: boolean }) {
               localStorage.setItem("ai-novel-workbench-layout-mode-user-select", "standard")
             }
           }}
-          className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all mt-auto cursor-pointer"
+          className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all mt-auto cursor-pointer"
           title="展开左侧面板"
         >
           <ChevronsRight className="h-5 w-5" />
@@ -686,6 +690,16 @@ export function WorkbenchSidebar({ isDrawer = false }: { isDrawer?: boolean }) {
                 value={editForeshadowing}
                 onChange={(e) => setEditForeshadowing(e.target.value)}
                 placeholder="输入埋下的伏笔或呼应的伏笔"
+                className="bg-background/40 focus:bg-background/85 border-border/60 h-8 text-xs rounded-lg"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground font-semibold">情感基调目标</Label>
+              <Input
+                type="text"
+                value={editTargetEmotion}
+                onChange={(e) => setEditTargetEmotion(e.target.value)}
+                placeholder="例如：积极/喜悦、消极/悲伤、紧张/悬疑（不填则系统默认）"
                 className="bg-background/40 focus:bg-background/85 border-border/60 h-8 text-xs rounded-lg"
               />
             </div>

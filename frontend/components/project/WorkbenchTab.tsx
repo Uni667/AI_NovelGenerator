@@ -132,7 +132,7 @@ export function WorkbenchTab() {
 
       {/* Drawer for Left Directory Overlay in Wide/Focus mode */}
       <Sheet open={leftDrawerOpen} onOpenChange={setLeftDrawerOpen}>
-        <SheetContent side="left" className="w-[320px] p-0 border-r border-border bg-[#05070d] flex flex-col">
+        <SheetContent side="left" className="w-[320px] p-0 border-r border-border bg-background flex flex-col">
           <div className="flex-1 min-h-0 p-4">
             <WorkbenchSidebar isDrawer />
           </div>
@@ -141,7 +141,7 @@ export function WorkbenchTab() {
 
       {/* Drawer for Right Assistant Overlay in Wide/Focus mode */}
       <Sheet open={assistantDrawerOpen} onOpenChange={setAssistantDrawerOpen}>
-        <SheetContent side="right" className="w-[360px] p-0 border-l border-border bg-[#05070d] flex flex-col">
+        <SheetContent side="right" className="w-[360px] p-0 border-l border-border bg-background flex flex-col">
           <div className="flex-1 min-h-0 p-4">
             <WorkbenchStatusPane isDrawer />
           </div>

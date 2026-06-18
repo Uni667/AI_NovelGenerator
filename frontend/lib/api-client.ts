@@ -6,7 +6,8 @@ import type {
   ApiCredential, ModelProfile, ModelAssignment, KnowledgeFile,
   PlatformHookResult, PlatformTitlesResult, PlatformBlurbResult, PlatformTagsResult, PlatformDiagnosisResult,
   MaterialEntity, DiagnosisReport, PromptMeta, PromptEntry, ProjectAnalytics,
-  VisualizerCharacter, VisualizerScene, VisualizerEvent, VisualizerData, VisualizerRelationship
+  VisualizerCharacter, VisualizerScene, VisualizerEvent, VisualizerData, VisualizerRelationship,
+  EmotionAnalysis, EmotionArcPoint, EmotionArcSummary
 } from "./types"
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
@@ -551,6 +552,22 @@ export const api = {
       request<{ avatarUrl: string }>(
         `/api/v1/projects/${projectId}/visualizer/characters/${charId}/generate-avatar`,
         { method: "POST" }
+      ),
+  },
+  emotion: {
+    analyzeChapter: (projectId: string, chapterNumber: number, method: string = "snownlp") =>
+      request<{ project_id: string; chapter_number: number; char_count: number; analysis: EmotionAnalysis }>(
+        `/api/v1/projects/${projectId}/chapters/${chapterNumber}/emotion`,
+        { method: "POST", body: JSON.stringify({ method }) }
+      ),
+    getArc: (projectId: string, method: string = "snownlp") =>
+      request<{ arc: EmotionArcPoint[]; summary: EmotionArcSummary; method: string }>(
+        `/api/v1/projects/${projectId}/emotion-arc?method=${method}`
+      ),
+    quickAnalyze: (text: string, method: string = "snownlp") =>
+      request<{ analysis: EmotionAnalysis; char_count: number }>(
+        `/api/v1/emotion/quick-analyze`,
+        { method: "POST", body: JSON.stringify({ text, method }) }
       ),
   },
   auth: {
