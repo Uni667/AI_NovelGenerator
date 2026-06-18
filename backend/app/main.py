@@ -70,7 +70,17 @@ async def lifespan(_app: FastAPI):
                     proj = project_service.get_project(p_id, u_id)
                     if proj:
                         filepath = proj["filepath"]
-                        patches_dir = os.path.join(filepath, "memory", "patches")
+                        memory_dir = os.path.join(filepath, "memory")
+                        
+                        # Log state files
+                        for fname in ["character_state.json", "name_usage_rules.json", "outline_state.json", "plot_threads.json"]:
+                            fpath = os.path.join(memory_dir, fname)
+                            if os.path.exists(fpath):
+                                with open(fpath, "r", encoding="utf-8") as f:
+                                    content = json.load(f)
+                                    logging.info(f"STARTUP STATE FILE {p_id} {fname}: {json.dumps(content, ensure_ascii=False)}")
+                        
+                        patches_dir = os.path.join(memory_dir, "patches")
                         if os.path.exists(patches_dir):
                             files_list = os.listdir(patches_dir)
                             logging.info(f"STARTUP PATCHES DIR LIST for project {p_id}: {files_list}")
