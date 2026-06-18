@@ -47,6 +47,28 @@ async def lifespan(_app: FastAPI):
     init_db()
     from novel_generator.task_manager import load_tasks_from_db
     load_tasks_from_db()
+    
+    try:
+        from backend.app.database import get_connection
+        from backend.app.services.project_health_service import check_project_health
+        conn = get_connection()
+        try:
+            cursor = conn.execute("SELECT id, name, user_id FROM project")
+            projects_list = cursor.fetchall()
+            for p in projects_list:
+                p_id = p["id"]
+                u_id = p["user_id"]
+                p_name = p["name"]
+                try:
+                    res = check_project_health(p_id, u_id)
+                    logging.info(f"STARTUP HEALTH CHECK for project '{p_name}' ({p_id}): {res}")
+                except Exception as ex:
+                    logging.exception(f"Failed health check for project '{p_name}' ({p_id}): {ex}")
+        finally:
+            conn.close()
+    except Exception as e:
+        logging.exception(f"Failed to run startup health checks: {e}")
+        
     yield
 
 
