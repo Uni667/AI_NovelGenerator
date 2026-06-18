@@ -1,5 +1,4 @@
 import os
-import json
 import logging
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
@@ -47,58 +46,6 @@ async def lifespan(_app: FastAPI):
     init_db()
     from novel_generator.task_manager import load_tasks_from_db
     load_tasks_from_db()
-    
-    try:
-        from backend.app.database import get_connection
-        from backend.app.services import project_service
-        from backend.app.services.project_health_service import check_project_health
-        conn = get_connection()
-        try:
-            cursor = conn.execute("SELECT id, name, user_id FROM project")
-            projects_list = cursor.fetchall()
-            for p in projects_list:
-                p_id = p["id"]
-                u_id = p["user_id"]
-                p_name = p["name"]
-                try:
-                    res = check_project_health(p_id, u_id)
-                    logging.info(f"STARTUP HEALTH CHECK for project '{p_name}' ({p_id}): {res}")
-                except Exception as ex:
-                    logging.exception(f"Failed health check for project '{p_name}' ({p_id}): {ex}")
-                
-                try:
-                    proj = project_service.get_project(p_id, u_id)
-                    if proj:
-                        filepath = proj["filepath"]
-                        memory_dir = os.path.join(filepath, "memory")
-                        
-                        # Log state files
-                        for fname in ["character_state.json", "name_usage_rules.json", "outline_state.json", "plot_threads.json"]:
-                            fpath = os.path.join(memory_dir, fname)
-                            if os.path.exists(fpath):
-                                with open(fpath, "r", encoding="utf-8") as f:
-                                    content = json.load(f)
-                                    logging.info(f"STARTUP STATE FILE {p_id} {fname}: {json.dumps(content, ensure_ascii=False)}")
-                        
-                        patches_dir = os.path.join(memory_dir, "patches")
-                        if os.path.exists(patches_dir):
-                            files_list = os.listdir(patches_dir)
-                            logging.info(f"STARTUP PATCHES DIR LIST for project {p_id}: {files_list}")
-                            for fname in files_list:
-                                if fname.endswith(".json"):
-                                    fpath = os.path.join(patches_dir, fname)
-                                    with open(fpath, "r", encoding="utf-8") as f:
-                                        p_data = json.load(f)
-                                        logging.info(f"STARTUP PATCH FILE {fname}: {json.dumps(p_data, ensure_ascii=False)}")
-                        else:
-                            logging.info(f"STARTUP PATCHES DIR DOES NOT EXIST: {patches_dir}")
-                except Exception as ex:
-                    logging.exception(f"Failed to list patches for project '{p_name}' ({p_id}): {ex}")
-        finally:
-            conn.close()
-    except Exception as e:
-        logging.exception(f"Failed to run startup health checks: {e}")
-        
     yield
 
 
