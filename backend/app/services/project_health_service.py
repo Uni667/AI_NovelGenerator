@@ -1,6 +1,10 @@
 import os
 import json
+import logging
 from backend.app.services import project_service, state_file_service, chapter_service, state_conflict_service
+
+logger = logging.getLogger(__name__)
+
 
 def check_project_health(project_id: str, user_id: str) -> dict:
     """
@@ -129,8 +133,10 @@ def check_project_health(project_id: str, user_id: str) -> dict:
     elif final_status == "warning":
         summary = f"项目可正常使用，但存在 {len(status_levels)} 个待处理或建议事项。"
         
-    return {
+    res = {
         "status": final_status,
         "summary": summary,
         "checks": checks
     }
+    logger.info(f"HEALTH CHECK RESULT FOR PROJECT {project_id}: {json.dumps(res, ensure_ascii=False)}")
+    return res
