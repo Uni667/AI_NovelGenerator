@@ -73,7 +73,17 @@ def merge_state_patch(project_id: str, patch_id: str) -> dict:
         
     # 5. Merge Plot Threads
     new_threads = patch_data.get("new_plot_threads", [])
-    for nt in new_threads:
+    for i, nt in enumerate(new_threads):
+        if isinstance(nt, str):
+            import hashlib
+            thread_title = nt
+            thread_id = f"thread_{hashlib.md5(thread_title.encode('utf-8')).hexdigest()[:8]}"
+            nt = {
+                "id": thread_id,
+                "title": thread_title,
+                "status": "active"
+            }
+            new_threads[i] = nt
         if not any(t.get("id") == nt.get("id") for t in plot_threads["threads"]):
             nt["introduced_chapter"] = chapter_index
             nt["last_touched_chapter"] = chapter_index
