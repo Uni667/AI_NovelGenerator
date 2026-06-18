@@ -50,6 +50,7 @@ async def lifespan(_app: FastAPI):
     
     try:
         from backend.app.database import get_connection
+        from backend.app.services import project_service
         from backend.app.services.project_health_service import check_project_health
         conn = get_connection()
         try:
@@ -64,6 +65,25 @@ async def lifespan(_app: FastAPI):
                     logging.info(f"STARTUP HEALTH CHECK for project '{p_name}' ({p_id}): {res}")
                 except Exception as ex:
                     logging.exception(f"Failed health check for project '{p_name}' ({p_id}): {ex}")
+                
+                try:
+                    proj = project_service.get_project(p_id, u_id)
+                    if proj:
+                        filepath = proj["filepath"]
+                        patches_dir = os.path.join(filepath, "memory", "patches")
+                        if os.path.exists(patches_dir):
+                            files_list = os.listdir(patches_dir)
+                            logging.info(f"STARTUP PATCHES DIR LIST for project {p_id}: {files_list}")
+                            for fname in files_list:
+                                if fname.endswith(".json"):
+                                    fpath = os.path.join(patches_dir, fname)
+                                    with open(fpath, "r", encoding="utf-8") as f:
+                                        p_data = json.load(f)
+                                        logging.info(f"STARTUP PATCH FILE {fname}: {json.dumps(p_data, ensure_ascii=False)}")
+                        else:
+                            logging.info(f"STARTUP PATCHES DIR DOES NOT EXIST: {patches_dir}")
+                except Exception as ex:
+                    logging.exception(f"Failed to list patches for project '{p_name}' ({p_id}): {ex}")
         finally:
             conn.close()
     except Exception as e:
