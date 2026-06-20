@@ -18,6 +18,7 @@ export function setToken(token: string) {
   _token = token
   if (typeof window !== "undefined") {
     localStorage.setItem(TOKEN_KEY, token)
+    window.dispatchEvent(new Event("auth-changed"))
   }
 }
 
@@ -27,6 +28,7 @@ export function clearToken() {
   if (typeof window !== "undefined") {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
+    window.dispatchEvent(new Event("auth-changed"))
   }
 }
 
@@ -45,6 +47,7 @@ export function setUser(user: { user_id: string; username: string }) {
   _user = user
   if (typeof window !== "undefined") {
     localStorage.setItem(USER_KEY, JSON.stringify(user))
+    window.dispatchEvent(new Event("auth-changed"))
   }
 }
 

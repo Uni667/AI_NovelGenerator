@@ -9,6 +9,9 @@ import time
 import os
 import sys
 
+# 绕过 Windows 系统代理，防止 Clash 代理失效/关闭时导致 requests 库请求挂起
+os.environ['NO_PROXY'] = '*'
+
 # 配置
 BACKEND_URL = "https://ai-novel-backend-production.up.railway.app"
 PROJECT_ID = "ef1de677-1a9a-4f28-9516-554e5a53838a"

@@ -53,12 +53,17 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   // Fetch current user details reactively to prevent SSR hydration mismatch
   useEffect(() => {
-    const u = getUser()
-    if (u) {
-      setUserState({ username: u.username, tier: "Pro 订阅" })
-    } else {
-      setUserState({ username: "演示用户", tier: "体验版" })
+    const updateUser = () => {
+      const u = getUser()
+      if (u) {
+        setUserState({ username: u.username, tier: "Pro 订阅" })
+      } else {
+        setUserState({ username: "演示用户", tier: "体验版" })
+      }
     }
+    updateUser()
+    window.addEventListener("auth-changed", updateUser)
+    return () => window.removeEventListener("auth-changed", updateUser)
   }, [pathname])
 
   const handleSearchChange = (val: string) => {

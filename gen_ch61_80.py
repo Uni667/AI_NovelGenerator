@@ -12,6 +12,9 @@ import re
 import requests
 from datetime import datetime
 
+# 绕过 Windows 系统代理，防止 Clash 代理失效/关闭时导致 requests 库请求挂起
+os.environ['NO_PROXY'] = '*'
+
 # ============================================================
 # 配置
 # ============================================================

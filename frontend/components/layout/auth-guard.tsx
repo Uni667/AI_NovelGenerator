@@ -44,6 +44,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [pathname, ready, router])
 
+  useEffect(() => {
+    const handleAuthChange = () => {
+      if (pathname !== "/login" && !isAuthenticated()) {
+        router.replace("/login")
+      }
+    }
+    window.addEventListener("auth-changed", handleAuthChange)
+    return () => window.removeEventListener("auth-changed", handleAuthChange)
+  }, [pathname, router])
+
   if (pathname === "/login") return <>{children}</>
 
   if (!ready) {
