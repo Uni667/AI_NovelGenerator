@@ -1,8 +1,8 @@
 "use client"
  
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams, useRouter } from "next/navigation"
 import { 
   BookOpen, Settings, Plus, Home, Menu, Sun, Moon, BarChart3, 
   Users, Globe, Compass, FileEdit, Database, LayoutGrid, Search, 
@@ -15,7 +15,6 @@ import { useProjects } from "@/lib/hooks/use-projects"
 import { BackendStatus } from "@/components/layout/backend-status"
 import { getUser, clearToken } from "@/lib/auth"
 import { useTheme } from "next-themes"
-import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
@@ -34,22 +33,15 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const projectIdMatch = pathname.match(/\/projects\/([^\/]+)/)
   const activeProjectId = projectIdMatch && projectIdMatch[1] !== "new" ? projectIdMatch[1] : null
  
-  // Fetch active tab safely from window search params without build-time deoptimization
-  const [activeTab, setActiveTab] = useState("overview")
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search)
-      setActiveTab(params.get("tab") || "overview")
-    }
-  }, [pathname])
+  const searchParams = useSearchParams()
+  const activeTab = searchParams?.get("tab") || "overview"
 
   // Sync searchQuery from URL query parameters
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search)
-      setSearchQuery(params.get("search") || "")
+    if (searchParams) {
+      setSearchQuery(searchParams.get("search") || "")
     }
-  }, [pathname])
+  }, [searchParams])
 
   // Fetch current user details reactively to prevent SSR hydration mismatch
   useEffect(() => {
@@ -295,7 +287,9 @@ export function Sidebar() {
                 </Button>
               } />
               <SheetContent side="left" className="w-64 p-0 flex flex-col border-r border-sidebar-border bg-sidebar">
-                <SidebarContent onNavigate={() => setOpen(false)} />
+                <Suspense fallback={<div className="p-4 text-xs text-muted-foreground">加载中...</div>}>
+                  <SidebarContent onNavigate={() => setOpen(false)} />
+                </Suspense>
               </SheetContent>
             </Sheet>
             <div className="flex items-center gap-1.5 ml-1">
@@ -308,7 +302,9 @@ export function Sidebar() {
  
       {/* Desktop: fixed sidebar */}
       <aside className="hidden lg:flex w-60 h-full border-r border-sidebar-border bg-sidebar flex-col shrink-0 relative z-10">
-        <SidebarContent />
+        <Suspense fallback={<div className="p-4 text-xs text-muted-foreground">加载中...</div>}>
+          <SidebarContent />
+        </Suspense>
       </aside>
     </>
   )
