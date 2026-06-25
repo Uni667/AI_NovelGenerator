@@ -7,6 +7,8 @@ import {
   CheckCircle,
   ChevronDown,
   KeyRound,
+  Plus,
+  Pencil,
   RefreshCw,
   ShieldCheck,
   Trash2,
@@ -25,6 +27,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 
 const PROVIDERS = [
   { value: "siliconflow", label: "硅基流动" },
@@ -540,7 +543,7 @@ function AdvancedSettings({
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-4">
-            <ProfileList profiles={profiles} onChanged={onChanged} />
+            <ProfileList profiles={profiles} credentials={credentials} onChanged={onChanged} />
           </CardContent>
         </Card>
       </div>
@@ -642,44 +645,236 @@ function CredentialList({ credentials, onChanged }: { credentials: ApiCredential
   )
 }
 
-function ProfileList({ profiles, onChanged }: { profiles: ModelProfile[]; onChanged: () => void }) {
-  if (!profiles.length) return <div className="py-6 text-center text-sm text-muted-foreground">暂无路由数据</div>
+function ProfileList({ profiles, credentials, onChanged }: { profiles: ModelProfile[]; credentials: ApiCredential[]; onChanged: () => void }) {
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingProfile, setEditingProfile] = useState<ModelProfile | null>(null)
+
+  const handleCreate = () => {
+    setEditingProfile(null)
+    setDialogOpen(true)
+  }
+
+  const handleEdit = (profile: ModelProfile) => {
+    setEditingProfile(profile)
+    setDialogOpen(true)
+  }
 
   return (
     <div className="space-y-3">
-      {profiles.map((profile) => (
-        <div key={profile.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/50 p-3 text-sm hover:bg-background/80 transition-colors">
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <Badge variant={profile.type === "chat" ? "default" : "outline"} className={profile.type === "chat" ? "bg-primary/20 text-primary border-none" : "bg-blue-500/20 text-blue-400 border-none"}>
-                {profile.type.toUpperCase()}
-              </Badge>
-              <span className="font-bold text-foreground">{profile.name}</span>
+      <div className="flex justify-end">
+        <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={handleCreate} disabled={!credentials.length}>
+          <Plus className="size-3.5" />
+          新建配置
+        </Button>
+      </div>
+      {!profiles.length && !credentials.length ? (
+        <div className="py-6 text-center text-sm text-muted-foreground">请先添加凭证，再创建路由配置</div>
+      ) : !profiles.length ? (
+        <div className="py-6 text-center text-sm text-muted-foreground">暂无路由数据，点击"新建配置"创建</div>
+      ) : (
+        profiles.map((profile) => (
+          <div key={profile.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/50 p-3 text-sm hover:bg-background/80 transition-colors">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <Badge variant={profile.type === "chat" ? "default" : "outline"} className={profile.type === "chat" ? "bg-primary/20 text-primary border-none" : "bg-blue-500/20 text-blue-400 border-none"}>
+                  {profile.type.toUpperCase()}
+                </Badge>
+                <span className="font-bold text-foreground">{profile.name}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground text-xs">{providerLabel(profile.provider)} <span className="mx-1">/</span> <span className="font-mono text-primary/80">{profile.model}</span></span>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground text-xs">{providerLabel(profile.provider)} <span className="mx-1">/</span> <span className="font-mono text-primary/80">{profile.model}</span></span>
+            <div className="flex items-center gap-3">
+              <Badge variant={profile.health_status === "active" ? "default" : profile.health_status === "invalid" ? "destructive" : "outline"} className={profile.health_status === "active" ? "bg-emerald-500/20 text-emerald-400 border-none" : ""}>
+                {profile.health_status === "active" ? "Healthy" : profile.health_status === "invalid" ? "Broken" : "Pending"}
+              </Badge>
+              <div className="flex gap-1.5 border-l border-border/50 pl-3">
+                <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-primary/20 hover:text-primary" title="编辑" onClick={() => handleEdit(profile)}>
+                  <Pencil className="size-4" />
+                </Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-primary/20 hover:text-primary" title="重新测试" onClick={() =>
+                    api.config.testProfile(profile.id).then((result) => toast.success(result.message || "测试成功")).catch((error) => toast.error(errorMessage(error, "测试失败，请检查 API Key 和服务商是否匹配。"))).finally(onChanged)
+                  }>
+                  <ShieldCheck className="size-4" />
+                </Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-destructive/20 hover:text-destructive" title="删除" onClick={() =>
+                    api.config.deleteProfile(profile.id).then(() => toast.success("模型配置已删除。")).catch((error) => toast.error(errorMessage(error, "删除失败，请稍后重试。"))).finally(onChanged)
+                  }>
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Badge variant={profile.health_status === "active" ? "default" : profile.health_status === "invalid" ? "destructive" : "outline"} className={profile.health_status === "active" ? "bg-emerald-500/20 text-emerald-400 border-none" : ""}>
-              {profile.health_status === "active" ? "Healthy" : profile.health_status === "invalid" ? "Broken" : "Pending"}
-            </Badge>
-            <div className="flex gap-1.5 border-l border-border/50 pl-3">
-              <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-primary/20 hover:text-primary" title="重新测试" onClick={() =>
-                  api.config.testProfile(profile.id).then((result) => toast.success(result.message || "测试成功")).catch((error) => toast.error(errorMessage(error, "测试失败，请检查 API Key 和服务商是否匹配。"))).finally(onChanged)
-                }>
-                <ShieldCheck className="size-4" />
-              </Button>
-              <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-destructive/20 hover:text-destructive" title="删除" onClick={() =>
-                  api.config.deleteProfile(profile.id).then(() => toast.success("模型配置已删除。")).catch((error) => toast.error(errorMessage(error, "删除失败，请稍后重试。"))).finally(onChanged)
-                }>
-                <Trash2 className="size-4" />
-              </Button>
+        ))
+      )}
+      <ModelProfileDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        profile={editingProfile}
+        credentials={credentials}
+        onChanged={onChanged}
+      />
+    </div>
+  )
+}
+
+function ModelProfileDialog({
+  open,
+  onOpenChange,
+  profile,
+  credentials,
+  onChanged,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  profile: ModelProfile | null
+  credentials: ApiCredential[]
+  onChanged: () => void
+}) {
+  const isEdit = !!profile
+  const [name, setName] = useState("")
+  const [model, setModel] = useState("")
+  const [credentialId, setCredentialId] = useState("")
+  const [temperature, setTemperature] = useState("0.7")
+  const [maxTokens, setMaxTokens] = useState("8192")
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setName(profile?.name || "")
+      setModel(profile?.model || "")
+      setCredentialId(profile?.api_credential_id || credentials[0]?.id || "")
+      setTemperature(String(profile?.type === "chat" ? 0.7 : 0.7))
+      setMaxTokens(String(profile?.type === "chat" ? 8192 : 8192))
+    }
+  }, [open, profile, credentials])
+
+  const selectedCredential = credentials.find((c) => c.id === credentialId)
+  const provider = selectedCredential?.provider || profile?.provider || "openai"
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      toast.error("请输入配置名称")
+      return
+    }
+    if (!model.trim()) {
+      toast.error("请输入模型名称")
+      return
+    }
+    if (!credentialId) {
+      toast.error("请选择关联凭证")
+      return
+    }
+
+    setSaving(true)
+    try {
+      const payload = {
+        name: name.trim(),
+        type: "chat",
+        provider,
+        model: model.trim(),
+        api_credential_id: credentialId,
+        temperature: parseFloat(temperature) || 0.7,
+        max_tokens: parseInt(maxTokens) || 8192,
+        is_active: true,
+      }
+      if (isEdit) {
+        await api.config.updateProfile(profile!.id, payload)
+        toast.success("配置已更新")
+      } else {
+        await api.config.createProfile(payload)
+        toast.success("配置已创建")
+      }
+      onOpenChange(false)
+      onChanged()
+    } catch (error) {
+      toast.error(errorMessage(error, isEdit ? "更新失败，请稍后重试。" : "创建失败，请稍后重试。"))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "编辑路由配置" : "新建路由配置"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">配置名称</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="如：DeepSeek-V4-Pro 写作模型"
+              disabled={saving}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">模型名称（可自定义）</Label>
+            <Input
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="如：deepseek-v4-pro、deepseek-v4-auto、gpt-4o"
+              disabled={saving}
+            />
+            <p className="text-xs text-muted-foreground">
+              输入服务商支持的模型名，可填入任意模型（如 deepseek-v4-pro）
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">关联凭证</Label>
+            <Select value={credentialId} onValueChange={(v) => setCredentialId(v || "")} disabled={saving}>
+              <SelectTrigger>
+                <SelectValue placeholder="选择凭证" />
+              </SelectTrigger>
+              <SelectContent>
+                {credentials.map((cred) => (
+                  <SelectItem key={cred.id} value={cred.id}>
+                    {cred.name} ({providerLabel(cred.provider)})
+                    {cred.status === "active" ? " ✓" : " (未测试)"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Temperature</Label>
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                max="2"
+                value={temperature}
+                onChange={(e) => setTemperature(e.target.value)}
+                disabled={saving}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Max Tokens</Label>
+              <Input
+                type="number"
+                step="256"
+                min="256"
+                value={maxTokens}
+                onChange={(e) => setMaxTokens(e.target.value)}
+                disabled={saving}
+              />
             </div>
           </div>
         </div>
-      ))}
-    </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            取消
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "保存中..." : isEdit ? "保存" : "创建"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

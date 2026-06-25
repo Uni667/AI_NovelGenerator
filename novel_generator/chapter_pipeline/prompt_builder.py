@@ -122,6 +122,31 @@ def build_chapter_prompt(
             params.user_guidance = params.user_guidance + "\n" + emotion_guide
         else:
             params.user_guidance = emotion_guide
+            
+    # 获取本地参考书的吸收规则上下文
+    try:
+        from backend.app.services.local_reference_context_service import build_reference_context
+        ref_context = build_reference_context(ctx.project_id)
+        if ref_context:
+            ref_rules_text = "【参考书吸收规则】：\n"
+            for book_id, book_data in ref_context.items():
+                if book_id == "style_bible_excerpt":
+                    continue
+                weight = book_data.get("weight", 1.0)
+                data = book_data.get("data", {})
+                for rule_type, content in data.items():
+                    # We avoid putting large contents, but currently the essence files are concise.
+                    ref_rules_text += f"\n--- {rule_type} (权重 {weight}) ---\n{content}\n"
+            
+            # 防照抄警示
+            ref_rules_text += "\n【防照抄警示】：严禁照抄或直接复制参考书原文！只允许借鉴其结构、节奏和情感描写等写作手法，必须使用本项目自身的世界观和人物设定来进行原创。生成的正文内不得包含超过 50 字的参考书连续原文片段。\n"
+            
+            if getattr(params, "user_guidance", ""):
+                params.user_guidance = ref_rules_text + "\n" + params.user_guidance
+            else:
+                params.user_guidance = ref_rules_text
+    except Exception as e:
+        logger.warning(f"获取参考书吸收规则上下文失败: {e}")
 
     platform_label, platform_rules = get_platform_chapter_guidance(getattr(params, "platform", "tomato"))
     platform_guidance = prompt_definitions.get_prompt_template(ctx.project_id, 'platform_chapter_guidance_prompt').format(

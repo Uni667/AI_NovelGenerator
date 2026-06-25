@@ -36,6 +36,18 @@ def get_chapter(project_id: str, chapter_number: int, request: Request):
         "meta": meta
     }
 
+@router.get("/api/v1/projects/{project_id}/chapters/{chapter_number}/similarity-report")
+def get_chapter_similarity_report(project_id: str, chapter_number: int, request: Request):
+    project, _user_id = _check_project(project_id, request)
+    import os
+    import json
+    report_file = os.path.join(project["filepath"], f"chapter_{chapter_number}_similarity_report.json")
+    if not os.path.exists(report_file):
+        raise HTTPException(status_code=404, detail="未找到查重报告")
+    with open(report_file, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
 
 @router.put("/api/v1/projects/{project_id}/chapters/{chapter_number}")
 def update_chapter(project_id: str, chapter_number: int, data: ChapterUpdate, request: Request):

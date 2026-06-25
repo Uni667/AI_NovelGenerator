@@ -18,6 +18,7 @@ from backend.app.services.api_credential_service import (
     test_credential,
     update_credential,
 )
+from backend.app.services.config_resolver import PROVIDER_DEFAULT_CHAT_MODELS
 from backend.app.errors import (
     API_CREDENTIAL_IN_USE,
     API_KEY_INVALID,
@@ -703,14 +704,6 @@ PROVIDER_DISPLAY_NAMES = {
     "anthropic": "Claude",
 }
 
-QUICK_SETUP_CHAT = {
-    "siliconflow": {"model": "deepseek-v4-flash"},
-    "openai": {"model": "gpt-4o-mini"},
-    "deepseek": {"model": "deepseek-v4-flash"},
-    "qwen": {"model": "qwen-plus"},
-    "anthropic": {"model": "claude-3-5-haiku-latest"},
-}
-
 ASSIGNMENT_CHAT_FIELDS = [
     "architecture_profile_id", "worldbuilding_profile_id", "character_profile_id",
     "outline_profile_id", "draft_profile_id", "polish_profile_id",
@@ -734,14 +727,13 @@ def model_quick_setup(data: QuickSetupReq, request: Request):
 
     if provider not in PROVIDER_DEFAULTS:
         raise api_error(400, MODEL_CONFIG_INVALID, "当前模型配置不完整，建议清空后重新配置。")
-    if provider not in QUICK_SETUP_CHAT:
+    if not PROVIDER_DEFAULT_CHAT_MODELS.get(provider):
         raise api_error(400, MODEL_CONFIG_INVALID, "当前模型配置不完整，建议清空后重新配置。")
     if not api_key:
         raise api_error(400, API_KEY_INVALID, "测试失败，请检查 API Key 和服务商是否匹配。")
 
     base_url = normalize_base_url(provider, PROVIDER_DEFAULTS[provider])
-    chat_cfg = QUICK_SETUP_CHAT[provider]
-    default_model = chat_cfg["model"]
+    default_model = PROVIDER_DEFAULT_CHAT_MODELS[provider]
 
     # 1. 先测试 API Key（不写入数据库）
     test_result = test_chat_connection(

@@ -67,18 +67,65 @@ def invoke_with_cleaning(
     operation_name: str = "LLM 调用",
     step: str | None = None,
     stream_callback=None,
+    log_ctx: dict | None = None,
 ) -> str:
-    """Invoke an LLM and normalize the returned text."""
+    """Invoke an LLM and normalize the returned text.
+
+    log_ctx: 可选的日志上下文，包含 user_id/project_id/task_id/runtime_config，
+    用于记录模型调用日志。如果为 None 则尝试从 llm_adapter._log_ctx 获取。
+    """
+    if log_ctx is None:
+        log_ctx = getattr(llm_adapter, "_log_ctx", None)
+
     if cancel_token is None and hasattr(llm_adapter, "_cancel_token"):
         cancel_token = getattr(llm_adapter, "_cancel_token", None)
 
     _raise_if_cancelled(cancel_check, cancel_token)
     logger.debug("LLM prompt (%d chars)", len(prompt))
 
+    _invoke_start = time.time()
+
+    def _log_success(result_text: str):
+        if not log_ctx:
+            return
+        try:
+            from backend.app.services.invocation_logger import log_invocation
+            log_invocation(
+                log_ctx.get("user_id", ""),
+                log_ctx.get("runtime_config"),
+                input_chars=len(prompt),
+                output_chars=len(result_text),
+                latency_ms=int((time.time() - _invoke_start) * 1000),
+                success=True,
+                project_id=log_ctx.get("project_id", ""),
+                task_id=log_ctx.get("task_id", ""),
+            )
+        except Exception:
+            logger.debug("log_invocation (success) failed", exc_info=True)
+
+    def _log_failure(error_code: str, error_message: str):
+        if not log_ctx:
+            return
+        try:
+            from backend.app.services.invocation_logger import log_invocation
+            log_invocation(
+                log_ctx.get("user_id", ""),
+                log_ctx.get("runtime_config"),
+                input_chars=len(prompt),
+                latency_ms=int((time.time() - _invoke_start) * 1000),
+                success=False,
+                error_code=error_code,
+                error_message=error_message[:500],
+                project_id=log_ctx.get("project_id", ""),
+                task_id=log_ctx.get("task_id", ""),
+            )
+        except Exception:
+            logger.debug("log_invocation (failure) failed", exc_info=True)
+
     for attempt in range(1, max_retries + 1):
         try:
             _raise_if_cancelled(cancel_check, cancel_token)
-            
+
             # Check if streaming is requested and supported
             if stream_callback and (hasattr(llm_adapter, "stream") or (hasattr(llm_adapter, "_client") and hasattr(llm_adapter._client, "stream"))):
                 full_text = ""
@@ -92,7 +139,7 @@ def invoke_with_cleaning(
                         chunk_text = chunk
                     elif isinstance(chunk, dict):
                         chunk_text = chunk.get("content", "")
-                        
+
                     if chunk_text:
                         full_text += chunk_text
                         stream_callback(chunk_text)
@@ -108,6 +155,7 @@ def invoke_with_cleaning(
             cleaned = result.replace("```", "").strip() if isinstance(result, str) else ""
             if cleaned:
                 _raise_if_cancelled(cancel_check, cancel_token)
+                _log_success(cleaned)
                 return cleaned
 
             if error_info is None and getattr(llm_adapter, "last_error", ""):
@@ -139,6 +187,7 @@ def invoke_with_cleaning(
                 time.sleep(wait_seconds)
                 continue
 
+            _log_failure(error_info.code, error_info.detail)
             raise LLMInvocationError(error_info, operation_name=operation_name, step=step)
         except TaskCancelledError:
             raise
@@ -165,8 +214,10 @@ def invoke_with_cleaning(
                 )
                 time.sleep(wait_seconds)
                 continue
+            _log_failure(error_info.code, error_info.detail)
             raise LLMInvocationError(error_info, operation_name=operation_name, step=step) from exc
 
+    _log_failure("MAX_RETRIES_EXHAUSTED", "重试次数耗尽")
     raise LLMInvocationError(
         build_empty_response_error(
             provider=getattr(llm_adapter, "provider", ""),

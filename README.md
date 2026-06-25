@@ -375,3 +375,8 @@ See [LICENSE](./LICENSE) file.
 ---
 
 If you have questions or feature requests, please open an issue on the project repository.
+
+## Local Library & Anti-Copy Guard
+
+The AI Novel Generator now supports scanning local txt/md books directly to extract a highly condensed essence (Style Bible, Scene Patterns, Volume Summaries) without storing the original text in the database. 
+It also features a **Similarity Guard** which will automatically intercept and rewrite generated content if it detects high overlap with your original reference texts, effectively preventing plagiarism.

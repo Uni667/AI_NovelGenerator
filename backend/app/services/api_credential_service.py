@@ -12,20 +12,12 @@ from backend.app.utils.crypto import (
     last4,
     mask_api_key,
 )
-from backend.app.services.config_resolver import PROVIDER_DEFAULTS
+from backend.app.services.config_resolver import PROVIDER_DEFAULTS, PROVIDER_DEFAULT_CHAT_MODELS
 
 logger = logging.getLogger(__name__)
 
-# 各 provider 的默认测试模型名（不是 URL！）
-PROVIDER_DEFAULT_TEST_MODELS = {
-    "openai": "gpt-4o-mini",
-    "deepseek": "deepseek-v4-flash",
-    "qwen": "qwen-plus",
-    "anthropic": "claude-3-5-haiku-latest",
-    "siliconflow": "deepseek-v4-flash",
-    "custom": "",
-    "local": "",
-}
+# 各 provider 的默认测试模型名（单一数据源：PROVIDER_DEFAULT_CHAT_MODELS）
+PROVIDER_DEFAULT_TEST_MODELS = PROVIDER_DEFAULT_CHAT_MODELS
 def _validate_model_not_url(model: str) -> None:
     """模型名不能是 URL——通常是 base_url 和 model 字段传反了。"""
     if model and (model.startswith("http://") or model.startswith("https://")):

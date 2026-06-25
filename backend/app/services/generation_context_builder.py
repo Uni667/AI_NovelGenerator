@@ -56,6 +56,7 @@ def make_ctx(
     project_id: str = "",
     user_id: str = "",
     cancel_token: CancelToken | None = None,
+    runtime_config: object = None,
 ) -> GenerationContext:
     return GenerationContext.from_dicts(
         llm_dict=llm_conf,
@@ -64,6 +65,7 @@ def make_ctx(
         project_id=project_id,
         user_id=user_id,
         cancel_token=cancel_token,
+        runtime_config=runtime_config,
     )
 
 
@@ -141,7 +143,7 @@ def build_full_context(user_id: str, project: dict, pconfig: dict, purpose: str,
     if task_id:
         log_llm_selection(task_id, project, llm_conf, purpose)
         
-    ctx = make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], user_id=user_id, cancel_token=cancel_token)
+    ctx = make_ctx(llm_conf, emb_conf, project["filepath"], project_id=project["id"], user_id=user_id, cancel_token=cancel_token, runtime_config=rt)
     proj_cfg = make_project_cfg(pconfig)
     
     return ctx, proj_cfg, rt

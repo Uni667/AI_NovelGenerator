@@ -7,8 +7,10 @@ logger = logging.getLogger(__name__)
 
 
 def create_specialized_chat_adapter(ctx, purpose: str, temperature: float | None = None):
+    log_ctx = ctx.make_log_ctx() if hasattr(ctx, "make_log_ctx") else None
+
     if not ctx.project_id or not ctx.user_id:
-        return create_llm_adapter(
+        adapter = create_llm_adapter(
             interface_format=ctx.llm.interface_format,
             base_url=ctx.llm.base_url,
             model_name=ctx.llm.model_name,
@@ -18,6 +20,9 @@ def create_specialized_chat_adapter(ctx, purpose: str, temperature: float | None
             timeout=ctx.llm.timeout,
             cancel_token=ctx.cancel_token,
         )
+        if log_ctx:
+            adapter._log_ctx = log_ctx
+        return adapter
 
     try:
         runtime = get_runtime_config(ctx.user_id, purpose, ctx.project_id)
@@ -25,7 +30,7 @@ def create_specialized_chat_adapter(ctx, purpose: str, temperature: float | None
         runtime = None
 
     if runtime is None:
-        return create_llm_adapter(
+        adapter = create_llm_adapter(
             interface_format=ctx.llm.interface_format,
             base_url=ctx.llm.base_url,
             model_name=ctx.llm.model_name,
@@ -35,8 +40,11 @@ def create_specialized_chat_adapter(ctx, purpose: str, temperature: float | None
             timeout=ctx.llm.timeout,
             cancel_token=ctx.cancel_token,
         )
+        if log_ctx:
+            adapter._log_ctx = log_ctx
+        return adapter
 
-    return create_llm_adapter(
+    adapter = create_llm_adapter(
         interface_format=_provider_to_interface(runtime.provider),
         base_url=runtime.base_url,
         model_name=runtime.model,
@@ -46,5 +54,9 @@ def create_specialized_chat_adapter(ctx, purpose: str, temperature: float | None
         timeout=runtime.timeout or ctx.llm.timeout,
         cancel_token=ctx.cancel_token,
     )
+    if log_ctx:
+        log_ctx["runtime_config"] = runtime
+        adapter._log_ctx = log_ctx
+    return adapter
 
 

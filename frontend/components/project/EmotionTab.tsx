@@ -444,7 +444,7 @@ export function EmotionTab() {
               {detail.reasoning && (
                 <div className="rounded-lg bg-muted/40 p-3 border border-border/40 text-xs">
                   <span className="font-bold text-primary block mb-1">🧠 判定逻辑：</span>
-                  <p className="text-muted-foreground leading-relaxed italic">"{detail.reasoning}"</p>
+                  <p className="text-muted-foreground leading-relaxed italic">&quot;{detail.reasoning}&quot;</p>
                 </div>
               )}
 
@@ -549,7 +549,7 @@ export function EmotionTab() {
               {detail.llm?.reasoning && (
                 <div className="rounded-lg bg-muted/40 p-2.5 text-[11px] text-muted-foreground italic border border-border/40">
                   <span className="font-bold text-primary block text-xs not-italic mb-0.5">🧠 LLM 判定原因:</span>
-                  "{detail.llm.reasoning}"
+                  &quot;{detail.llm.reasoning}&quot;
                 </div>
               )}
             </div>

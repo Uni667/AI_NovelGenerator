@@ -20,12 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 def create_blueprint_specialized_adapter(ctx, project, purpose: str):
+    log_ctx = ctx.make_log_ctx() if hasattr(ctx, "make_log_ctx") else None
+
     if ctx.project_id and getattr(ctx, "user_id", ""):
         try:
             from backend.app.services.model_runtime import get_runtime_config
 
             runtime = get_runtime_config(ctx.user_id, purpose, ctx.project_id)
-            return create_llm_adapter(
+            adapter = create_llm_adapter(
                 interface_format=_provider_to_interface(runtime.provider),
                 base_url=runtime.base_url,
                 model_name=runtime.model,
@@ -35,10 +37,14 @@ def create_blueprint_specialized_adapter(ctx, project, purpose: str):
                 timeout=runtime.timeout or ctx.llm.timeout,
                 cancel_token=ctx.cancel_token,
             )
+            if log_ctx:
+                log_ctx["runtime_config"] = runtime
+                adapter._log_ctx = log_ctx
+            return adapter
         except Exception:
             pass
 
-    return create_llm_adapter(
+    adapter = create_llm_adapter(
         interface_format=ctx.llm.interface_format,
         base_url=ctx.llm.base_url,
         model_name=ctx.llm.model_name,
@@ -48,6 +54,9 @@ def create_blueprint_specialized_adapter(ctx, project, purpose: str):
         timeout=ctx.llm.timeout,
         cancel_token=ctx.cancel_token,
     )
+    if log_ctx:
+        adapter._log_ctx = log_ctx
+    return adapter
 
 
 def polish_blueprint_text(
@@ -171,6 +180,7 @@ def Chapter_blueprint_generate(
         timeout=ctx.llm.timeout,
         cancel_token=ctx.cancel_token,
     )
+    llm._log_ctx = ctx.make_log_ctx() if hasattr(ctx, "make_log_ctx") else None
 
     filename_dir = os.path.join(filepath, "Novel_directory.txt")
     if not os.path.exists(filename_dir):

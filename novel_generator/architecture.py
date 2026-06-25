@@ -196,6 +196,7 @@ def Novel_architecture_generate(
         timeout=ctx.llm.timeout,
         cancel_token=ctx.cancel_token,
     )
+    llm._log_ctx = ctx.make_log_ctx() if hasattr(ctx, "make_log_ctx") else None
 
     topic = project.topic
     genre = project.genre

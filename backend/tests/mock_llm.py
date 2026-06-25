@@ -22,6 +22,10 @@ class MockChatModel:
             return self._mock_state_patch(str(prompt))
         elif "小说结构编辑" in str(prompt) or "outline_diff" in str(prompt):
             return self._mock_outline_evolution(str(prompt))
+        elif "场景模式" in str(prompt) or "scene_patterns" in str(prompt):
+            return self._mock_scene_patterns(str(prompt))
+        elif "只提炼写法" in str(prompt):
+            return self._mock_style_mining(str(prompt))
         elif "请根据前文设定和上下文" in str(prompt) or "Draft Generation" in str(prompt) or "写一章" in str(prompt):
             return self._mock_draft_generation(str(prompt))
         elif "Title Generation" in str(prompt) or "书名" in str(prompt):
@@ -30,6 +34,21 @@ class MockChatModel:
             return "这是一个测试简介，没有剧透未揭露的秘密。"
         
         return "Generic Mock Response"
+
+    def _mock_scene_patterns(self, prompt: str) -> str:
+        return '''```json
+[
+  {
+    "pattern_name": "打脸",
+    "description": "反派嘲讽，主角反击",
+    "trigger": "反派出现",
+    "resolution": "主角展现实力"
+  }
+]
+```'''
+
+    def _mock_style_mining(self, prompt: str) -> str:
+        return "# Mock Extraction\nThis is a mock analysis for Phase 8."
 
     def _mock_state_patch(self, prompt: str) -> str:
         if MOCK_SCENARIO == "invalid_json":
@@ -127,8 +146,10 @@ def patch_llm_for_tests():
         pass
         
     with patch("backend.app.services.model_runtime._build_chat_adapter") as mock_build, \
+         patch("backend.app.services.model_runtime.create_chat_adapter_from_config") as mock_create, \
          patch("backend.app.services.config_resolver.get_runtime_config") as mock_config:
         mock_build.return_value = get_mock_adapter()
+        mock_create.return_value = get_mock_adapter()
         mock_config.return_value = DummyConfig()
         yield
     MOCK_LLM_MODE = original

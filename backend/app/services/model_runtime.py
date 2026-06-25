@@ -15,7 +15,6 @@ import time
 from backend.app.database import get_db
 from backend.app.services.config_resolver import (
     ConfigError,
-    PROVIDER_DEFAULT_CHAT_MODELS,
     PROVIDER_DEFAULTS,
     PURPOSE_MAP,
     RuntimeConfig,
@@ -54,10 +53,6 @@ CHAT_ASSIGNMENT_FIELDS = [
 ]
 
 ALL_ASSIGNMENT_FIELDS = CHAT_ASSIGNMENT_FIELDS + ["embedding_profile_id", "rerank_profile_id"]
-
-# Keep for compatibility with older imports
-def get_default_chat_model(provider: str) -> str:
-    return PROVIDER_DEFAULT_CHAT_MODELS.get((provider or "").strip(), "")
 
 def _provider_to_interface(provider: str) -> str:
     mapping = {
@@ -150,33 +145,6 @@ def _build_chat_adapter(cfg: RuntimeConfig, temperature: float | None, max_token
     )
 
 
-def create_chat_adapter(
-    user_id: str,
-    purpose: str = "general",
-    project_id: str | None = None,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
-    cancel_token=None,
-):
-    """创建一个已配置好的聊天适配器。"""
-    cfg = get_runtime_config(user_id, purpose, project_id)
-    return _build_chat_adapter(cfg, temperature, max_tokens, cancel_token)
-
-
-def create_embedding_adapter(
-    user_id: str,
-    project_id: str | None = None,
-):
-    """创建一个已配置好的向量化适配器。"""
-    cfg = get_runtime_config(user_id, "embedding", project_id)
-    return create_embedding_adapter_from_config(
-        interface_format=_provider_to_interface(cfg.provider),
-        api_key=cfg.api_key,
-        base_url=cfg.base_url,
-        model_name=cfg.model,
-    )
-
-
 def call_chat(
     user_id: str,
     prompt: str,
@@ -214,49 +182,6 @@ def call_chat(
                        success=False, error_code="MODEL_CALL_FAILED", error_message=err,
                        project_id=project_id or "", task_id="")
     return result
-
-
-def call_embedding(
-    user_id: str,
-    text: str,
-    *,
-    project_id: str | None = None,
-) -> list[float]:
-    """统一向量化调用。"""
-    cfg = get_runtime_config(user_id, "embedding", project_id)
-    from backend.app.utils.crypto import mask_api_key
-    masked = mask_api_key(cfg.api_key) if cfg.api_key else "N/A"
-    logger.info(
-        "ModelRuntime embedding [cred=%s profile=%s provider=%s model=%s key=%s]",
-        cfg.api_credential_id, cfg.model_profile_id, cfg.provider, cfg.model, masked,
-    )
-    adapter = create_embedding_adapter_from_config(
-        interface_format=_provider_to_interface(cfg.provider),
-        api_key=cfg.api_key,
-        base_url=cfg.base_url,
-        model_name=cfg.model,
-    )
-    start = time.time()
-    result = adapter.embed_query(text)
-    elapsed = int((time.time() - start) * 1000)
-
-    if result:
-        mark_used(user_id, cfg.api_credential_id, cfg.model_profile_id)
-        log_invocation(user_id, cfg, input_chars=len(text), output_chars=len(result),
-                       latency_ms=elapsed, success=True, project_id=project_id or "", task_id="")
-    else:
-        err = getattr(adapter, "last_error", "")
-        update_health(cfg.model_profile_id, "invalid", err)
-        log_invocation(user_id, cfg, input_chars=len(text), latency_ms=elapsed,
-                       success=False, error_code="EMBEDDING_FAILED", error_message=err,
-                       project_id=project_id or "", task_id="")
-
-    return result
-
-
-def get_runtime(user_id: str) -> RuntimeConfig:
-    """兼容旧接口：返回 general purpose 的运行时配置。"""
-    return get_runtime_config(user_id, "general")
 
 
 # Helper functions for UI

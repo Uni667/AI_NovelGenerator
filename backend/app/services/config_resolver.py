@@ -50,6 +50,8 @@ PROVIDER_DEFAULT_CHAT_MODELS = {
     "openai": "gpt-4o-mini",
     "qwen": "qwen-plus",
     "anthropic": "claude-3-5-haiku-latest",
+    "custom": "",
+    "local": "",
 }
 
 SUPPORTED_CHAT_PROVIDERS = {"openai", "deepseek", "qwen", "anthropic", "siliconflow", "custom", "local"}

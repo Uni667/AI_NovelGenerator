@@ -49,6 +49,8 @@
 }
 
 :root {
+  --font-geist-sans: "Geist", "Inter", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-geist-mono: "Geist Mono", "Fira Code", "Courier New", Courier, monospace;
   --background: oklch(0.99 0.005 280);
   --foreground: oklch(0.12 0.015 270);
   --card: oklch(0.98 0.005 280);

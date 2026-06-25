@@ -110,5 +110,58 @@ class ApiCredentialServiceTests(unittest.TestCase):
                          f"model_name 应该是 deepseek-v4-flash，实际是 {model_name!r}")
 
 
+class LlmErrorsTests(unittest.TestCase):
+    """测试 llm_errors.py 的分类逻辑是否能正确识别并映射异常。"""
+
+    def test_json_decode_error_maps_to_parse_failure(self):
+        from json import JSONDecodeError
+        from llm_errors import classify_llm_exception
+        exc = JSONDecodeError("Expecting value", "{}", 0)
+        info = classify_llm_exception(exc)
+        self.assertEqual(info.code, "parse_failure")
+        self.assertEqual(info.category, "parse_failure")
+
+    def test_value_error_with_key_maps_to_config_missing(self):
+        from llm_errors import classify_llm_exception
+        exc = ValueError("Invalid api key provided")
+        info = classify_llm_exception(exc)
+        self.assertEqual(info.code, "config_missing")
+        self.assertEqual(info.category, "config_missing")
+
+    def test_status_401_maps_to_auth_failed(self):
+        from llm_errors import classify_llm_exception
+        # Mock an exception with status_code = 401
+        class MockHttpException(Exception):
+            status_code = 401
+        info = classify_llm_exception(MockHttpException("Unauthorized"))
+        self.assertEqual(info.code, "auth_failed")
+        self.assertEqual(info.category, "auth_failed")
+
+    def test_status_429_maps_to_rate_limited(self):
+        from llm_errors import classify_llm_exception
+        class MockHttpException(Exception):
+            status_code = 429
+        info = classify_llm_exception(MockHttpException("Rate limit reached"))
+        self.assertEqual(info.code, "rate_limited")
+        self.assertEqual(info.category, "provider_4xx")
+
+    def test_timeout_exception_maps_to_timeout(self):
+        from llm_errors import classify_llm_exception
+        class MockTimeoutException(Exception):
+            pass
+        info = classify_llm_exception(MockTimeoutException("read timeout"))
+        self.assertEqual(info.code, "timeout")
+        self.assertEqual(info.category, "timeout")
+
+    def test_connection_error_maps_to_network_error(self):
+        from llm_errors import classify_llm_exception
+        class MockConnectException(Exception):
+            pass
+        info = classify_llm_exception(MockConnectException("nodename nor servname provided, or connection refused"))
+        self.assertEqual(info.code, "network_error")
+        self.assertEqual(info.category, "network_error")
+
+
 if __name__ == "__main__":
     unittest.main()
+

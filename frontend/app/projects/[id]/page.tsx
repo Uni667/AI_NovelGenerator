@@ -30,6 +30,7 @@ import { PlotArcsTab } from "@/components/project/PlotArcsTab"
 import { GraphTab } from "@/components/project/GraphTab"
 import { VisualizerTab } from "@/components/project/VisualizerTab"
 import { EmotionTab } from "@/components/project/EmotionTab"
+import { LocalLibraryTab } from "@/components/project/LocalLibraryTab"
 
 function ProjectDashboardContent() {
   const { project, config, activeTab, setActiveTab } = useProjectContext()
@@ -46,6 +47,7 @@ function ProjectDashboardContent() {
     { value: "emotion", label: "🎭 情感分析" },
     { value: "prompts", label: "提示词实验", className: "font-semibold text-purple-400" },
     { value: "analytics", label: "API 使用情况" },
+    { value: "localLibrary", label: "📚 本地参考库" },
     { value: "settings", label: "参数设置" },
   ] as const
 
@@ -162,6 +164,10 @@ function ProjectDashboardContent() {
 
         <TabsContent value="emotion" className="mt-0 outline-none">
           <EmotionTab />
+        </TabsContent>
+
+        <TabsContent value="localLibrary" className="mt-0 outline-none">
+          <LocalLibraryTab projectId={project.id} />
         </TabsContent>
       </Tabs>
     </div>

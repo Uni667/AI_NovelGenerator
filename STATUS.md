@@ -150,17 +150,6 @@ AI_NovelGenerator/
 | 用户认证 | `/api/v1/auth` |
 | 模型配置 | `/api/user/api-credentials`, `/api/user/model-profiles` |
 
-## 当前进行中的作品
-
-| 项目 | 值 |
-|------|-----|
-| 作品名 | 万界仙帝 |
-| 主角 | 林尘 |
-| 总章节数 | 400 |
-| 已完成 | 60 章 (Ch1-60) |
-| 待生成 | 340 章 (Ch61-400) |
-| 账户 | wanjie_xiandi |
-
 ## 部署命令
 
 ```bash
@@ -187,7 +176,6 @@ cd frontend && vercel --prod --env NEXT_PUBLIC_API_URL="https://ai-novel-backend
 
 - `config.json` 含明文密钥，不入 Docker 镜像
 - 后端 CORS 需包含 Vercel 地址
-- 前 40 章绝对不能动（万界仙帝）
 - 重命名/移动 `novel_generator/` 模块后需更新 `Dockerfile` 中的 COPY 指令
 - Railway 使用 `requirements-cloud.txt`（不含 torch/chromadb）
-- `chapter_directory_parser.py` 仅存于根目录，不在 `novel_generator/` 内
+

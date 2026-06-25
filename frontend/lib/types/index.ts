@@ -773,3 +773,100 @@ export interface EmotionArcSummary {
   min_score_chapter: number;
   chapter_count: number;
 }
+
+// ── 本地书库相关接口类型 ──
+export interface LocalLibraryConfig {
+  source_dir: string
+  essence_dir: string
+  cache_dir: string
+  log_dir: string
+  allow_local_file_access: boolean
+  max_file_mb: number
+  allowed_extensions: string[]
+  watcher_enabled: boolean
+}
+
+export interface LocalReferenceBook {
+  id: string
+  title: string
+  author_label: string
+  category: string
+  tags: string[]
+  source_file_path: string
+  source_file_name: string
+  source_file_ext: string
+  source_file_hash: string
+  source_file_size: number
+  source_file_mtime: string
+  source_encoding: string
+  copyright_status: string
+  parse_status: 'new' | 'queued' | 'parsing' | 'parsed' | 'needs_review' | 'failed'
+  absorb_status: 'not_started' | 'queued' | 'absorbing' | 'absorbed' | 'partial' | 'failed'
+  similarity_status: 'not_built' | 'building' | 'ready' | 'failed'
+  essence_dir_path: string
+  manifest_path: string
+  total_chapters: number
+  total_volumes: number
+  total_words: number
+  parse_confidence: number
+  last_scanned_at?: string
+  last_parsed_at?: string
+  last_absorbed_at?: string
+  error_message?: string
+}
+
+export interface LocalReferenceChapter {
+  id: string
+  book_id: string
+  volume_id?: string
+  chapter_index: number
+  title: string
+  source_start_offset: number
+  source_end_offset: number
+  word_count: number
+  summary_path?: string
+  analysis_path?: string
+  scene_patterns_path?: string
+  parse_confidence: number
+}
+
+export interface ProjectReferenceBinding {
+  id: string
+  project_id: string
+  book_id: string
+  enabled: boolean
+  weight: number
+  use_style_bible: boolean
+  use_scene_patterns: boolean
+  use_pacing_rules: boolean
+  use_character_arcs: boolean
+  use_anti_copy_guard: boolean
+  max_rules_per_generation: number
+  created_at: string
+  updated_at: string
+}
+
+export interface LocalAbsorptionTask {
+  id: string
+  task_id: string
+  book_id: string
+  task_type: string
+  status: 'queued' | 'running' | 'paused' | 'completed' | 'partial' | 'failed' | 'cancelled'
+  progress_current: number
+  progress_total: number
+  current_step: string
+  error_message?: string
+  started_at?: number
+  finished_at?: number
+  created_at: string
+}
+
+export interface ScanReport {
+  source_dir: string
+  total_files: number
+  new_books: number
+  changed_books: number
+  deleted_books: number
+  unchanged_books: number
+  errors: string[]
+}

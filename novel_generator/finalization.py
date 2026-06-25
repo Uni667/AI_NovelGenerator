@@ -71,6 +71,7 @@ def finalize_chapter(
         timeout=ctx.llm.timeout,
         cancel_token=ctx.cancel_token,
     )
+    llm._log_ctx = ctx.make_log_ctx() if hasattr(ctx, "make_log_ctx") else None
 
     _emit("progress", {"step": "summary_update", "status": "running", "message": "正在更新全局摘要..."})
     prompt_summary = prompt_definitions.get_prompt_template(ctx.project_id, 'summary_prompt').format(
@@ -191,6 +192,7 @@ def enrich_chapter_text(
         timeout=ctx.llm.timeout,
         cancel_token=ctx.cancel_token,
     )
+    llm._log_ctx = ctx.make_log_ctx() if hasattr(ctx, "make_log_ctx") else None
     prompt = prompt_definitions.get_prompt_template(ctx.project_id, 'enrich_prompt').format(word_number=word_number, chapter_text=chapter_text)
     enriched_text = invoke_with_cleaning(llm, prompt, cancel_check=_check_cancel)
     return enriched_text if enriched_text else chapter_text

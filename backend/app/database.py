@@ -51,13 +51,142 @@ def bootstrap_schema_version(conn: sqlite3.Connection) -> int:
     return 1
 
 
+def migrate_to_version_2(conn: sqlite3.Connection) -> None:
+    """迁移至版本 2：添加本地书库管理及绑定相关的 8 张表。"""
+    logger.info("Running migration to version 2...")
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS local_library_config (
+            id INTEGER PRIMARY KEY CHECK(id = 1),
+            source_dir TEXT NOT NULL DEFAULT '',
+            essence_dir TEXT NOT NULL DEFAULT '',
+            cache_dir TEXT NOT NULL DEFAULT '',
+            log_dir TEXT NOT NULL DEFAULT '',
+            allow_local_file_access INTEGER NOT NULL DEFAULT 0,
+            max_file_mb INTEGER NOT NULL DEFAULT 500,
+            allowed_extensions TEXT NOT NULL DEFAULT '.txt,.md,.epub,.docx',
+            watcher_enabled INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS local_reference_book (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            author_label TEXT NOT NULL DEFAULT 'unknown',
+            category TEXT NOT NULL DEFAULT '',
+            tags TEXT NOT NULL DEFAULT '[]',
+            source_file_path TEXT NOT NULL UNIQUE,
+            source_file_name TEXT NOT NULL,
+            source_file_ext TEXT NOT NULL,
+            source_file_hash TEXT NOT NULL,
+            source_file_size INTEGER NOT NULL,
+            source_file_mtime TEXT NOT NULL,
+            source_encoding TEXT NOT NULL DEFAULT 'utf-8',
+            copyright_status TEXT NOT NULL DEFAULT 'unknown',
+            parse_status TEXT NOT NULL DEFAULT 'new',
+            absorb_status TEXT NOT NULL DEFAULT 'not_started',
+            similarity_status TEXT NOT NULL DEFAULT 'not_built',
+            essence_dir_path TEXT NOT NULL DEFAULT '',
+            manifest_path TEXT NOT NULL DEFAULT '',
+            total_chapters INTEGER NOT NULL DEFAULT 0,
+            total_volumes INTEGER NOT NULL DEFAULT 0,
+            total_words INTEGER NOT NULL DEFAULT 0,
+            parse_confidence REAL NOT NULL DEFAULT 0.0,
+            error_message TEXT,
+            last_scanned_at TEXT,
+            last_parsed_at TEXT,
+            last_absorbed_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS local_reference_volume (
+            id TEXT PRIMARY KEY,
+            book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+            volume_index INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            start_chapter_index INTEGER NOT NULL,
+            end_chapter_index INTEGER NOT NULL,
+            summary_path TEXT,
+            analysis_path TEXT,
+            word_count INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS local_reference_chapter (
+            id TEXT PRIMARY KEY,
+            book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+            volume_id TEXT REFERENCES local_reference_volume(id) ON DELETE SET NULL,
+            chapter_index INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            source_start_offset INTEGER NOT NULL,
+            source_end_offset INTEGER NOT NULL,
+            word_count INTEGER NOT NULL,
+            summary_path TEXT,
+            analysis_path TEXT,
+            scene_patterns_path TEXT,
+            parse_confidence REAL NOT NULL DEFAULT 1.0
+        );
+
+        CREATE TABLE IF NOT EXISTS local_reference_analysis (
+            id TEXT PRIMARY KEY,
+            book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+            chapter_id TEXT REFERENCES local_reference_chapter(id) ON DELETE CASCADE,
+            analysis_type TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS local_reference_scene_pattern (
+            id TEXT PRIMARY KEY,
+            book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+            chapter_id TEXT REFERENCES local_reference_chapter(id) ON DELETE CASCADE,
+            pattern_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS project_reference_binding (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+            book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            weight REAL NOT NULL DEFAULT 1.0,
+            use_style_bible INTEGER NOT NULL DEFAULT 1,
+            use_scene_patterns INTEGER NOT NULL DEFAULT 1,
+            use_pacing_rules INTEGER NOT NULL DEFAULT 1,
+            use_character_arcs INTEGER NOT NULL DEFAULT 1,
+            use_anti_copy_guard INTEGER NOT NULL DEFAULT 1,
+            max_rules_per_generation INTEGER NOT NULL DEFAULT 5,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(project_id, book_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS reference_absorption_task (
+            id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL UNIQUE,
+            book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+            task_type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+            progress_current INTEGER NOT NULL DEFAULT 0,
+            progress_total INTEGER NOT NULL DEFAULT 100,
+            current_step TEXT NOT NULL DEFAULT '',
+            error_message TEXT,
+            started_at REAL,
+            finished_at REAL,
+            created_at TEXT NOT NULL
+        );
+    """)
+
+
 def run_migrations(conn: sqlite3.Connection) -> None:
     current_version = bootstrap_schema_version(conn)
     # 定义未来版本化迁移函数
     migrations = {
-        # 2: migrate_to_version_2, 等
+        2: migrate_to_version_2,
     }
-    target_version = 1  # 添加新迁移时递增此版本号
+    target_version = 2  # 添加新迁移时递增此版本号
     
     if current_version < target_version:
         logger.info(f"Database migrations in progress: version {current_version} -> {target_version}")
@@ -66,6 +195,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
                 migrations[v](conn)
                 conn.execute("UPDATE schema_version SET version = ?", (v,))
                 logger.info(f"Database successfully migrated to version {v}")
+
 
 
 def init_db():
@@ -369,6 +499,137 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_invocation_user ON model_invocation_log(user_id);
             CREATE INDEX IF NOT EXISTS idx_invocation_project ON model_invocation_log(project_id);
             CREATE INDEX IF NOT EXISTS idx_invocation_task ON model_invocation_log(task_id);
+
+            -- 本地书库持久化配置
+            CREATE TABLE IF NOT EXISTS local_library_config (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                source_dir TEXT NOT NULL DEFAULT '',
+                essence_dir TEXT NOT NULL DEFAULT '',
+                cache_dir TEXT NOT NULL DEFAULT '',
+                log_dir TEXT NOT NULL DEFAULT '',
+                allow_local_file_access INTEGER NOT NULL DEFAULT 0,
+                max_file_mb INTEGER NOT NULL DEFAULT 500,
+                allowed_extensions TEXT NOT NULL DEFAULT '.txt,.md,.epub,.docx',
+                watcher_enabled INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            -- 本地参考书籍索引表
+            CREATE TABLE IF NOT EXISTS local_reference_book (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                author_label TEXT NOT NULL DEFAULT 'unknown',
+                category TEXT NOT NULL DEFAULT '',
+                tags TEXT NOT NULL DEFAULT '[]',
+                source_file_path TEXT NOT NULL UNIQUE,
+                source_file_name TEXT NOT NULL,
+                source_file_ext TEXT NOT NULL,
+                source_file_hash TEXT NOT NULL,
+                source_file_size INTEGER NOT NULL,
+                source_file_mtime TEXT NOT NULL,
+                source_encoding TEXT NOT NULL DEFAULT 'utf-8',
+                copyright_status TEXT NOT NULL DEFAULT 'unknown',
+                parse_status TEXT NOT NULL DEFAULT 'new',
+                absorb_status TEXT NOT NULL DEFAULT 'not_started',
+                similarity_status TEXT NOT NULL DEFAULT 'not_built',
+                essence_dir_path TEXT NOT NULL DEFAULT '',
+                manifest_path TEXT NOT NULL DEFAULT '',
+                total_chapters INTEGER NOT NULL DEFAULT 0,
+                total_volumes INTEGER NOT NULL DEFAULT 0,
+                total_words INTEGER NOT NULL DEFAULT 0,
+                parse_confidence REAL NOT NULL DEFAULT 0.0,
+                error_message TEXT,
+                last_scanned_at TEXT,
+                last_parsed_at TEXT,
+                last_absorbed_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            -- 本地参考分卷索引表
+            CREATE TABLE IF NOT EXISTS local_reference_volume (
+                id TEXT PRIMARY KEY,
+                book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+                volume_index INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                start_chapter_index INTEGER NOT NULL,
+                end_chapter_index INTEGER NOT NULL,
+                summary_path TEXT,
+                analysis_path TEXT,
+                word_count INTEGER NOT NULL DEFAULT 0
+            );
+
+            -- 本地参考章节索引表
+            CREATE TABLE IF NOT EXISTS local_reference_chapter (
+                id TEXT PRIMARY KEY,
+                book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+                volume_id TEXT REFERENCES local_reference_volume(id) ON DELETE SET NULL,
+                chapter_index INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                source_start_offset INTEGER NOT NULL,
+                source_end_offset INTEGER NOT NULL,
+                word_count INTEGER NOT NULL,
+                summary_path TEXT,
+                analysis_path TEXT,
+                scene_patterns_path TEXT,
+                parse_confidence REAL NOT NULL DEFAULT 1.0
+            );
+
+            -- 本地参考书分析结果（风格圣经等）
+            CREATE TABLE IF NOT EXISTS local_reference_analysis (
+                id TEXT PRIMARY KEY,
+                book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+                chapter_id TEXT REFERENCES local_reference_chapter(id) ON DELETE CASCADE,
+                analysis_type TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                version INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
+
+            -- 本地参考书爽点模板
+            CREATE TABLE IF NOT EXISTS local_reference_scene_pattern (
+                id TEXT PRIMARY KEY,
+                book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+                chapter_id TEXT REFERENCES local_reference_chapter(id) ON DELETE CASCADE,
+                pattern_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            -- 项目与参考书的绑定关系
+            CREATE TABLE IF NOT EXISTS project_reference_binding (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+                book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                weight REAL NOT NULL DEFAULT 1.0,
+                use_style_bible INTEGER NOT NULL DEFAULT 1,
+                use_scene_patterns INTEGER NOT NULL DEFAULT 1,
+                use_pacing_rules INTEGER NOT NULL DEFAULT 1,
+                use_character_arcs INTEGER NOT NULL DEFAULT 1,
+                use_anti_copy_guard INTEGER NOT NULL DEFAULT 1,
+                max_rules_per_generation INTEGER NOT NULL DEFAULT 5,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(project_id, book_id)
+            );
+
+            -- 吸收/解析任务表
+            CREATE TABLE IF NOT EXISTS reference_absorption_task (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL UNIQUE,
+                book_id TEXT NOT NULL REFERENCES local_reference_book(id) ON DELETE CASCADE,
+                task_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+                progress_current INTEGER NOT NULL DEFAULT 0,
+                progress_total INTEGER NOT NULL DEFAULT 100,
+                current_step TEXT NOT NULL DEFAULT '',
+                error_message TEXT,
+                started_at REAL,
+                finished_at REAL,
+                created_at TEXT NOT NULL
+            );
         """)
 
         # ── 迁移：project_config 新增 platform 和 category 列 ──

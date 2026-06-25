@@ -106,10 +106,20 @@ class GenerationContext:
     project_id: str = ""
     user_id: str = ""
     cancel_token: object = None  # CancelToken for HTTP-level abort
+    runtime_config: object = None  # RuntimeConfig，用于调用日志记录
 
     @property
     def is_english(self) -> bool:
         return False
+
+    def make_log_ctx(self, task_id: str = "") -> dict:
+        """构建 invoke_with_cleaning 所需的日志上下文。"""
+        return {
+            "user_id": self.user_id or "",
+            "project_id": self.project_id or "",
+            "task_id": task_id or "",
+            "runtime_config": self.runtime_config,
+        }
 
     @classmethod
     def from_dicts(
@@ -120,6 +130,7 @@ class GenerationContext:
         project_id: str = "",
         user_id: str = "",
         cancel_token: object = None,
+        runtime_config: object = None,
     ) -> "GenerationContext":
         return cls(
             llm=LLMConfig.from_dict(llm_dict),
@@ -128,4 +139,5 @@ class GenerationContext:
             project_id=project_id,
             user_id=user_id,
             cancel_token=cancel_token,
+            runtime_config=runtime_config,
         )

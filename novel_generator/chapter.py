@@ -85,6 +85,7 @@ def generate_chapter_draft(
         timeout=ctx.llm.timeout,
         cancel_token=ctx.cancel_token,
     )
+    llm._log_ctx = ctx.make_log_ctx(task_id) if hasattr(ctx, "make_log_ctx") else None
 
     def _check_cancel():
         if task_id:
@@ -177,6 +178,60 @@ def generate_chapter_draft(
 
         if emitter is not None:
             emitter.emit("progress", {"step": "quality_check", "status": "done", "message": "平台质检完成"})
+
+        # --- 5.1 防照抄检测 (Similarity Guard) ---
+        try:
+            from backend.app.services.local_reference_context_service import get_bindings
+            bindings = get_bindings(ctx.project_id)
+            guard_bindings = [b for b in bindings if b.get("enabled") and b.get("use_anti_copy_guard")]
+            if guard_bindings:
+                if emitter is not None:
+                    emitter.emit("progress", {"step": "similarity_check", "status": "running", "message": "正在进行相似度查重..."})
+                    
+                from backend.app.services.local_similarity_guard_service import analyze_similarity, save_similarity_report
+                from backend.app.services.local_reference_context_service import build_reference_context
+                ref_context = build_reference_context(ctx.project_id)
+                
+                reference_texts = []
+                for book_id, data in ref_context.items():
+                    if book_id == "style_bible_excerpt": continue
+                    for _, content in data.get("data", {}).items():
+                        reference_texts.append(str(content))
+                
+                # Check similarity
+                report = analyze_similarity(chapter_content, reference_texts, ctx.project_id)
+                save_similarity_report(ctx.filepath, report, params.chapter_number)
+                
+                # Auto rewrite loop (max 2 times)
+                max_retries = 2
+                retry_count = 0
+                while report["needs_rewrite"] and retry_count < max_retries:
+                    if emitter is not None:
+                        emitter.emit("progress", {"step": "similarity_rewrite", "status": "running", "message": f"查重未通过，正在进行自动重写 ({retry_count+1}/{max_retries})..."})
+                    
+                    if task_id:
+                        update_task(task_id, current_step="similarity_rewrite")
+                        
+                    rewrite_prompt = (
+                        f"以下是你生成的正文草稿，系统检测出它与参考书原文存在高度雷同！\n\n{report['rewrite_instruction']}\n\n"
+                        f"【原草稿内容】：\n{chapter_content}\n\n"
+                        "请重新输出一份完全原创的正文，保持情节不变但必须打碎原句式："
+                    )
+                    
+                    chapter_content = invoke_with_cleaning(llm, rewrite_prompt, cancel_check=_check_cancel)
+                    save_string_to_txt(chapter_content, partial_file)
+                    
+                    # Re-check
+                    report = analyze_similarity(chapter_content, reference_texts, ctx.project_id)
+                    save_similarity_report(ctx.filepath, report, params.chapter_number)
+                    retry_count += 1
+
+                if emitter is not None:
+                    emitter.emit("progress", {"step": "similarity_check", "status": "done", "message": "相似度查重完成"})
+        except Exception as e:
+            logger.error(f"相似度查重流程异常: {e}", exc_info=True)
+            if emitter is not None:
+                emitter.emit("progress", {"step": "similarity_check", "status": "done", "message": "查重异常，按安全策略跳过"})
 
     # --- 6. 存储结果 ---
     chapter_file = os.path.join(chapters_dir, f"chapter_{params.chapter_number}.txt")

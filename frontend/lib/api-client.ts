@@ -7,7 +7,9 @@ import type {
   PlatformHookResult, PlatformTitlesResult, PlatformBlurbResult, PlatformTagsResult, PlatformDiagnosisResult,
   MaterialEntity, DiagnosisReport, PromptMeta, PromptEntry, ProjectAnalytics,
   VisualizerCharacter, VisualizerScene, VisualizerEvent, VisualizerData, VisualizerRelationship,
-  EmotionAnalysis, EmotionArcPoint, EmotionArcSummary
+  EmotionAnalysis, EmotionArcPoint, EmotionArcSummary,
+  LocalLibraryConfig, LocalReferenceBook, LocalReferenceChapter,
+  ProjectReferenceBinding, LocalAbsorptionTask, ScanReport
 } from "./types"
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
@@ -236,6 +238,16 @@ export const api = {
         return res.json()
       })
     },
+    generate: (projectId: string, chapterNumber: number, customPromptText?: string, startStep?: string) => 
+      request<{ success: boolean, task_id: string }>(`/api/v1/projects/${projectId}/chapters/${chapterNumber}/generate`, {
+        method: "POST",
+        body: JSON.stringify({
+          custom_prompt_text: customPromptText,
+          start_step: startStep
+        })
+      }),
+    getSimilarityReport: (projectId: string, chapterNumber: number) =>
+      request<any>(`/api/v1/projects/${projectId}/chapters/${chapterNumber}/similarity-report`),
   },
   files: {
     get: (projectId: string, filename: string) => request<string>(`/api/v1/projects/${projectId}/files/${encodeURIComponent(filename)}`),
@@ -581,5 +593,37 @@ export const api = {
       }
       return request<any>("/api/v1/migration/export-all", { headers });
     },
+  },
+  localLibrary: {
+    getConfig: () => request<LocalLibraryConfig>("/api/v1/local-library/config"),
+    updateConfig: (data: Partial<LocalLibraryConfig>) =>
+      request<LocalLibraryConfig>("/api/v1/local-library/config", { method: "PUT", body: JSON.stringify(data) }),
+    testConfig: (data: Partial<LocalLibraryConfig>) =>
+      request<{ source_dir: any; essence_dir: any; success: boolean }>("/api/v1/local-library/config/test", { method: "POST", body: JSON.stringify(data) }),
+    scan: () => request<ScanReport>("/api/v1/local-library/scan", { method: "POST" }),
+    listBooks: () => request<LocalReferenceBook[]>("/api/v1/local-library/books"),
+    getBook: (bookId: string) => request<LocalReferenceBook>(`/api/v1/local-library/books/${bookId}`),
+    parseBook: (bookId: string) => request<any>(`/api/v1/local-library/books/${bookId}/parse`, { method: "POST" }),
+    listChapters: (bookId: string) => request<LocalReferenceChapter[]>(`/api/v1/local-library/books/${bookId}/chapters`),
+    updateChapter: (bookId: string, chapterId: string, data: Partial<LocalReferenceChapter>) =>
+      request<LocalReferenceChapter>(`/api/v1/local-library/books/${bookId}/chapters/${chapterId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    absorb: (bookId: string) => request<LocalAbsorptionTask>(`/api/v1/local-library/books/${bookId}/absorb`, { method: "POST" }),
+    getAbsorptionStatus: (bookId: string) => request<LocalAbsorptionTask>(`/api/v1/local-library/books/${bookId}/absorb/status`),
+    pauseAbsorb: (bookId: string) => request<any>(`/api/v1/local-library/books/${bookId}/absorb/pause`, { method: "POST" }),
+    resumeAbsorb: (bookId: string) => request<any>(`/api/v1/local-library/books/${bookId}/absorb/resume`, { method: "POST" }),
+    cancelAbsorb: (bookId: string) => request<any>(`/api/v1/local-library/books/${bookId}/absorb/cancel`, { method: "POST" }),
+    getEssenceManifest: (bookId: string) => request<any>(`/api/v1/local-library/books/${bookId}/essence`),
+    getEssence: (bookId: string, fileKey: string) => request<any>(`/api/v1/local-library/books/${bookId}/essence/${encodeURIComponent(fileKey)}`),
+  },
+  projectBindings: {
+    list: (projectId: string) => request<ProjectReferenceBinding[]>(`/api/v1/projects/${projectId}/local-reference-books`),
+    bind: (projectId: string, bookId: string, data: { book_id: string; enabled?: boolean; weight?: number; use_style_bible?: boolean; use_scene_patterns?: boolean; use_pacing_rules?: boolean; use_character_arcs?: boolean; use_anti_copy_guard?: boolean }) =>
+      request<ProjectReferenceBinding>(`/api/v1/projects/${projectId}/local-reference-books/${bookId}/attach`, { method: "POST", body: JSON.stringify(data) }),
+    update: (projectId: string, bookId: string, data: any) =>
+      request<ProjectReferenceBinding>(`/api/v1/projects/${projectId}/local-reference-books/${bookId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    unbind: (projectId: string, bookId: string) =>
+      request<any>(`/api/v1/projects/${projectId}/local-reference-books/${bookId}`, { method: "DELETE" }),
+    previewContext: (projectId: string) =>
+      request<any>(`/api/v1/projects/${projectId}/reference-context/preview`, { method: "POST" }),
   },
 }

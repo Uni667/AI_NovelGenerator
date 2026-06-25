@@ -577,7 +577,7 @@ export function WorkbenchEditor() {
                   </div>
                   <p className="text-sm font-semibold text-amber-400">草稿内容为空</p>
                   <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                    该章节状态为"草稿"，但正文内容不存在。可能文件已被删除或生成过程出现异常。
+                    该章节状态为&quot;草稿&quot;，但正文内容不存在。可能文件已被删除或生成过程出现异常。
                   </p>
                   <p className="text-xs text-muted-foreground mt-3">
                     请尝试重新生成，或在下方编辑器中直接编写内容后保存。
