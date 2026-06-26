@@ -242,13 +242,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <Button
             variant="ghost"
             size="sm"
-            asChild
             className="w-full justify-start gap-2 text-xs text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent h-8 px-2.5"
+            onClick={() => { router.push("/settings"); if (onNavigate) onNavigate(); }}
           >
-            <Link href="/settings" onClick={onNavigate}>
-              <Database className="h-3.5 w-3.5 text-blue-500" />
-              全局模型配置
-            </Link>
+            <Database className="h-3.5 w-3.5 text-blue-500" />
+            全局模型配置
           </Button>
           
           <Button
