@@ -19,6 +19,7 @@ router = APIRouter(tags=["model-settings"])
 class MultiSetupCredential(BaseModel):
     provider: str
     api_key: str
+    base_url: str | None = None
 
 class MultiSetupReq(BaseModel):
     credentials: list[MultiSetupCredential]
@@ -39,7 +40,12 @@ def model_multi_setup(data: MultiSetupReq, request: Request):
                 details.append({"provider": provider, "success": False, "message": "不支持的服务商或空密钥"})
                 continue
                 
-            base_url = normalize_base_url(provider, PROVIDER_DEFAULTS[provider])
+            raw_url = (cred.base_url or "").strip()
+            if raw_url:
+                base_url = normalize_base_url(provider, raw_url)
+            else:
+                base_url = normalize_base_url(provider, PROVIDER_DEFAULTS[provider])
+                
             default_model = PROVIDER_DEFAULT_CHAT_MODELS.get(provider, "")
             if not default_model:
                 details.append({"provider": provider, "success": False, "message": "该服务商暂不支持测试"})
@@ -75,9 +81,17 @@ def model_multi_setup(data: MultiSetupReq, request: Request):
     assignments = []
     with get_db() as conn:
         now = datetime.datetime.now().isoformat()
+        
+        # Build a lookup for base_urls
+        base_urls_lookup = {}
+        for cred in data.credentials:
+            raw_url = (cred.base_url or "").strip()
+            if raw_url:
+                base_urls_lookup[cred.provider.strip()] = normalize_base_url(cred.provider.strip(), raw_url)
+                
         def _upsert_profile(purpose: str, p_type: str, provider: str, model: str):
             cred_id = cred_ids[provider]
-            base_url = normalize_base_url(provider, PROVIDER_DEFAULTS[provider])
+            base_url = base_urls_lookup.get(provider, normalize_base_url(provider, PROVIDER_DEFAULTS[provider]))
             existing = conn.execute("SELECT id FROM model_profile WHERE user_id=? AND purpose=? LIMIT 1", (user_id, purpose)).fetchone()
             if existing:
                 conn.execute("UPDATE model_profile SET provider=?, base_url=?, model=?, api_credential_id=?, health_status='active', is_active=1, is_default=1, updated_at=? WHERE id=?", (provider, base_url, model, cred_id, now, existing[0]))

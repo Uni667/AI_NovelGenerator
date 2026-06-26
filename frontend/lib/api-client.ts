@@ -276,7 +276,7 @@ export const api = {
       request<{ fixed: number; details: any[] }>("/api/v1/user/fix-legacy-credentials", { method: "POST" }),
     modelQuickSetup: (data: { provider: string; api_key: string; project_id?: string }) =>
       request<{ success: boolean; data: { message: string; provider: string; chatReady: boolean; embeddingReady: boolean; chatModel: string; embeddingMessage: string } }>("/api/v1/user/model-quick-setup", { method: "POST", body: JSON.stringify(data) }),
-    modelMultiSetup: (data: { credentials: { provider: string; api_key: string }[] }) =>
+    modelMultiSetup: (data: { credentials: { provider: string; api_key: string; base_url?: string }[] }) =>
       request<{ success: boolean; message: string; details: { provider: string; success: boolean; message: string }[]; assignments: { purpose: string; provider: string; model: string }[] }>("/api/v1/user/model-multi-setup", { method: "POST", body: JSON.stringify(data) }),
     modelStatus: () =>
       request<{ chatReady: boolean; coreReady: boolean; embeddingReady: boolean; embeddingMessage?: string; state?: "empty" | "invalid" | "ready"; title?: string; description?: string; message?: string; provider?: string; providerLabel?: string; chatProvider?: string; chatModel?: string; lastTestedAt?: string; recentTestedAt?: string; chatErrors?: string[]; activeCredentials?: number; hasCredential?: boolean; hasChatProfile?: boolean }>("/api/v1/user/model-settings/status"),

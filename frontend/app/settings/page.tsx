@@ -515,6 +515,7 @@ function QuickSetupCard({ onDone }: { onDone: () => void }) {
     anthropic: "",
     qwen: "",
   })
+  const [customKeys, setCustomKeys] = useState<{ provider: string, base_url: string, api_key: string }[]>([])
   const [saving, setSaving] = useState(false)
   const [resultDialog, setResultDialog] = useState<{ open: boolean; message: string; details: any[]; assignments: any[] }>({ open: false, message: "", details: [], assignments: [] })
 
@@ -522,13 +523,35 @@ function QuickSetupCard({ onDone }: { onDone: () => void }) {
     setKeys(prev => ({ ...prev, [provider]: value }))
   }
 
+  const addCustomKey = () => {
+    setCustomKeys(prev => [...prev, { provider: "custom", base_url: "", api_key: "" }])
+  }
+
+  const removeCustomKey = (index: number) => {
+    setCustomKeys(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const updateCustomKey = (index: number, field: "provider" | "base_url" | "api_key", value: string) => {
+    setCustomKeys(prev => {
+      const next = [...prev]
+      next[index] = { ...next[index], [field]: value }
+      return next
+    })
+  }
+
   const quickSetup = async () => {
-    const credentials = Object.entries(keys)
+    const mainstreamCreds = Object.entries(keys)
       .filter(([_, key]) => key.trim() !== "")
       .map(([provider, key]) => ({ provider, api_key: key.trim() }))
 
+    const validCustomCreds = customKeys
+      .filter(c => c.api_key.trim() !== "" || c.provider === "local")
+      .map(c => ({ provider: c.provider, base_url: c.base_url.trim(), api_key: c.api_key.trim() }))
+
+    const credentials = [...mainstreamCreds, ...validCustomCreds]
+
     if (credentials.length === 0) {
-      toast.error("请至少填写一个主流大模型的 API Key。")
+      toast.error("请至少填写一个 API Key。")
       return
     }
     setSaving(true)
@@ -537,6 +560,7 @@ function QuickSetupCard({ onDone }: { onDone: () => void }) {
       if (result.success) {
         setResultDialog({ open: true, message: result.message, details: result.details, assignments: result.assignments })
         setKeys({ deepseek: "", siliconflow: "", openai: "", anthropic: "", qwen: "" })
+        setCustomKeys([])
         onDone()
       } else {
         toast.error(result.message)
@@ -590,10 +614,46 @@ function QuickSetupCard({ onDone }: { onDone: () => void }) {
                 />
               </div>
             ))}
+            
+            {customKeys.map((custom, index) => (
+              <div key={index} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 bg-background/30 p-3 rounded-lg border border-dashed border-border/60 animate-in fade-in slide-in-from-top-2">
+                <Select value={custom.provider} onValueChange={(v) => updateCustomKey(index, "provider", v || "")}>
+                  <SelectTrigger className="w-[120px] md:w-[150px] h-9 md:h-10 text-xs md:text-sm shadow-sm bg-background/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="custom">自定义节点</SelectItem>
+                    <SelectItem value="local">本地 (Ollama)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="自定义 Base URL"
+                    value={custom.base_url}
+                    onChange={(e) => updateCustomKey(index, "base_url", e.target.value)}
+                    className="shadow-sm border-border/60 font-mono bg-background/80 h-9 md:h-10 text-xs md:text-sm w-1/2"
+                  />
+                  <Input
+                    autoComplete="off"
+                    type="password"
+                    placeholder="自定义 API Key"
+                    value={custom.api_key}
+                    onChange={(e) => updateCustomKey(index, "api_key", e.target.value)}
+                    className="shadow-sm border-border/60 font-mono bg-background/80 h-9 md:h-10 text-xs md:text-sm w-1/2"
+                  />
+                </div>
+                <Button variant="ghost" size="icon" className="h-9 w-9 md:h-10 md:w-10 text-destructive hover:bg-destructive/10" onClick={() => removeCustomKey(index)}>
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            ))}
           </div>
 
-          <div className="flex justify-end pt-3">
-            <Button className="w-full shadow-glow h-11 px-8 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-base" onClick={quickSetup} disabled={saving}>
+          <div className="flex justify-between items-center pt-3">
+            <Button variant="outline" size="sm" className="text-muted-foreground text-xs h-9 border-dashed" onClick={addCustomKey}>
+              <Plus className="size-3 mr-1" /> 添加自定义兼容节点
+            </Button>
+            <Button className="w-auto shadow-glow h-11 px-8 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-base" onClick={quickSetup} disabled={saving}>
               {saving ? <RefreshCw className="size-5 mr-2 animate-spin" /> : <Wifi className="size-5 mr-2" />}
               {saving ? "正在连接与智能分配..." : "一键激活所有管线"}
             </Button>
