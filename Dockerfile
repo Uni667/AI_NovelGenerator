@@ -3,9 +3,8 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install only the cloud backend dependencies (no torch/transformers/chromadb)
-# Use locked versions for reproducible builds
-COPY backend/requirements-lock.txt .
-RUN pip install --no-cache-dir -r requirements-lock.txt
+COPY backend/requirements-cloud.txt .
+RUN pip install --no-cache-dir -r requirements-cloud.txt
 
 # Copy all Python source code (the backend imports from root-level modules)
 COPY backend/ backend/
