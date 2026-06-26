@@ -300,6 +300,36 @@ def get_chat_model_status(user_id: str) -> dict:
             (user_id,),
         ).fetchone()
 
+    import os
+    env_api_key = os.environ.get("LLM_API_KEY", "")
+    env_base_url = os.environ.get("LLM_BASE_URL", "")
+    env_model = os.environ.get("LLM_MODEL_NAME", "")
+    env_interface = os.environ.get("LLM_INTERFACE", "OpenAI")
+    env_config = None
+    if env_api_key or env_model:
+        _lower = env_base_url.lower()
+        if "deepseek.com" in _lower:
+            _env_provider = "deepseek"
+        elif "siliconflow.cn" in _lower:
+            _env_provider = "siliconflow"
+        elif "openai.com" in _lower:
+            _env_provider = "openai"
+        elif "dashscope.aliyuncs.com" in _lower:
+            _env_provider = "qwen"
+        elif "anthropic.com" in _lower:
+            _env_provider = "anthropic"
+        else:
+            _env_provider = "custom"
+        env_config = {
+            "provider": _env_provider,
+            "providerLabel": PROVIDER_DISPLAY_NAMES.get(_env_provider, _env_provider),
+            "model": env_model,
+            "baseUrl": env_base_url,
+            "interface": env_interface,
+            "apiKeyMasked": f"...{env_api_key[-4:]}" if len(env_api_key) >= 4 else "***",
+            "isEnvFallback": True,
+        }
+
     has_any_config = bool(total_credentials or chat_profiles)
     if ready:
         state = "ready"
@@ -347,6 +377,7 @@ def get_chat_model_status(user_id: str) -> dict:
         "activeCredentials": active_credentials,
         "hasCredential": total_credentials > 0,
         "hasChatProfile": chat_profiles > 0,
+        "envConfig": env_config,
     }
 
 

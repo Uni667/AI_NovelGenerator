@@ -47,6 +47,31 @@ const PROVIDER_DISPLAY: Record<string, string> = {
   local: "本地",
 }
 
+const PURPOSE_LABELS: Record<string, string> = {
+  general: "通用",
+  architecture: "架构",
+  outline: "大纲",
+  draft: "草稿",
+  review: "审校",
+  summary: "摘要",
+  polish: "润色",
+  feedback: "反馈",
+  worldbuilding: "世界观",
+  character: "角色",
+  embedding: "向量",
+  rerank: "重排",
+}
+
+interface EnvConfig {
+  provider: string
+  providerLabel: string
+  model: string
+  baseUrl: string
+  interface: string
+  apiKeyMasked: string
+  isEnvFallback: boolean
+}
+
 interface ModelStatus {
   state?: "empty" | "invalid" | "ready"
   title?: string
@@ -66,6 +91,7 @@ interface ModelStatus {
   hasCredential?: boolean
   hasChatProfile?: boolean
   message?: string
+  envConfig?: EnvConfig | null
 }
 
 interface InvocationLog {
@@ -252,6 +278,9 @@ export default function SettingsPage() {
 
         {(state === "empty" || showKeyForm) && <QuickSetupCard onDone={loadAll} />}
 
+        {/* 服务端环境变量兜底 API 提示 */}
+        {status?.envConfig && <EnvConfigBanner envConfig={status.envConfig} />}
+
         {/* 统一的高级控制台折叠开关，始终可被触及 */}
         {(state === "empty" || showKeyForm) && (
           <div className="flex justify-center md:justify-end pr-2 pt-2">
@@ -286,8 +315,51 @@ function EmptyState() {
     <Card className="glass-panel border-border/40">
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Cpu className="text-muted-foreground" /> 节点空闲</CardTitle>
-        <CardDescription>当前未连接任何算力节点，请先配置大模型 API Key 启动引擎。</CardDescription>
+        <CardDescription>当前数据库中未配置算力节点。服务器可能已通过环境变量预置 API（见下方），可直接生成小说。</CardDescription>
       </CardHeader>
+    </Card>
+  )
+}
+
+function EnvConfigBanner({ envConfig }: { envConfig: EnvConfig }) {
+  return (
+    <Card className="glass-panel border-amber-500/30 bg-amber-500/5 relative overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <div className="absolute top-0 left-0 w-1 h-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]" />
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-amber-400 text-base">
+            <Cpu className="size-5" />
+            服务端预置 API（当前实际生效）
+          </CardTitle>
+          <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-xs">ENV_VAR</Badge>
+        </div>
+        <CardDescription className="text-amber-300/70 text-xs mt-1">
+          以下配置来自服务器环境变量。您未在数据库配置时，系统自动使用此配置生成小说。
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2 font-mono text-sm">
+          <div className="flex items-center justify-between bg-background/40 px-3 py-2 rounded border border-amber-500/20">
+            <span className="text-muted-foreground text-xs">[PROVIDER_NODE]</span>
+            <span className="text-amber-300 font-semibold">{envConfig.providerLabel || envConfig.provider}</span>
+          </div>
+          <div className="flex items-center justify-between bg-background/40 px-3 py-2 rounded border border-amber-500/20">
+            <span className="text-muted-foreground text-xs">[ACTIVE_MODEL]</span>
+            <span className="text-amber-300 font-semibold text-primary">{envConfig.model || "未设置"}</span>
+          </div>
+          <div className="flex items-center justify-between bg-background/40 px-3 py-2 rounded border border-amber-500/20">
+            <span className="text-muted-foreground text-xs">[BASE_URL]</span>
+            <span className="text-amber-300/80 text-xs truncate max-w-xs">{envConfig.baseUrl || "（使用默认地址）"}</span>
+          </div>
+          <div className="flex items-center justify-between bg-background/40 px-3 py-2 rounded border border-amber-500/20">
+            <span className="text-muted-foreground text-xs">[API_KEY]</span>
+            <span className="text-amber-300 font-semibold">{envConfig.apiKeyMasked}</span>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-amber-300/60 leading-relaxed">
+          💡 如需切换 API，在上方「极速挂载算力节点」中填入新的 Key 后保存，数据库配置将优先于环境变量生效。
+        </p>
+      </CardContent>
     </Card>
   )
 }
@@ -680,9 +752,15 @@ function ProfileList({ profiles, credentials, onChanged }: { profiles: ModelProf
                   {profile.type.toUpperCase()}
                 </Badge>
                 <span className="font-bold text-foreground">{profile.name}</span>
+                {profile.is_default && (
+                  <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[10px]">默认</Badge>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-muted-foreground text-xs">{providerLabel(profile.provider)} <span className="mx-1">/</span> <span className="font-mono text-primary/80">{profile.model}</span></span>
+                {profile.purpose && profile.purpose !== "general" && (
+                  <Badge variant="outline" className="bg-violet-500/10 text-violet-400 border-violet-500/30 text-[10px]">{PURPOSE_LABELS[profile.purpose] || profile.purpose}</Badge>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -738,6 +816,7 @@ function ModelProfileDialog({
   const [credentialId, setCredentialId] = useState("")
   const [temperature, setTemperature] = useState("0.7")
   const [maxTokens, setMaxTokens] = useState("8192")
+  const [purpose, setPurpose] = useState("general")
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -745,8 +824,9 @@ function ModelProfileDialog({
       setName(profile?.name || "")
       setModel(profile?.model || "")
       setCredentialId(profile?.api_credential_id || credentials[0]?.id || "")
-      setTemperature(String(profile?.type === "chat" ? 0.7 : 0.7))
-      setMaxTokens(String(profile?.type === "chat" ? 8192 : 8192))
+      setPurpose(profile?.purpose || "general")
+      setTemperature(String(profile?.temperature ?? 0.7))
+      setMaxTokens(String(profile?.max_tokens ?? 8192))
     }
   }, [open, profile, credentials])
 
@@ -772,6 +852,7 @@ function ModelProfileDialog({
       const payload = {
         name: name.trim(),
         type: "chat",
+        purpose,
         provider,
         model: model.trim(),
         api_credential_id: credentialId,
@@ -821,6 +902,29 @@ function ModelProfileDialog({
             />
             <p className="text-xs text-muted-foreground">
               输入服务商支持的模型名，可填入任意模型（如 deepseek-v4-pro）
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">用途</Label>
+            <Select value={purpose} onValueChange={(v) => setPurpose(v || "general")} disabled={saving}>
+              <SelectTrigger>
+                <SelectValue placeholder="选择用途" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="general">通用（推荐）</SelectItem>
+                <SelectItem value="architecture">架构生成</SelectItem>
+                <SelectItem value="outline">大纲生成</SelectItem>
+                <SelectItem value="draft">章节草稿</SelectItem>
+                <SelectItem value="review">质量审查</SelectItem>
+                <SelectItem value="summary">摘要/定稿</SelectItem>
+                <SelectItem value="polish">润色</SelectItem>
+                <SelectItem value="feedback">反馈</SelectItem>
+                <SelectItem value="worldbuilding">世界观</SelectItem>
+                <SelectItem value="character">角色</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              选择此配置的用途，不同用途可在项目设置中分别分配
             </p>
           </div>
           <div className="space-y-1.5">
