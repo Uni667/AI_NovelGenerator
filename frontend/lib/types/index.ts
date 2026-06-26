@@ -439,6 +439,8 @@ export interface ApiCredential {
   status: string;
   api_key_last4?: string;
   last_tested_at?: string;
+  last_error?: string;
+  updated_at?: string;
 }
 
 export interface ModelProfile {

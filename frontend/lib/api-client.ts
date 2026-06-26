@@ -264,6 +264,8 @@ export const api = {
       request<void>(`/api/v1/user/api-credentials/${id}${cascade ? "?cascade=true" : ""}`, { method: "DELETE" }),
     testCredential: (id: string) =>
       request<{ success: boolean; message: string }>(`/api/v1/user/api-credentials/${id}/test`, { method: "POST" }),
+    revealCredentialKey: (id: string) =>
+      request<{ api_key: string }>(`/api/v1/user/api-credentials/${id}/reveal-key`),
     enableCredential: (id: string) =>
       request<any>(`/api/v1/user/api-credentials/${id}/enable`, { method: "POST" }),
     disableCredential: (id: string) =>

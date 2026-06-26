@@ -16,7 +16,11 @@ import {
   Database,
   Cpu,
   Fingerprint,
-  ArrowLeft
+  ArrowLeft,
+  Eye,
+  EyeOff,
+  Copy,
+  Globe,
 } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api-client"
@@ -35,7 +39,19 @@ const PROVIDERS = [
   { value: "openai", label: "OpenAI" },
   { value: "qwen", label: "通义千问" },
   { value: "anthropic", label: "Claude" },
+  { value: "custom", label: "自定义 (OpenAI 兼容)" },
+  { value: "local", label: "本地 (Ollama 等)" },
 ]
+
+const PROVIDER_DEFAULT_URLS: Record<string, string> = {
+  siliconflow: "https://api.siliconflow.cn/v1",
+  deepseek: "https://api.deepseek.com",
+  openai: "https://api.openai.com/v1",
+  qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  anthropic: "https://api.anthropic.com",
+  local: "http://localhost:11434",
+  custom: "",
+}
 
 const PROVIDER_DISPLAY: Record<string, string> = {
   siliconflow: "硅基流动",
@@ -659,6 +675,22 @@ function AdvancedSettings({
 }
 
 function CredentialList({ credentials, onChanged }: { credentials: ApiCredential[]; onChanged: () => void }) {
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingCredential, setEditingCredential] = useState<ApiCredential | null>(null)
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({})
+  const [revealing, setRevealing] = useState<string>("")
+  const [working, setWorking] = useState<string>("")
+
+  const handleCreate = () => {
+    setEditingCredential(null)
+    setDialogOpen(true)
+  }
+
+  const handleEdit = (credential: ApiCredential) => {
+    setEditingCredential(credential)
+    setDialogOpen(true)
+  }
+
   const handleDelete = async (credential: ApiCredential) => {
     try {
       await api.config.deleteCredential(credential.id)
@@ -683,37 +715,307 @@ function CredentialList({ credentials, onChanged }: { credentials: ApiCredential
     }
   }
 
-  if (!credentials.length) return <div className="py-6 text-center text-sm text-muted-foreground">暂无凭证数据</div>
+  const handleReveal = async (credential: ApiCredential) => {
+    if (revealedKeys[credential.id]) {
+      setRevealedKeys((prev) => {
+        const next = { ...prev }
+        delete next[credential.id]
+        return next
+      })
+      return
+    }
+    setRevealing(credential.id)
+    try {
+      const result = await api.config.revealCredentialKey(credential.id)
+      setRevealedKeys((prev) => ({ ...prev, [credential.id]: result.api_key }))
+    } catch (error) {
+      toast.error(errorMessage(error, "获取密钥失败，请稍后重试。"))
+    } finally {
+      setRevealing("")
+    }
+  }
+
+  const handleCopyKey = async (credential: ApiCredential) => {
+    const key = revealedKeys[credential.id]
+    if (!key) return
+    try {
+      await navigator.clipboard.writeText(key)
+      toast.success("API Key 已复制到剪贴板。")
+    } catch {
+      toast.error("复制失败，请手动选择并复制。")
+    }
+  }
+
+  const handleTest = async (credential: ApiCredential) => {
+    setWorking(credential.id)
+    try {
+      const result = await api.config.testCredential(credential.id)
+      toast.success(result.message || "测试成功")
+      onChanged()
+    } catch (error) {
+      toast.error(errorMessage(error, "测试失败，请检查 API Key 和服务商是否匹配。"))
+    } finally {
+      setWorking("")
+    }
+  }
 
   return (
     <div className="space-y-3">
-      {credentials.map((credential) => (
-        <div key={credential.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/50 p-3 text-sm hover:bg-background/80 transition-colors">
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-foreground">{credential.name}</span>
-              <Badge variant="secondary" className="text-xs bg-muted/50">{providerLabel(credential.provider)}</Badge>
-              {credential.api_key_last4 && <span className="font-mono text-xs text-muted-foreground bg-muted/30 px-1.5 py-0.5 rounded border border-border/30">...{credential.api_key_last4}</span>}
+      <div className="flex justify-end">
+        <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={handleCreate}>
+          <Plus className="size-3.5" />
+          新建凭证
+        </Button>
+      </div>
+      {!credentials.length ? (
+        <div className="py-6 text-center text-sm text-muted-foreground">暂无凭证数据，点击"新建凭证"添加</div>
+      ) : (
+        credentials.map((credential) => {
+          const revealed = revealedKeys[credential.id]
+          return (
+            <div key={credential.id} className="flex flex-col gap-2 rounded-lg border border-border/50 bg-background/50 p-3 text-sm hover:bg-background/80 transition-colors">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-foreground">{credential.name}</span>
+                  <Badge variant="secondary" className="text-xs bg-muted/50">{providerLabel(credential.provider)}</Badge>
+                  {credential.is_default && (
+                    <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[10px]">默认</Badge>
+                  )}
+                  <Badge variant={credential.status === "active" ? "default" : credential.status === "invalid" ? "destructive" : "outline"} className={credential.status === "active" ? "bg-emerald-500/20 text-emerald-400 border-none px-2 h-5" : "px-2 h-5"}>
+                    {credential.status === "active" ? "Active" : credential.status === "invalid" ? "Error" : "Untested"}
+                  </Badge>
+                </div>
+                <div className="flex gap-1.5">
+                  <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-primary/20 hover:text-primary" title={revealed ? "隐藏密钥" : "查看完整密钥"} onClick={() => handleReveal(credential)} disabled={revealing === credential.id}>
+                    {revealing === credential.id ? <RefreshCw className="size-4 animate-spin" /> : revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-primary/20 hover:text-primary" title="编辑凭证" onClick={() => handleEdit(credential)}>
+                    <Pencil className="size-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-primary/20 hover:text-primary" title="重新测试" onClick={() => handleTest(credential)} disabled={working === credential.id}>
+                    {working === credential.id ? <RefreshCw className="size-4 animate-spin" /> : <Wifi className="size-4" />}
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-destructive/20 hover:text-destructive" title="删除" onClick={() => handleDelete(credential)}>
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <KeyRound className="size-3 shrink-0" />
+                  {revealed ? (
+                    <span className="font-mono text-foreground break-all bg-primary/5 px-1.5 py-0.5 rounded border border-primary/20">
+                      {revealed}
+                      <Button size="icon" variant="ghost" className="h-5 w-5 ml-1 inline-flex hover:bg-primary/20" title="复制密钥" onClick={() => handleCopyKey(credential)}>
+                        <Copy className="size-3" />
+                      </Button>
+                    </span>
+                  ) : (
+                    <span className="font-mono bg-muted/30 px-1.5 py-0.5 rounded border border-border/30">
+                      {credential.api_key_last4 ? `****${credential.api_key_last4}` : "未配置"}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Globe className="size-3 shrink-0" />
+                  <span className="font-mono truncate" title={credential.base_url || "未设置"}>{credential.base_url || "未设置"}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <ShieldCheck className="size-3 shrink-0" />
+                  <span>上次测试: {formatTime(credential.last_tested_at)}</span>
+                </div>
+                {credential.status === "invalid" && credential.last_error && (
+                  <div className="mt-1 p-2 bg-red-500/10 border border-red-500/20 rounded font-mono text-red-400 text-xs break-all">
+                    {credential.last_error}
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="flex items-center">
-              <Badge variant={credential.status === "active" ? "default" : credential.status === "invalid" ? "destructive" : "outline"} className={credential.status === "active" ? "bg-emerald-500/20 text-emerald-400 border-none px-2 h-5" : "px-2 h-5"}>
-                {credential.status === "active" ? "Active" : credential.status === "invalid" ? "Error" : "Untested"}
-              </Badge>
-            </div>
+          )
+        })
+      )}
+      <CredentialDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        credential={editingCredential}
+        onChanged={onChanged}
+      />
+    </div>
+  )
+}
+
+function CredentialDialog({
+  open,
+  onOpenChange,
+  credential,
+  onChanged,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  credential: ApiCredential | null
+  onChanged: () => void
+}) {
+  const isEdit = !!credential
+  const [name, setName] = useState("")
+  const [provider, setProvider] = useState("siliconflow")
+  const [baseUrl, setBaseUrl] = useState("")
+  const [apiKey, setApiKey] = useState("")
+  const [isDefault, setIsDefault] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setName(credential?.name || "")
+      setProvider(credential?.provider || "siliconflow")
+      setBaseUrl(credential?.base_url || "")
+      setApiKey("")
+      setIsDefault(credential?.is_default ?? false)
+    }
+  }, [open, credential])
+
+  const handleProviderChange = (value: string) => {
+    setProvider(value)
+    if (!isEdit) {
+      const defaultUrl = PROVIDER_DEFAULT_URLS[value] || ""
+      setBaseUrl(defaultUrl)
+    }
+  }
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      toast.error("请输入凭证名称")
+      return
+    }
+    if (provider !== "local" && !apiKey.trim() && !isEdit) {
+      toast.error("请填写 API Key（本地模型除外）")
+      return
+    }
+    if (!baseUrl.trim() && provider !== "local") {
+      toast.error("请填写 Base URL")
+      return
+    }
+    if (baseUrl && !baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+      toast.error("Base URL 必须以 http:// 或 https:// 开头")
+      return
+    }
+
+    setSaving(true)
+    try {
+      if (isEdit) {
+        const payload: Record<string, unknown> = {
+          name: name.trim(),
+          provider,
+          base_url: baseUrl.trim(),
+          is_default: isDefault,
+        }
+        if (apiKey.trim()) {
+          payload.api_key = apiKey.trim()
+        }
+        await api.config.updateCredential(credential!.id, payload)
+        toast.success("凭证已更新")
+      } else {
+        await api.config.createCredential({
+          name: name.trim(),
+          provider,
+          api_key: apiKey.trim(),
+          base_url: baseUrl.trim(),
+          is_default: isDefault,
+        })
+        toast.success("凭证已创建")
+      }
+      onOpenChange(false)
+      onChanged()
+    } catch (error) {
+      toast.error(errorMessage(error, isEdit ? "更新失败，请稍后重试。" : "创建失败，请稍后重试。"))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "编辑凭证" : "新建凭证"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">凭证名称</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="如：DeepSeek 主账号"
+              disabled={saving}
+            />
           </div>
-          <div className="flex gap-1.5">
-            <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-primary/20 hover:text-primary" title="重新测试" onClick={() =>
-                api.config.testCredential(credential.id).then((result) => toast.success(result.message || "测试成功")).catch((error) => toast.error(errorMessage(error, "测试失败，请检查 API Key 和服务商是否匹配。"))).finally(onChanged)
-              }>
-              <Wifi className="size-4" />
-            </Button>
-            <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-destructive/20 hover:text-destructive" title="删除" onClick={() => handleDelete(credential)}>
-              <Trash2 className="size-4" />
-            </Button>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">服务商</Label>
+            <Select value={provider} onValueChange={(v) => v && handleProviderChange(v)} disabled={saving}>
+              <SelectTrigger>
+                <SelectValue placeholder="选择服务商" />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDERS.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              选择"自定义"可填入任意 OpenAI 兼容服务地址
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Base URL</Label>
+            <Input
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://api.example.com/v1"
+              disabled={saving}
+            />
+            <p className="text-xs text-muted-foreground">
+              {PROVIDER_DEFAULT_URLS[provider] ? `默认: ${PROVIDER_DEFAULT_URLS[provider]}` : "请填写完整的服务地址"}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              API Key {isEdit && <span className="text-muted-foreground/70">（留空表示不修改）</span>}
+            </Label>
+            <Input
+              autoComplete="off"
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={isEdit ? "留空保持原密钥不变" : "sk-..."}
+              disabled={saving}
+            />
+            {provider === "local" && (
+              <p className="text-xs text-muted-foreground">本地模型可不填 API Key</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="is-default-cred"
+              checked={isDefault}
+              onChange={(e) => setIsDefault(e.target.checked)}
+              disabled={saving}
+              className="size-4"
+            />
+            <Label htmlFor="is-default-cred" className="text-sm cursor-pointer">设为默认凭证</Label>
           </div>
         </div>
-      ))}
-    </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            取消
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "保存中..." : isEdit ? "保存" : "创建"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

@@ -360,6 +360,30 @@ def test_api_credential(cred_id: str, request: Request):
     return result
 
 
+@router.get("/api/v1/user/api-credentials/{cred_id}/reveal-key")
+def reveal_api_credential_key(cred_id: str, request: Request):
+    """返回解密后的 API Key 明文，供前端临时查看/复制。每次调用均记录审计日志。"""
+    user_id = get_current_user(request)
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, name, provider, api_key_encrypted FROM api_credential WHERE id=? AND user_id=?",
+            (cred_id, user_id),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="API 凭证不存在。")
+    cred = dict(row)
+    encrypted = cred.get("api_key_encrypted") or ""
+    if not encrypted:
+        raise HTTPException(status_code=400, detail="该凭证未配置 API Key。")
+    try:
+        api_key = decrypt_api_key(encrypted)
+    except Exception as exc:
+        logger.warning("Reveal key decrypt failed for credential %s: %s", cred_id, exc)
+        raise HTTPException(status_code=400, detail="API Key 解密失败，可能是加密密钥变更，请重新填写。")
+    logger.info("API key revealed: user=%s credential=%s name=%s", user_id, cred_id, cred.get("name"))
+    return {"api_key": api_key}
+
+
 @router.post("/api/v1/user/api-credentials/{cred_id}/enable")
 def enable_credential(cred_id: str, request: Request):
     return set_status(cred_id, get_current_user(request), "active")
