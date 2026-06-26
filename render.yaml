@@ -14,7 +14,7 @@ services:
       - key: API_SECRET_ENCRYPTION_KEY
         generateValue: true
       - key: ALLOWED_ORIGINS
-        value: https://frontend-chi-one-84.vercel.app,http://localhost:3000,http://127.0.0.1:3000
+        value: http://localhost:3000,http://127.0.0.1:3000
       - key: PYTHONUTF8
         value: "1"
     # Persistent disk — $0.25/GB/month (≈$3/year)

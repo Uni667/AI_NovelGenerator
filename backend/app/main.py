@@ -38,7 +38,7 @@ logging.basicConfig(
 
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000,https://frontend-chi-one-84.vercel.app,https://ai-novel-generator-topaz.vercel.app"
+    "http://localhost:3000,http://127.0.0.1:3000"
 ).split(",")
 
 @asynccontextmanager

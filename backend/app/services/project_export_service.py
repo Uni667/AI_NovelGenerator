@@ -1,7 +1,10 @@
 import os
 import json
+import logging
 from datetime import datetime
 from backend.app.services import project_service, state_file_service, chapter_service, state_conflict_service
+
+logger = logging.getLogger(__name__)
 
 def export_story_bible_markdown(project_id: str, user_id: str) -> str:
     """
@@ -43,8 +46,8 @@ def export_story_bible_markdown(project_id: str, user_id: str) -> str:
                         if p.get("status") == "pending_review":
                             pending_patches.append(p)
                 except Exception:
-                    pass
-                    
+                    logger.warning("Failed to load patch file %s during export", fname, exc_info=True)
+
     pending_diffs = []
     if os.path.exists(diffs_dir):
         for fname in os.listdir(diffs_dir):
@@ -55,7 +58,7 @@ def export_story_bible_markdown(project_id: str, user_id: str) -> str:
                         if d.get("status") == "pending_review":
                             pending_diffs.append(d)
                 except Exception:
-                    pass
+                    logger.warning("Failed to load outline diff file %s during export", fname, exc_info=True)
                     
     conflicts_res = state_conflict_service.detect_state_conflicts(project_id, enable_ai_conflict_check=False, user_id=user_id)
     conflicts = conflicts_res.get("conflicts", [])

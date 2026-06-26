@@ -70,7 +70,7 @@ def get_audit_logs(project_id: str, limit: int = 100) -> list[dict]:
                     try:
                         logs.append(json.loads(line))
                     except Exception:
-                        pass
+                        logger.warning("Failed to parse audit log line: %s", line.strip()[:200], exc_info=True)
     except Exception as e:
         logger.error(f"Error reading audit logs: {e}")
         

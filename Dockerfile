@@ -3,8 +3,9 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install only the cloud backend dependencies (no torch/transformers/chromadb)
-COPY backend/requirements-cloud.txt .
-RUN pip install --no-cache-dir -r requirements-cloud.txt
+# Use locked versions for reproducible builds
+COPY backend/requirements-lock.txt .
+RUN pip install --no-cache-dir -r requirements-lock.txt
 
 # Copy all Python source code (the backend imports from root-level modules)
 COPY backend/ backend/
@@ -25,6 +26,10 @@ RUN mkdir -p /app/data
 
 # Platform (Railway / Render) provides PORT env var
 EXPOSE 8001
+
+# Healthcheck: query the API health endpoint every 30s
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD python -c "import os,urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.getenv(\"PORT\",\"8001\")}/api/v1/health', timeout=8)" || exit 1
 
 # Startup script: seed data → auto-backup → start uvicorn
 RUN echo '#!/bin/bash' > /app/start.sh && \

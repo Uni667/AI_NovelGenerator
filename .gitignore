@@ -18,16 +18,17 @@ test.py
 /backup
 uv.lock
 .python-version
-pyproject.toml
 
 # Frontend
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+*.tsbuildinfo
 
 # Backend
-backend/__pycache__/
-backend/*.pyc
+**/__pycache__/
+*.pyc
+.pytest_cache/
 
 # IDE
 .vscode/
@@ -44,10 +45,13 @@ Thumbs.db
 
 # Logs
 *.log
+logs/
+
 # Data
 data/
 data_backup_*/
 data_backup_deploy_*/
+projects/
 .jwt_secret
 
 # Claude Code

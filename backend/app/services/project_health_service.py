@@ -64,7 +64,7 @@ def check_project_health(project_id: str, user_id: str) -> dict:
                         elif patch.get("status") == "failed":
                             failed_patches += 1
                 except Exception:
-                    pass
+                    logger.warning("Failed to parse patch file %s during health check", fname, exc_info=True)
                     
     if failed_patches > 0:
         add_check("failed_patches", "danger", f"存在 {failed_patches} 个失败的 State Patch", "请到状态页查看并废弃或修正")
@@ -88,7 +88,7 @@ def check_project_health(project_id: str, user_id: str) -> dict:
                         elif diff.get("status") == "failed":
                             failed_diffs += 1
                 except Exception:
-                    pass
+                    logger.warning("Failed to parse outline diff file %s during health check", fname, exc_info=True)
                     
     if failed_diffs > 0:
         add_check("failed_diffs", "warning", f"存在 {failed_diffs} 个生成失败的大纲演化建议", "请到状态页废弃")

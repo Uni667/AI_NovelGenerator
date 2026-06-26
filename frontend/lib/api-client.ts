@@ -255,56 +255,56 @@ export const api = {
   },
   config: {
     // API 凭证
-    listCredentials: () => request<ApiCredential[]>("/api/user/api-credentials"),
+    listCredentials: () => request<ApiCredential[]>("/api/v1/user/api-credentials"),
     createCredential: (data: { name: string; provider: string; api_key: string; base_url: string; is_default?: boolean }) =>
-      request<ApiCredential>("/api/user/api-credentials", { method: "POST", body: JSON.stringify(data) }),
+      request<ApiCredential>("/api/v1/user/api-credentials", { method: "POST", body: JSON.stringify(data) }),
     updateCredential: (id: string, data: Partial<ApiCredential>) =>
-      request<ApiCredential>(`/api/user/api-credentials/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+      request<ApiCredential>(`/api/v1/user/api-credentials/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     deleteCredential: (id: string, cascade?: boolean) =>
-      request<void>(`/api/user/api-credentials/${id}${cascade ? "?cascade=true" : ""}`, { method: "DELETE" }),
+      request<void>(`/api/v1/user/api-credentials/${id}${cascade ? "?cascade=true" : ""}`, { method: "DELETE" }),
     testCredential: (id: string) =>
-      request<{ success: boolean; message: string }>(`/api/user/api-credentials/${id}/test`, { method: "POST" }),
+      request<{ success: boolean; message: string }>(`/api/v1/user/api-credentials/${id}/test`, { method: "POST" }),
     enableCredential: (id: string) =>
-      request<any>(`/api/user/api-credentials/${id}/enable`, { method: "POST" }),
+      request<any>(`/api/v1/user/api-credentials/${id}/enable`, { method: "POST" }),
     disableCredential: (id: string) =>
-      request<any>(`/api/user/api-credentials/${id}/disable`, { method: "POST" }),
+      request<any>(`/api/v1/user/api-credentials/${id}/disable`, { method: "POST" }),
     fetchModels: (id: string) =>
-      request<{ models: { id: string; name: string; type: string; provider: string }[]; provider: string }>(`/api/user/api-credentials/${id}/models`),
+      request<{ models: { id: string; name: string; type: string; provider: string }[]; provider: string }>(`/api/v1/user/api-credentials/${id}/models`),
     fixLegacyCredentials: () =>
-      request<{ fixed: number; details: any[] }>("/api/user/fix-legacy-credentials", { method: "POST" }),
+      request<{ fixed: number; details: any[] }>("/api/v1/user/fix-legacy-credentials", { method: "POST" }),
     modelQuickSetup: (data: { provider: string; api_key: string; project_id?: string }) =>
-      request<{ success: boolean; data: { message: string; provider: string; chatReady: boolean; embeddingReady: boolean; chatModel: string; embeddingMessage: string } }>("/api/user/model-quick-setup", { method: "POST", body: JSON.stringify(data) }),
+      request<{ success: boolean; data: { message: string; provider: string; chatReady: boolean; embeddingReady: boolean; chatModel: string; embeddingMessage: string } }>("/api/v1/user/model-quick-setup", { method: "POST", body: JSON.stringify(data) }),
     modelStatus: () =>
-      request<{ chatReady: boolean; coreReady: boolean; embeddingReady: boolean; embeddingMessage?: string; state?: "empty" | "invalid" | "ready"; title?: string; description?: string; message?: string; provider?: string; providerLabel?: string; chatProvider?: string; chatModel?: string; lastTestedAt?: string; recentTestedAt?: string; chatErrors?: string[]; activeCredentials?: number; hasCredential?: boolean; hasChatProfile?: boolean }>("/api/user/model-settings/status"),
+      request<{ chatReady: boolean; coreReady: boolean; embeddingReady: boolean; embeddingMessage?: string; state?: "empty" | "invalid" | "ready"; title?: string; description?: string; message?: string; provider?: string; providerLabel?: string; chatProvider?: string; chatModel?: string; lastTestedAt?: string; recentTestedAt?: string; chatErrors?: string[]; activeCredentials?: number; hasCredential?: boolean; hasChatProfile?: boolean }>("/api/v1/user/model-settings/status"),
     modelReset: () =>
-      request<{ success: boolean; message: string }>("/api/user/model-settings/reset", { method: "POST" }),
+      request<{ success: boolean; message: string }>("/api/v1/user/model-settings/reset", { method: "POST" }),
     modelRepair: () =>
-      request<{ success: boolean; message: string; details: string[] }>("/api/user/model-settings/repair", { method: "POST" }),
+      request<{ success: boolean; message: string; details: string[] }>("/api/v1/user/model-settings/repair", { method: "POST" }),
     // 模型配置
-    listProfiles: () => request<ModelProfile[]>("/api/user/model-profiles"),
-    getProfile: (id: string) => request<ModelProfile>(`/api/user/model-profiles/${id}`),
+    listProfiles: () => request<ModelProfile[]>("/api/v1/user/model-profiles"),
+    getProfile: (id: string) => request<ModelProfile>(`/api/v1/user/model-profiles/${id}`),
     createProfile: (data: Partial<ModelProfile>) =>
-      request<ModelProfile>("/api/user/model-profiles", { method: "POST", body: JSON.stringify(data) }),
+      request<ModelProfile>("/api/v1/user/model-profiles", { method: "POST", body: JSON.stringify(data) }),
     updateProfile: (id: string, data: Partial<ModelProfile>) =>
-      request<ModelProfile>(`/api/user/model-profiles/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+      request<ModelProfile>(`/api/v1/user/model-profiles/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     deleteProfile: (id: string) =>
-      request<void>(`/api/user/model-profiles/${id}`, { method: "DELETE" }),
+      request<void>(`/api/v1/user/model-profiles/${id}`, { method: "DELETE" }),
     testProfile: (id: string) =>
-      request<{ success: boolean; message: string }>(`/api/user/model-profiles/${id}/test`, { method: "POST" }),
+      request<{ success: boolean; message: string }>(`/api/v1/user/model-profiles/${id}/test`, { method: "POST" }),
     setDefaultProfile: (id: string) =>
-      request<any>(`/api/user/model-profiles/${id}/set-default`, { method: "POST" }),
+      request<any>(`/api/v1/user/model-profiles/${id}/set-default`, { method: "POST" }),
     // 调用日志
     listInvocationLogs: (limit?: number) =>
-      request<any[]>(`/api/user/model-invocation-logs?limit=${limit || 50}`),
+      request<any[]>(`/api/v1/user/model-invocation-logs?limit=${limit || 50}`),
     listProjectInvocationLogs: (projectId: string, limit?: number) =>
-      request<any[]>(`/api/projects/${projectId}/model-invocation-logs?limit=${limit || 30}`),
+      request<any[]>(`/api/v1/projects/${projectId}/model-invocation-logs?limit=${limit || 30}`),
   },
   modelAssignment: {
-    get: (projectId: string) => request<ModelAssignment>(`/api/projects/${projectId}/model-assignment`),
+    get: (projectId: string) => request<ModelAssignment>(`/api/v1/projects/${projectId}/model-assignment`),
     save: (projectId: string, data: ModelAssignment) =>
-      request<ModelAssignment>(`/api/projects/${projectId}/model-assignment`, { method: "PUT", body: JSON.stringify(data) }),
+      request<ModelAssignment>(`/api/v1/projects/${projectId}/model-assignment`, { method: "PUT", body: JSON.stringify(data) }),
     applyPlatformPreset: (projectId: string, platform: string) =>
-      request<ModelAssignment>(`/api/projects/${projectId}/model-assignment/apply-platform-preset`, { method: "POST", body: JSON.stringify({ platform }) }),
+      request<ModelAssignment>(`/api/v1/projects/${projectId}/model-assignment/apply-platform-preset`, { method: "POST", body: JSON.stringify({ platform }) }),
   },
   knowledge: {
     upload: (projectId: string, file: File) => {

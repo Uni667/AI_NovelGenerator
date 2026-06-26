@@ -218,7 +218,7 @@ async def import_backup(request: Request, file: UploadFile = File(...)):
                 config_fields = [
                     "topic", "genre", "num_chapters", "word_number", "user_guidance",
                     "language", "platform", "category", "target_reader", "reader_direction",
-                    "custom_genre", "writing_style", "custom_style"
+                    "trend_key", "custom_trend", "trend_translation", "forbidden", "style_requirement"
                 ]
                 cfg_vals = [config_meta.get(f, "") for f in config_fields]
                 conn.execute(
@@ -238,9 +238,9 @@ async def import_backup(request: Request, file: UploadFile = File(...)):
                     
                 for ch in chapters_meta:
                     conn.execute(
-                        """INSERT INTO chapter (project_id, chapter_number, chapter_title, status, word_count, outline, content, created_at, updated_at)
+                        """INSERT INTO chapter (project_id, chapter_number, chapter_title, status, word_count, chapter_summary, draft_file, created_at, updated_at)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (new_project_id, ch["chapter_number"], ch["chapter_title"], ch["status"], ch.get("word_count", 0), ch.get("outline", ""), ch.get("content", ""), now_str, now_str)
+                        (new_project_id, ch["chapter_number"], ch.get("chapter_title", ""), ch.get("status", "pending"), ch.get("word_count", 0), ch.get("chapter_summary", ch.get("outline", "")), ch.get("draft_file", ch.get("content", "")), now_str, now_str)
                     )
                 conn.commit()
                 

@@ -16,6 +16,7 @@ def get_file_access_flag() -> bool:
         config = get_local_library_config()
         return config.get("allow_local_file_access", False)
     except Exception:
+        logger.warning("Failed to read local file access flag, defaulting to False", exc_info=True)
         return False
 
 

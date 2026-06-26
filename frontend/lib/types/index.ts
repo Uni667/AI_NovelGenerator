@@ -445,14 +445,23 @@ export interface ModelProfile {
   id: string;
   name: string;
   type: string;
+  purpose: string;
   provider: string;
-  is_default: boolean;
-  api_credential_id?: string;
+  base_url?: string;
   model: string;
-  health_status: string;
+  api_credential_id?: string;
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
+  is_default: boolean;
   is_active?: boolean;
-  credential_name?: string;
+  health_status: string;
+  last_error?: string;
   last_tested_at?: string;
+  credential_name?: string;
+  credential_status?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface ModelAssignment {

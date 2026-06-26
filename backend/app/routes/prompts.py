@@ -14,12 +14,14 @@ import json
 import os
 import time
 import datetime
+import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from backend.app.auth import get_current_user
 from backend.app.services import project_service
 
 router = APIRouter(tags=["提示词实验室"])
+logger = logging.getLogger(__name__)
 
 # ── 可管理的 Prompt 键定义 ─────────────────────────────────────────────
 PROMPT_CATALOG = [
@@ -386,6 +388,7 @@ def _load_custom_prompts(project_id: str) -> dict:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
+        logger.warning("Failed to load custom prompts from %s", path, exc_info=True)
         return {}
 
 

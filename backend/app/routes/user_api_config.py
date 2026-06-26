@@ -301,12 +301,12 @@ def _pick_best_chat_profile(profiles: list[dict], slot: str, platform: str) -> s
     return best_id
 
 
-@router.get("/api/user/api-credentials")
+@router.get("/api/v1/user/api-credentials")
 def list_api_credentials(request: Request):
     return list_credentials(get_current_user(request))
 
 
-@router.get("/api/user/api-credentials/{cred_id}")
+@router.get("/api/v1/user/api-credentials/{cred_id}")
 def get_api_credential(cred_id: str, request: Request):
     cred = get_credential(cred_id, get_current_user(request))
     if not cred:
@@ -314,7 +314,7 @@ def get_api_credential(cred_id: str, request: Request):
     return cred
 
 
-@router.post("/api/user/api-credentials")
+@router.post("/api/v1/user/api-credentials")
 def create_api_credential(data: CredentialReq, request: Request):
     try:
         return create_credential(get_current_user(request), data.model_dump())
@@ -322,7 +322,7 @@ def create_api_credential(data: CredentialReq, request: Request):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@router.put("/api/user/api-credentials/{cred_id}")
+@router.put("/api/v1/user/api-credentials/{cred_id}")
 def update_api_credential(cred_id: str, data: CredentialUpdateReq, request: Request):
     try:
         return update_credential(cred_id, get_current_user(request), data.model_dump(exclude_none=True))
@@ -330,7 +330,7 @@ def update_api_credential(cred_id: str, data: CredentialUpdateReq, request: Requ
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@router.delete("/api/user/api-credentials/{cred_id}")
+@router.delete("/api/v1/user/api-credentials/{cred_id}")
 def delete_api_credential(cred_id: str, request: Request, cascade: bool = False):
     """删除 API 凭证。cascade=true 时同时删除关联的 ModelProfile。"""
     user_id = get_current_user(request)
@@ -352,7 +352,7 @@ def delete_api_credential(cred_id: str, request: Request, cascade: bool = False)
         raise HTTPException(status_code=400, detail="删除失败，请稍后重试。")
 
 
-@router.post("/api/user/api-credentials/{cred_id}/test")
+@router.post("/api/v1/user/api-credentials/{cred_id}/test")
 def test_api_credential(cred_id: str, request: Request):
     result = test_credential(cred_id, get_current_user(request))
     if not result.get("success"):
@@ -360,17 +360,17 @@ def test_api_credential(cred_id: str, request: Request):
     return result
 
 
-@router.post("/api/user/api-credentials/{cred_id}/enable")
+@router.post("/api/v1/user/api-credentials/{cred_id}/enable")
 def enable_credential(cred_id: str, request: Request):
     return set_status(cred_id, get_current_user(request), "active")
 
 
-@router.post("/api/user/api-credentials/{cred_id}/disable")
+@router.post("/api/v1/user/api-credentials/{cred_id}/disable")
 def disable_credential(cred_id: str, request: Request):
     return set_status(cred_id, get_current_user(request), "disabled")
 
 
-@router.get("/api/user/model-profiles")
+@router.get("/api/v1/user/model-profiles")
 def list_model_profiles(request: Request):
     user_id = get_current_user(request)
     with get_db() as conn:
@@ -385,7 +385,7 @@ def list_model_profiles(request: Request):
     return [_bools(row) for row in rows]
 
 
-@router.post("/api/user/model-profiles")
+@router.post("/api/v1/user/model-profiles")
 def create_model_profile(data: ModelProfileReq, request: Request):
     user_id = get_current_user(request)
     payload = data.model_dump()
@@ -410,7 +410,7 @@ def create_model_profile(data: ModelProfileReq, request: Request):
     return {"id": profile_id, "message": "已创建"}
 
 
-@router.put("/api/user/model-profiles/{profile_id}")
+@router.put("/api/v1/user/model-profiles/{profile_id}")
 def update_model_profile(profile_id: str, data: ModelProfileUpdateReq, request: Request):
     user_id = get_current_user(request)
     updates = data.model_dump(exclude_none=True)
@@ -432,7 +432,7 @@ def update_model_profile(profile_id: str, data: ModelProfileUpdateReq, request: 
     return {"message": "已更新"}
 
 
-@router.delete("/api/user/model-profiles/{profile_id}")
+@router.delete("/api/v1/user/model-profiles/{profile_id}")
 def delete_model_profile(profile_id: str, request: Request):
     user_id = get_current_user(request)
     with get_db() as conn:
@@ -442,7 +442,7 @@ def delete_model_profile(profile_id: str, request: Request):
     return {"message": "已删除"}
 
 
-@router.post("/api/user/model-profiles/{profile_id}/test")
+@router.post("/api/v1/user/model-profiles/{profile_id}/test")
 def test_model_profile(profile_id: str, request: Request):
     user_id = get_current_user(request)
     from backend.app.services.config_resolver import ConfigError, _build_runtime, _invoke_chat, _invoke_embedding
@@ -479,7 +479,7 @@ def test_model_profile(profile_id: str, request: Request):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@router.post("/api/user/model-profiles/{profile_id}/set-default")
+@router.post("/api/v1/user/model-profiles/{profile_id}/set-default")
 def set_default_profile(profile_id: str, request: Request):
     user_id = get_current_user(request)
     now = datetime.datetime.now().isoformat()
@@ -490,7 +490,7 @@ def set_default_profile(profile_id: str, request: Request):
     return {"message": "已设为默认"}
 
 
-@router.get("/api/projects/{project_id}/model-assignment")
+@router.get("/api/v1/projects/{project_id}/model-assignment")
 def get_project_assignment(project_id: str, request: Request):
     user_id = get_current_user(request)
     _require_project(user_id, project_id)
@@ -502,7 +502,7 @@ def get_project_assignment(project_id: str, request: Request):
     return dict(row) if row else {}
 
 
-@router.put("/api/projects/{project_id}/model-assignment")
+@router.put("/api/v1/projects/{project_id}/model-assignment")
 def save_project_assignment(project_id: str, data: ProjectAssignmentReq, request: Request):
     user_id = get_current_user(request)
     _require_project(user_id, project_id)
@@ -539,7 +539,7 @@ def save_project_assignment(project_id: str, data: ProjectAssignmentReq, request
     return get_project_assignment(project_id, request)
 
 
-@router.post("/api/projects/{project_id}/model-assignment/apply-platform-preset")
+@router.post("/api/v1/projects/{project_id}/model-assignment/apply-platform-preset")
 def apply_platform_assignment_preset(project_id: str, data: PlatformPresetReq, request: Request):
     user_id = get_current_user(request)
     _require_project(user_id, project_id)
@@ -581,7 +581,7 @@ def apply_platform_assignment_preset(project_id: str, data: PlatformPresetReq, r
     return save_project_assignment(project_id, ProjectAssignmentReq(**payload), request)
 
 
-@router.get("/api/user/model-invocation-logs")
+@router.get("/api/v1/user/model-invocation-logs")
 def list_invocation_logs(request: Request, limit: int = 50):
     user_id = get_current_user(request)
     with get_db() as conn:
@@ -592,7 +592,7 @@ def list_invocation_logs(request: Request, limit: int = 50):
     return [_bools(row) for row in rows]
 
 
-@router.get("/api/projects/{project_id}/model-invocation-logs")
+@router.get("/api/v1/projects/{project_id}/model-invocation-logs")
 def list_project_invocation_logs(project_id: str, request: Request, limit: int = 30):
     user_id = get_current_user(request)
     _require_project(user_id, project_id)
@@ -622,7 +622,7 @@ def _classify_model(model_id: str) -> str:
     return "unknown"
 
 
-@router.get("/api/user/api-credentials/{cred_id}/models")
+@router.get("/api/v1/user/api-credentials/{cred_id}/models")
 def fetch_provider_models(cred_id: str, request: Request):
     """读取 SiliconFlow 或其他 OpenAI-compatible 服务商的可用模型列表。"""
     import requests as req
@@ -717,7 +717,7 @@ class QuickSetupReq(BaseModel):
     project_id: str | None = None
 
 
-@router.post("/api/user/model-quick-setup")
+@router.post("/api/v1/user/model-quick-setup")
 def model_quick_setup(data: QuickSetupReq, request: Request):
     """一键配置文本生成模型：选择服务商 + 填 Key → 测试 → 保存。不自动创建 Embedding。"""
     user_id = get_current_user(request)
@@ -858,7 +858,7 @@ def model_quick_setup(data: QuickSetupReq, request: Request):
 
 # ── 模型系统状态查询 ──
 
-@router.get("/api/user/model-settings/status")
+@router.get("/api/v1/user/model-settings/status")
 def get_model_system_status(request: Request):
     """返回当前用户模型系统的真实可用状态。"""
     user_id = get_current_user(request)
@@ -867,7 +867,7 @@ def get_model_system_status(request: Request):
 
 # ── 清空当前模型配置 ──
 
-@router.post("/api/user/model-settings/reset")
+@router.post("/api/v1/user/model-settings/reset")
 def reset_model_settings(request: Request):
     """清空当前用户所有模型配置（ApiCredential + ModelProfile），但保留项目和数据。"""
     user_id = get_current_user(request)
@@ -876,7 +876,7 @@ def reset_model_settings(request: Request):
 
 # ── 修复旧配置 ──
 
-@router.post("/api/user/model-settings/repair")
+@router.post("/api/v1/user/model-settings/repair")
 def repair_model_settings(request: Request):
     """修复当前用户的脏数据：provider、baseUrl、model URL、孤儿 ModelProfile。"""
     user_id = get_current_user(request)
@@ -885,7 +885,7 @@ def repair_model_settings(request: Request):
 
 # ── 兼容旧接口（转发到 repair）──
 
-@router.post("/api/user/fix-legacy-credentials")
+@router.post("/api/v1/user/fix-legacy-credentials")
 def fix_legacy_credentials(request: Request):
     """已废弃，请使用 /api/user/model-settings/repair。"""
     return repair_model_settings(request)

@@ -21,6 +21,7 @@ from novel_generator.character_import import (
 from backend.app.services.sync_service import sync_db_to_txt, sync_txt_to_db
 
 router = APIRouter(tags=["角色管理"])
+logger = logging.getLogger(__name__)
 
 
 CHARACTER_SUGGESTION_PROMPT = """你是网文小说人物策划编辑。请根据项目设定和已有人物，补全适合后续剧情的人物建议。
@@ -187,7 +188,7 @@ def list_characters(project_id: str, request: Request):
                 with open(v_path, "r", encoding="utf-8") as f:
                     v_data = json.load(f)
             except Exception:
-                pass
+                logger.warning("Failed to load visualizer_data.json for project %s", project.get("id", "?"), exc_info=True)
                 
     v_chars_by_db_id = {}
     v_chars_by_name = {}

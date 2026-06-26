@@ -54,10 +54,10 @@ export function BookListTable({ books, onViewBook }: BookListTableProps) {
                     <Book className="w-4 h-4 text-primary/70" />
                     {b.title}
                   </div>
-                  {(b as any).chapter_count > 0 && (
+                  {b.total_chapters > 0 && (
                     <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                       <FileText className="w-3 h-3" />
-                      共 {(b as any).chapter_count} 章 · {Math.round(((b as any).total_word_count || 0) / 10000)}万字
+                      共 {b.total_chapters} 章 · {Math.round((b.total_words || 0) / 10000)}万字
                     </div>
                   )}
                 </td>
@@ -70,7 +70,7 @@ export function BookListTable({ books, onViewBook }: BookListTableProps) {
                   {getStatusBadge(b.parse_status)}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">
-                  {((b as any).updated_at || (b as any).created_at) ? new Date((b as any).updated_at || (b as any).created_at).toLocaleString() : "-"}
+                  {(b.last_parsed_at || b.last_scanned_at) ? new Date(b.last_parsed_at || b.last_scanned_at!).toLocaleString() : "-"}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <Button 

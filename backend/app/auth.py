@@ -1,8 +1,11 @@
 import os
-import uuid
+import secrets
 import datetime
+import logging
 from fastapi import HTTPException, Request
 from backend.app.database import get_db
+
+logger = logging.getLogger(__name__)
 
 try:
     import jwt
@@ -25,7 +28,11 @@ def _get_or_create_secret() -> str:
     if os.path.exists(SECRET_FILE):
         with open(SECRET_FILE, "r", encoding="utf-8") as f:
             return f.read().strip()
-    secret = uuid.uuid4().hex
+    logger.warning(
+        "JWT_SECRET/NEXTAUTH_SECRET 环境变量未设置，已生成随机密钥。"
+        "多实例部署时各实例密钥不同会导致 token 失效，请在环境变量中设置固定密钥。"
+    )
+    secret = secrets.token_hex(32)
     with open(SECRET_FILE, "w", encoding="utf-8") as f:
         f.write(secret)
     return secret

@@ -1,8 +1,11 @@
 import os
 import datetime
+import logging
 from backend.app.database import get_db
 from utils import read_file
 from chapter_directory_parser import parse_chapter_blueprint
+
+logger = logging.getLogger(__name__)
 
 
 def list_chapters(project_id: str, user_id: str | None = None) -> list[dict]:
@@ -228,7 +231,7 @@ def delete_chapter(project_id: str, chapter_number: int, filepath: str) -> bool:
                 (project_id, f"%chapter_{chapter_number}.txt")
             )
     except Exception:
-        pass
+        logger.warning("Failed to delete project_file records for chapter %s", chapter_number, exc_info=True)
     return deleted
 
 
@@ -424,9 +427,9 @@ def sync_subsequent_chapters(project_id: str, chapter_number: int, user_id: str)
             timeout=ctx.llm.timeout,
             cancel_token=ctx.cancel_token,
         )
-    except Exception:
+    except Exception as e:
         # Fallback to direct resolution
-        raise RuntimeError("无法加载模型配置以连接大模型。")
+        raise RuntimeError("无法加载模型配置以连接大模型。") from e
         
     prompt = f"""你是一名资深的网络小说策划总编辑。
 因为前面的章节（第{chapter_number}章）已经完成了定稿和修改，你需要同步调整后续所有章节的大纲设计，以确保整个故事的发展逻辑、伏笔连贯性及节奏的一致性。

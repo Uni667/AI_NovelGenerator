@@ -353,6 +353,7 @@ def batch_check_chapter_hooks(project_id: str, request: Request):
                 "suggestion": analysis.get("suggestion", "")
             })
         except Exception:
+            logger.warning("Hook check failed for chapter %s", num, exc_info=True)
             results.append({"chapter_number": num, "has_hook": False, "hook_type": "检测失败", "suggestion": ""})
 
     return {"chapters": results}

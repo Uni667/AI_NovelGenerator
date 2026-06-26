@@ -92,7 +92,7 @@ def propose_outline_evolution(project_id: str, user_id: str, from_chapter: int =
                         if patch_data.get("status") == "pending_review":
                             pending_patch_ignored_count += 1
                     except Exception:
-                        pass
+                        logger.warning("Failed to parse patch file %s during outline evolution", f, exc_info=True)
                         
     # 4. 构建大模型 Prompt
     merged_state_summary = f"全局摘要：\n{global_summary}\n\n人物状态摘要：\n{json.dumps(character_state.get('characters', []), ensure_ascii=False)}\n\n活跃伏笔：\n{json.dumps(plot_threads.get('threads', []), ensure_ascii=False)}"
