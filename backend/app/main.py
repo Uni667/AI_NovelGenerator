@@ -5,7 +5,7 @@ from logging.handlers import RotatingFileHandler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.database import init_db
-from backend.app.routes import project_state, auth, chapters, character_appearances, character_conflicts, character_relationships, characters, files, generation, knowledge, platform_tools, projects, prompts, user_api_config, material_processor, interactive, analytics, plot_arcs, visualizer, outline_evolution, state_editing, folder_migration, emotion, local_library, local_reference_books
+from backend.app.routes import project_state, auth, chapters, character_appearances, character_conflicts, character_relationships, characters, files, generation, knowledge, platform_tools, projects, prompts, user_api_config, user_api_multi_setup, material_processor, interactive, analytics, plot_arcs, visualizer, outline_evolution, state_editing, folder_migration, emotion, local_library, local_reference_books
 from backend.app.rate_limiter import limiter, rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -80,6 +80,7 @@ app.include_router(character_relationships.router)
 app.include_router(character_conflicts.router)
 app.include_router(character_appearances.router)
 app.include_router(user_api_config.router)
+app.include_router(user_api_multi_setup.router)
 app.include_router(material_processor.router)
 app.include_router(prompts.router)
 app.include_router(interactive.router)

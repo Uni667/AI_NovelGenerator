@@ -21,6 +21,8 @@ import {
   EyeOff,
   Copy,
   Globe,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api-client"
@@ -31,7 +33,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 
 const PROVIDERS = [
   { value: "siliconflow", label: "硅基流动" },
@@ -506,86 +508,182 @@ function ReadyState({
 }
 
 function QuickSetupCard({ onDone }: { onDone: () => void }) {
-  const [provider, setProvider] = useState("siliconflow")
-  const [apiKey, setApiKey] = useState("")
+  const [credentials, setCredentials] = useState([{ provider: "siliconflow", api_key: "" }])
   const [saving, setSaving] = useState(false)
+  const [resultDialog, setResultDialog] = useState<{ open: boolean; message: string; details: any[]; assignments: any[] }>({ open: false, message: "", details: [], assignments: [] })
+
+  const updateCredential = (index: number, key: string, value: string) => {
+    const newCreds = [...credentials]
+    newCreds[index] = { ...newCreds[index], [key]: value }
+    setCredentials(newCreds)
+  }
+
+  const addCredential = () => {
+    setCredentials([...credentials, { provider: "deepseek", api_key: "" }])
+  }
+
+  const removeCredential = (index: number) => {
+    if (credentials.length > 1) {
+      const newCreds = [...credentials]
+      newCreds.splice(index, 1)
+      setCredentials(newCreds)
+    }
+  }
 
   const quickSetup = async () => {
-    if (!apiKey.trim()) {
-      toast.error("请填写 API Key。")
+    const validCreds = credentials.filter(c => c.api_key.trim() !== "")
+    if (validCreds.length === 0) {
+      toast.error("请至少填写一个 API Key。")
       return
     }
     setSaving(true)
     try {
-      const result = await api.config.modelQuickSetup({ provider, api_key: apiKey.trim() })
-      toast.success(result.data.message)
-      setApiKey("")
-      onDone()
+      const result = await api.config.modelMultiSetup({ credentials: validCreds.map(c => ({ provider: c.provider, api_key: c.api_key.trim() })) })
+      if (result.success) {
+        setResultDialog({ open: true, message: result.message, details: result.details, assignments: result.assignments })
+        setCredentials([{ provider: "siliconflow", api_key: "" }])
+        onDone()
+      } else {
+        toast.error(result.message)
+      }
     } catch (error) {
-      toast.error(errorMessage(error, "测试失败，请检查 API Key 和服务商是否匹配。"))
+      toast.error(errorMessage(error, "批量测试失败，请检查 API Key。"))
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <Card className="glass-panel border-border/40 shadow-xl overflow-hidden relative transition-all duration-500 hover:shadow-glow">
-      <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
-        <Fingerprint className="w-32 h-32 text-primary" />
-      </div>
-      <CardHeader className="pb-4">
-        <CardTitle className="text-xl flex items-center gap-2 text-foreground font-bold">
-          <KeyRound className="text-primary w-5 h-5 animate-pulse" /> 极速挂载算力节点
-        </CardTitle>
-        <CardDescription className="text-muted-foreground mt-1">
-          只需注入您的 API Key，系统将在后台自动完成凭证绑定、文本大模型映射及知识库向量化配置。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 relative z-10">
-        <div className="grid gap-5 md:grid-cols-[220px_1fr_auto] items-end">
-          <Field label="云端服务商 (Provider)">
-            <Select value={provider} onValueChange={(value) => value && setProvider(value)}>
-              <SelectTrigger className="shadow-sm border-border/60 focus:ring-primary/50 bg-background/50 h-10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PROVIDERS.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
+    <>
+      <Card className="glass-panel border-border/40 shadow-xl overflow-hidden relative transition-all duration-500 hover:shadow-glow">
+        <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
+          <Fingerprint className="w-32 h-32 text-primary" />
+        </div>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-xl flex items-center gap-2 text-foreground font-bold">
+            <KeyRound className="text-primary w-5 h-5 animate-pulse" /> 智能多节点算力挂载
+          </CardTitle>
+          <CardDescription className="text-muted-foreground mt-1">
+            同时注入多个不同服务商的 API Key，系统将自动测试并根据模型特点为您执行最优算力路由。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 relative z-10">
+          <div className="space-y-3">
+            {credentials.map((cred, index) => (
+              <div key={index} className="grid gap-3 md:grid-cols-[220px_1fr_auto] items-end animate-in fade-in slide-in-from-top-2">
+                <Field label={index === 0 ? "云端服务商 (Provider)" : ""}>
+                  <Select value={cred.provider} onValueChange={(value) => value && updateCredential(index, "provider", value)}>
+                    <SelectTrigger className="shadow-sm border-border/60 focus:ring-primary/50 bg-background/50 h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PROVIDERS.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label={index === 0 ? "授权令牌 (API Key)" : ""}>
+                  <Input
+                    autoComplete="off"
+                    type="password"
+                    value={cred.api_key}
+                    onChange={(event) => updateCredential(index, "api_key", event.target.value)}
+                    placeholder="sk-..."
+                    className="shadow-sm border-border/60 focus:ring-primary/50 font-mono bg-background/50 h-10"
+                  />
+                </Field>
+                <div className="flex gap-2">
+                  {credentials.length > 1 && (
+                    <Button variant="outline" size="icon" className="h-10 w-10 shrink-0 text-destructive border-border/60 hover:bg-destructive/10" onClick={() => removeCredential(index)}>
+                      <Trash2 className="size-4" />
+                    </Button>
+                  )}
+                  {index === credentials.length - 1 && (
+                    <Button variant="outline" className="h-10 shrink-0 border-border/60 text-primary hover:bg-primary/10" onClick={addCredential}>
+                      <Plus className="size-4 mr-1" /> 添加
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button className="w-full md:w-auto shadow-glow h-10 px-8 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold" onClick={quickSetup} disabled={saving}>
+              {saving ? <RefreshCw className="size-4 mr-2 animate-spin" /> : <Wifi className="size-4 mr-2" />}
+              {saving ? "智能分析与挂载中..." : "一键挂载并智能路由"}
+            </Button>
+          </div>
+
+          <div className="pt-2 border-t border-border/30 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground/90 font-medium">
+            <span className="text-primary/90 font-semibold">自动化管线配给:</span>
+            <span className="flex items-center gap-1"><span className="text-emerald-400 font-bold">✓</span> 自动并发测试与加密</span>
+            <span className="flex items-center gap-1"><span className="text-emerald-400 font-bold">✓</span> 根据模型特点智能分配大纲/正文推理</span>
+            <span className="flex items-center gap-1"><span className="text-emerald-400 font-bold">✓</span> 自动搭建本地知识库检索向量模型</span>
+          </div>
+          
+          <div className="bg-primary/5 border border-primary/10 rounded-lg p-3 text-xs text-muted-foreground leading-relaxed mt-4">
+            <span className="font-bold text-primary block mb-0.5">💡 创作者贴士：</span>
+            推荐同时挂载 <b>DeepSeek</b> (用于推理和大纲) 与 <b>硅基流动</b> (用于向量化检索和快速正文生成)，系统会自动将它们分配到最优的管线上。
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={resultDialog.open} onOpenChange={(open) => !open && setResultDialog(prev => ({ ...prev, open: false }))}>
+        <DialogContent className="max-w-xl glass-panel border-border shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-primary text-xl">
+              <CheckCircle2 className="size-6" />
+              智能挂载完成
+            </DialogTitle>
+            <DialogDescription>
+              {resultDialog.message}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <h4 className="text-sm font-semibold text-foreground mb-2">算力节点测试结果</h4>
+              <div className="space-y-2">
+                {resultDialog.details.map((d, i) => (
+                  <div key={i} className="flex items-center justify-between bg-background/50 p-2 rounded border border-border/40 text-sm">
+                    <span className="font-medium">{PROVIDERS.find(p => p.value === d.provider)?.label || d.provider}</span>
+                    <span className={d.success ? "text-emerald-500 flex items-center gap-1" : "text-destructive flex items-center gap-1"}>
+                      {d.success ? <CheckCircle2 className="size-4" /> : <XCircle className="size-4" />}
+                      {d.message}
+                    </span>
+                  </div>
                 ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="授权令牌 (API Key)">
-            <Input
-              autoComplete="off"
-              type="password"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder="sk-..."
-              className="shadow-sm border-border/60 focus:ring-primary/50 font-mono bg-background/50 h-10"
-            />
-          </Field>
-          <Button className="w-full md:w-auto shadow-glow h-10 px-6 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold" onClick={quickSetup} disabled={saving}>
-            {saving ? <RefreshCw className="size-4 mr-2 animate-spin" /> : <Wifi className="size-4 mr-2" />}
-            {saving ? "节点连接中..." : "挂载并上线"}
-          </Button>
-        </div>
-
-        <div className="pt-2 border-t border-border/30 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground/90 font-medium">
-          <span className="text-primary/90 font-semibold">自动化管线配给:</span>
-          <span className="flex items-center gap-1"><span className="text-emerald-400 font-bold">✓</span> 自动加密凭证</span>
-          <span className="flex items-center gap-1"><span className="text-emerald-400 font-bold">✓</span> 映射小说章节草稿路由</span>
-          <span className="flex items-center gap-1"><span className="text-emerald-400 font-bold">✓</span> 开启全局知识检索向量库</span>
-        </div>
-
-        <div className="bg-primary/5 border border-primary/10 rounded-lg p-3 text-xs text-muted-foreground leading-relaxed">
-          <span className="font-bold text-primary block mb-0.5">💡 创作者贴士：</span>
-          建议选择 <span className="font-semibold text-foreground">DeepSeek</span> (或选用硅基流动平台)，在保证极佳中文文风和角色逻辑的前提下，其 Token 价格仅为传统商用模型的数十分之一，更契合长篇小说的海量生成需求。
-        </div>
-      </CardContent>
-    </Card>
+              </div>
+            </div>
+            
+            {resultDialog.assignments.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-2">AI 管线智能路由策略</h4>
+                <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
+                  {resultDialog.assignments.map((a, i) => (
+                    <div key={i} className="flex flex-col bg-primary/5 p-3 rounded border border-primary/20 text-sm">
+                      <span className="text-muted-foreground text-xs uppercase font-semibold mb-1">
+                        {a.purpose === "chat" ? "正文生成 (Chat)" : a.purpose === "outline" ? "逻辑与大纲 (Outline)" : a.purpose === "embedding" ? "知识库向量 (Embedding)" : a.purpose}
+                      </span>
+                      <span className="font-medium text-foreground">
+                        {PROVIDERS.find(p => p.value === a.provider)?.label || a.provider}
+                      </span>
+                      <span className="text-xs text-muted-foreground font-mono mt-0.5">{a.model}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setResultDialog(prev => ({ ...prev, open: false }))}>完成</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

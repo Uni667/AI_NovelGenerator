@@ -45,8 +45,8 @@ PROVIDER_DEFAULTS = {
 }
 
 PROVIDER_DEFAULT_CHAT_MODELS = {
-    "siliconflow": "deepseek-v4-flash",
-    "deepseek": "deepseek-v4-flash",
+    "siliconflow": "deepseek-ai/DeepSeek-V3",
+    "deepseek": "deepseek-chat",
     "openai": "gpt-4o-mini",
     "qwen": "qwen-plus",
     "anthropic": "claude-3-5-haiku-latest",
@@ -54,7 +54,37 @@ PROVIDER_DEFAULT_CHAT_MODELS = {
     "local": "",
 }
 
+PROVIDER_DEFAULT_EMBEDDING_MODELS = {
+    "siliconflow": "BAAI/bge-m3",
+    "openai": "text-embedding-3-small",
+    "qwen": "text-embedding-v3",
+    "custom": "",
+    "local": "",
+    # deepseek/anthropic do not have standard embeddings typically configured here
+}
+
 SUPPORTED_CHAT_PROVIDERS = {"openai", "deepseek", "qwen", "anthropic", "siliconflow", "custom", "local"}
+
+# 智能路由偏好配置：定义各种用途优先选择的 provider 和 model
+SMART_ROUTING_PREFERENCES = {
+    "chat": [
+        ("deepseek", "deepseek-chat"),
+        ("qwen", "qwen-plus"),
+        ("siliconflow", "deepseek-ai/DeepSeek-V3"),
+        ("openai", "gpt-4o-mini"),
+    ],
+    "outline": [
+        ("deepseek", "deepseek-reasoner"),
+        ("openai", "gpt-4o"),
+        ("siliconflow", "deepseek-ai/DeepSeek-R1"),
+        ("anthropic", "claude-3-5-sonnet-latest"),
+    ],
+    "embedding": [
+        ("siliconflow", "BAAI/bge-m3"),
+        ("openai", "text-embedding-3-small"),
+        ("qwen", "text-embedding-v3"),
+    ],
+}
 
 
 class ConfigError(Exception):
