@@ -57,6 +57,7 @@ chapter_quality_rewrite_prompt = """\
 - 伏笔设计：{foreshadowing}
 - 转折程度：{plot_twist_level}
 - 本章简述：{chapter_summary}
+- 目标字数：{word_number}字
 
 开篇质检结果：
 {opening_feedback}
@@ -70,7 +71,8 @@ chapter_quality_rewrite_prompt = """\
 3. 如果开头不够抓人，就把冲突/异样/危险/欲望前置，不要先铺背景。
 4. 如果结尾钩子弱，就强化危机、揭秘、欲望或反转中的至少一种。
 5. 避免解释腔、总结腔和模板化台词。
-6. 只输出返修后的完整正文，不要解释修改点。
+6. 字数严格控制在{word_number}字左右，不要因返修而显著膨胀或缩水。
+7. 只输出返修后的完整正文，不要解释修改点。
 
 待返修正文：
 {chapter_text}

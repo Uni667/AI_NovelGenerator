@@ -41,6 +41,7 @@ def rewrite_chapter_by_quality_feedback(
         foreshadowing=chapter_info.get("foreshadowing", ""),
         plot_twist_level=chapter_info.get("plot_twist_level", ""),
         chapter_summary=chapter_info.get("chapter_summary", ""),
+        word_number=params.word_number,
         opening_feedback=json.dumps({
             "opening": opening_feedback,
             "middle": mid_feedback or {},

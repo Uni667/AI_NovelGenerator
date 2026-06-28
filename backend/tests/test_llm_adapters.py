@@ -79,6 +79,7 @@ class ApiCredentialServiceTests(unittest.TestCase):
         """_test_chat 传给 create_llm_adapter 的 model_name 必须是模型名，不是 base_url。"""
         from unittest.mock import patch
         from backend.app.services.api_credential_service import _test_chat, PROVIDER_DEFAULTS
+        from backend.app.services.config_resolver import PROVIDER_DEFAULT_CHAT_MODELS
 
         cred = {
             "id": "test-cred-id",
@@ -106,8 +107,8 @@ class ApiCredentialServiceTests(unittest.TestCase):
             model_name.startswith("http://") or model_name.startswith("https://"),
             f"model_name={model_name!r} 不应该是 URL！",
         )
-        self.assertEqual(model_name, "deepseek-v4-flash",
-                         f"model_name 应该是 deepseek-v4-flash，实际是 {model_name!r}")
+        self.assertEqual(model_name, PROVIDER_DEFAULT_CHAT_MODELS["deepseek"],
+                         f"model_name 应该是 {PROVIDER_DEFAULT_CHAT_MODELS['deepseek']}，实际是 {model_name!r}")
 
 
 class LlmErrorsTests(unittest.TestCase):

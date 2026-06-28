@@ -212,6 +212,7 @@ def Chapter_blueprint_generate(
                 n=current_start, m=current_end,
                 user_guidance=user_guidance,
                 platform_story_guidance=platform_story_guidance,
+                word_number=project.word_number,
             )
             logger.info(f"Generating chapters [{current_start}..{current_end}] in a chunk...")
             _check_cancel()
@@ -244,6 +245,7 @@ def Chapter_blueprint_generate(
             number_of_chapters=number_of_chapters,
             user_guidance=user_guidance,
             platform_story_guidance=platform_story_guidance,
+            word_number=project.word_number,
         )
         _check_cancel()
         blueprint_text = invoke_with_cleaning(llm, prompt, cancel_check=_check_cancel)
@@ -273,6 +275,7 @@ def Chapter_blueprint_generate(
             n=current_start, m=current_end,
             user_guidance=user_guidance,
             platform_story_guidance=platform_story_guidance,
+            word_number=project.word_number,
         )
         logger.info(f"Generating chapters [{current_start}..{current_end}] in a chunk...")
         _check_cancel()

@@ -7,6 +7,7 @@ chapter_blueprint_prompt = """\
 {platform_story_guidance}
 - 小说架构：
 {novel_architecture}
+- 每章目标字数：{word_number}字
 
 设计{number_of_chapters}章的节奏分布：
 1. 章节集群划分：
@@ -43,6 +44,7 @@ chapter_blueprint_prompt = """\
 - 合理安排节奏，确保整体悬念曲线的连贯性。
 - 在生成{number_of_chapters}章前不要出现结局章节。
 - 各章节奏、刺激点、信息释放速度要符合平台特性，不要一律平均分布。
+- 规划时考虑每章{word_number}字的篇幅容量，高潮章可安排更密集的事件，过渡章适当精简，但不要超出单章承载能力。
 
 仅给出最终文本，不要解释任何内容。
 """
@@ -54,6 +56,7 @@ chunked_chapter_blueprint_prompt = """\
 {platform_story_guidance}
 - 小说架构：
 {novel_architecture}
+- 每章目标字数：{word_number}字
 
 需要生成总共{number_of_chapters}章的节奏分布，
 
@@ -95,6 +98,7 @@ chunked_chapter_blueprint_prompt = """\
 - 合理安排节奏，确保整体悬念曲线的连贯性。
 - 在生成{number_of_chapters}章前不要出现结局章节。
 - 各章节奏、刺激点、信息释放速度要符合平台特性，不要一律平均分布。
+- 规划时考虑每章{word_number}字的篇幅容量，高潮章可安排更密集的事件，过渡章适当精简，但不要超出单章承载能力。
 
 仅给出最终文本，不要解释任何内容。
 """

@@ -9,7 +9,7 @@ from chapter_directory_parser import get_chapter_info_from_blueprint
 from novel_generator.common import invoke_with_cleaning
 from backend.app.services.model_runtime import create_chat_adapter_from_config as create_llm_adapter
 from novel_generator.task_manager import raise_if_cancelled
-from utils import read_file, clear_file_content, save_string_to_txt
+from utils import read_file, clear_file_content, save_string_to_txt, get_word_count
 
 # 导入管道模块
 from novel_generator.chapter_pipeline import build_chapter_prompt
@@ -75,13 +75,17 @@ def generate_chapter_draft(
     chapters_dir = os.path.join(ctx.filepath, "chapters")
     os.makedirs(chapters_dir, exist_ok=True)
 
+    # 按目标字数估算 token 上限（中文约 1 token ≈ 1.5 字），留 2 倍余量防止漫无边际地写
+    suggested_max_tokens = max(int(params.word_number * 2), 2048)
+    chapter_max_tokens = min(ctx.llm.max_tokens, suggested_max_tokens)
+
     llm = create_llm_adapter(
         interface_format=ctx.llm.interface_format,
         base_url=ctx.llm.base_url,
         model_name=ctx.llm.model_name,
         api_key=ctx.llm.api_key,
         temperature=ctx.llm.temperature,
-        max_tokens=ctx.llm.max_tokens,
+        max_tokens=chapter_max_tokens,
         timeout=ctx.llm.timeout,
         cancel_token=ctx.cancel_token,
     )
@@ -215,7 +219,8 @@ def generate_chapter_draft(
                     rewrite_prompt = (
                         f"以下是你生成的正文草稿，系统检测出它与参考书原文存在高度雷同！\n\n{report['rewrite_instruction']}\n\n"
                         f"【原草稿内容】：\n{chapter_content}\n\n"
-                        "请重新输出一份完全原创的正文，保持情节不变但必须打碎原句式："
+                        f"请重新输出一份完全原创的正文，保持情节不变但必须打碎原句式。"
+                        f"字数要求：{params.word_number}字左右，与原稿篇幅相近，不要显著缩水或膨胀。只输出正文："
                     )
                     
                     chapter_content = invoke_with_cleaning(llm, rewrite_prompt, cancel_check=_check_cancel)
@@ -232,6 +237,45 @@ def generate_chapter_draft(
             logger.error(f"相似度查重流程异常: {e}", exc_info=True)
             if emitter is not None:
                 emitter.emit("progress", {"step": "similarity_check", "status": "done", "message": "查重异常，按安全策略跳过"})
+
+    # --- 5.2 字数校验回环 (Word Count Guard) ---
+    target_wc = params.word_number
+    low_threshold = int(target_wc * 0.8)
+    high_threshold = int(target_wc * 1.3)
+    current_wc = get_word_count(chapter_content)
+    logger.info(f"[WordCount] Chapter {params.chapter_number}: current={current_wc}, target={target_wc}")
+
+    if current_wc < low_threshold:
+        if emitter is not None:
+            emitter.emit("progress", {"step": "word_count_adjust", "status": "running", "message": f"字数不足（{current_wc}/{target_wc}），正在扩写补足..."})
+        try:
+            from novel_generator.finalization import enrich_chapter_text
+            enriched = enrich_chapter_text(ctx, chapter_content, target_wc, task_id=task_id)
+            if enriched and enriched.strip() and get_word_count(enriched) > current_wc:
+                chapter_content = enriched.strip()
+            save_string_to_txt(chapter_content, partial_file)
+        except Exception as e:
+            logger.warning(f"Enrich failed for chapter {params.chapter_number}, keeping original: {e}")
+        if emitter is not None:
+            emitter.emit("progress", {"step": "word_count_adjust", "status": "done", "message": f"扩写完成（{get_word_count(chapter_content)}字）"})
+
+    elif current_wc > high_threshold:
+        if emitter is not None:
+            emitter.emit("progress", {"step": "word_count_adjust", "status": "running", "message": f"字数超标（{current_wc}/{target_wc}），正在压缩..."})
+        try:
+            compress_prompt = (
+                f"以下是 {current_wc} 字的章节正文，目标字数为 {target_wc} 字。"
+                f"请在完全保留情节、人物、伏笔、钩子的前提下，删除冗余描写、合并重复信息、压缩空泛段落，"
+                f"使总字数接近 {target_wc} 字。只输出压缩后的正文，不要解释。\n\n{chapter_content}"
+            )
+            compressed = invoke_with_cleaning(llm, compress_prompt, cancel_check=_check_cancel)
+            if compressed and compressed.strip() and get_word_count(compressed) < current_wc:
+                chapter_content = compressed.strip()
+            save_string_to_txt(chapter_content, partial_file)
+        except Exception as e:
+            logger.warning(f"Compress failed for chapter {params.chapter_number}, keeping original: {e}")
+        if emitter is not None:
+            emitter.emit("progress", {"step": "word_count_adjust", "status": "done", "message": f"压缩完成（{get_word_count(chapter_content)}字）"})
 
     # --- 6. 存储结果 ---
     chapter_file = os.path.join(chapters_dir, f"chapter_{params.chapter_number}.txt")
